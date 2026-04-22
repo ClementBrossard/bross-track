@@ -1,0 +1,2073 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BROSS&amp;TRACK</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@300;400;700;900&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&display=swap" rel="stylesheet">
+<style>
+/* ══════════════════════════════════════════════
+   VARIABLES & RESET
+══════════════════════════════════════════════ */
+:root {
+  --ink:      #0a0c10;
+  --paper:    #f5f2eb;
+  --cream:    #ede9df;
+  --warm:     #ddd8cc;
+  --gold:     #b8860b;
+  --gold-lt:  #d4a017;
+  --red:      #c0392b;
+  --green:    #1a6b3c;
+  --blue:     #1a3a6b;
+  --muted:    #7a7060;
+  --border:   #ccc5b5;
+  --mono:     'DM Mono', monospace;
+  --sans:     'DM Sans', sans-serif;
+  --display:  'Unbounded', sans-serif;
+  --shadow:   0 2px 12px rgba(10,12,16,.08);
+  --shadow-lg: 0 8px 32px rgba(10,12,16,.12);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 14px; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  min-height: 100vh;
+  line-height: 1.5;
+}
+
+/* ══════════════════════════════════════════════
+   HEADER
+══════════════════════════════════════════════ */
+header {
+  background: var(--ink);
+  color: var(--paper);
+  display: flex;
+  align-items: center;
+  gap: 0;
+  height: 56px;
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  border-bottom: 3px solid var(--gold);
+}
+
+.logo-block {
+  padding: 0 28px;
+  border-right: 1px solid #2a2d35;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.logo-text {
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: 15px;
+  letter-spacing: 3px;
+  color: var(--gold-lt);
+  line-height: 1;
+}
+.logo-sub {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: #5a5d6a;
+  text-transform: uppercase;
+}
+
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 24px;
+  flex: 1;
+}
+
+.date-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #5a5d6a;
+  letter-spacing: 1px;
+}
+
+input[type="date"] {
+  background: #161820;
+  border: 1px solid #2a2d35;
+  border-radius: 4px;
+  color: var(--paper);
+  padding: 5px 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+}
+input[type="date"]:focus { border-color: var(--gold); }
+
+.btn {
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 7px 18px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.btn-primary {
+  background: var(--gold);
+  color: var(--ink);
+}
+.btn-primary:hover { background: var(--gold-lt); }
+.btn-ghost {
+  background: transparent;
+  color: #8a8d9a;
+  border: 1px solid #2a2d35;
+}
+.btn-ghost:hover { border-color: var(--gold); color: var(--gold); }
+
+.header-status {
+  margin-left: auto;
+  padding: 0 24px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #5a5d6a;
+}
+.status-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3a3d45;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.status-dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+/* ══════════════════════════════════════════════
+   LAYOUT
+══════════════════════════════════════════════ */
+.layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  height: calc(100vh - 56px);
+}
+
+/* ══════════════════════════════════════════════
+   SIDEBAR
+══════════════════════════════════════════════ */
+.sidebar {
+  background: var(--cream);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-header {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.sidebar-title {
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--muted);
+}
+.sidebar-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--gold);
+}
+
+.reunion-group { border-bottom: 1px solid var(--border); }
+.reunion-label {
+  padding: 10px 20px 6px;
+  background: var(--warm);
+  border-bottom: 1px solid var(--border);
+}
+.reunion-hippo {
+  font-family: var(--display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--ink);
+}
+.reunion-code {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--gold);
+  letter-spacing: 1px;
+}
+
+.course-btn {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-left: 3px solid transparent;
+  padding: 10px 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: all .12s;
+}
+.course-btn:hover { background: var(--warm); }
+.course-btn.active {
+  background: #fff;
+  border-left-color: var(--gold);
+  box-shadow: inset 0 0 0 1px rgba(184,134,11,.1);
+}
+
+.cb-num {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--gold);
+  min-width: 20px;
+}
+.cb-body { flex: 1; min-width: 0; }
+.cb-nom {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink);
+}
+.cb-meta {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.cb-heure {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.badge-tracked {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(26,107,60,.12);
+  color: var(--green);
+  border: 1px solid rgba(26,107,60,.25);
+}
+
+/* ══════════════════════════════════════════════
+   MAIN PANEL
+══════════════════════════════════════════════ */
+.main {
+  overflow-y: auto;
+  background: var(--paper);
+}
+
+/* ── Empty state ── */
+.empty-state {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  color: var(--muted);
+  text-align: center;
+  padding: 40px;
+}
+.empty-glyph {
+  font-size: 72px;
+  opacity: .15;
+  line-height: 1;
+  filter: grayscale(1);
+}
+.empty-state h2 {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--warm);
+}
+.empty-state p { font-size: 13px; color: var(--border); }
+
+/* ── Course header ── */
+.course-header {
+  background: var(--ink);
+  color: var(--paper);
+  padding: 24px 32px 20px;
+  border-bottom: 3px solid var(--gold);
+}
+.ch-eyebrow {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--gold);
+  margin-bottom: 6px;
+}
+.ch-title {
+  font-family: var(--display);
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  line-height: 1.1;
+  margin-bottom: 12px;
+}
+.ch-tags {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ch-tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  border: 1px solid #2a2d35;
+  color: #8a8d9a;
+  letter-spacing: .5px;
+}
+.ch-tag.gold  { border-color: var(--gold); color: var(--gold-lt); }
+.ch-tag.green { border-color: rgba(26,107,60,.5); color: #2ecc71; }
+
+/* ── Loading inline ── */
+.loading-bar {
+  background: var(--cream);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 32px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+.spin {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--gold);
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Tabs ── */
+.tabs-bar {
+  display: flex;
+  background: var(--cream);
+  border-bottom: 1px solid var(--border);
+  padding: 0 32px;
+  gap: 0;
+}
+.tab-btn {
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 14px 20px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px;
+  transition: all .15s;
+}
+.tab-btn:hover { color: var(--ink); }
+.filter-btn {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  margin: 8px 4px;
+  transition: all .15s;
+}
+.filter-btn:hover { border-color: var(--gold); color: var(--ink); }
+.filter-btn.active {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.tab-btn.active {
+  color: var(--ink);
+  border-bottom-color: var(--gold);
+}
+
+/* ── Tab content ── */
+.tab-content { padding: 28px 32px 48px; }
+
+/* ── Indicateurs badges ── */
+.ind-badges-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.ind-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.ind-neutral { background: rgba(122,112,96,.1); color: var(--muted); border-color: var(--border); }
+.ind-good    { background: rgba(26,107,60,.12); color: var(--green); border-color: rgba(26,107,60,.3); }
+.ind-bad     { background: rgba(192,57,43,.1);  color: var(--red);   border-color: rgba(192,57,43,.3); }
+.ind-gold    { background: rgba(184,134,11,.12); color: var(--gold); border-color: rgba(184,134,11,.3); }
+
+/* ══════════════════════════════════════════════
+   PARTANTS LIST
+══════════════════════════════════════════════ */
+.partants-list { display: grid; gap: 12px; }
+
+.horse-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: box-shadow .15s;
+}
+.horse-card:hover { box-shadow: var(--shadow); }
+
+.horse-card-header {
+  display: grid;
+  grid-template-columns: 48px 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.horse-num {
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 900;
+  color: var(--gold);
+  text-align: center;
+  line-height: 1;
+}
+.horse-info .horse-nom {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--ink);
+}
+.horse-info .horse-meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+.horse-musique {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.horse-tracking-status {
+  text-align: right;
+  min-width: 80px;
+}
+.tracking-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+}
+.tracking-count.has  { color: var(--green); }
+.tracking-count.none { color: var(--border); }
+
+/* ── Horse detail (accordéon) ── */
+.horse-detail {
+  display: none;
+  border-top: 1px solid var(--border);
+  padding: 16px 20px 20px;
+  background: var(--cream);
+}
+.horse-card.open .horse-detail { display: block; }
+
+.history-label {
+  font-family: var(--display);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.history-list { display: grid; gap: 10px; }
+
+/* ── Course historique card ── */
+.hist-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px 16px;
+  position: relative;
+}
+.hist-card.has-tracking {
+  border-left: 3px solid var(--gold);
+}
+.hist-card.no-tracking {
+  opacity: .7;
+}
+
+.hist-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+.hist-prix {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ink);
+}
+.hist-meta {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.hist-classement {
+  font-family: var(--display);
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1;
+  min-width: 36px;
+  text-align: right;
+}
+.cl-1  { color: var(--gold); }
+.cl-2  { color: #7a6a40; }
+.cl-3  { color: var(--muted); }
+.cl-np { color: var(--border); font-size: 14px; }
+
+/* ── Tronçons chart ── */
+.troncons-row {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  height: 64px;
+  margin-bottom: 6px;
+}
+.troncon-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  height: 100%;
+  justify-content: flex-end;
+}
+.troncon-val {
+  font-family: var(--mono);
+  font-size: 8px;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.2;
+}
+.troncon-bar {
+  width: 100%;
+  border-radius: 3px 3px 0 0;
+  min-height: 4px;
+}
+.troncon-lbl {
+  font-family: var(--mono);
+  font-size: 8px;
+  color: var(--border);
+  text-align: center;
+}
+
+.hist-footer {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+.hist-footer strong { color: var(--ink); }
+
+.no-track-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--border);
+  padding: 4px 0;
+}
+
+/* ══════════════════════════════════════════════
+   COMPARATIF TABLE
+══════════════════════════════════════════════ */
+.comp-wrapper { overflow-x: auto; }
+
+.comp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.comp-table thead tr {
+  background: var(--ink);
+  color: var(--gold-lt);
+}
+.comp-table th {
+  font-family: var(--display);
+  font-size: 8px;
+  letter-spacing: 2px;
+  padding: 10px 12px;
+  text-align: left;
+  white-space: nowrap;
+  font-weight: 700;
+}
+.comp-table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.comp-table tbody tr:hover td { background: var(--cream); }
+.comp-table td.horse-td {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.comp-table td.num-td {
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--gold);
+  text-align: center;
+}
+
+/* Heatmap colors */
+.h-best { color: var(--green) !important; font-weight: 600; }
+.h-good { color: #1a6b3c88 !important; }
+.h-mid  { color: var(--muted) !important; }
+.h-slow { color: var(--border) !important; }
+
+.prog-bars {
+  display: flex;
+  gap: 2px;
+  align-items: flex-end;
+  height: 20px;
+}
+.prog-bar {
+  flex: 1;
+  border-radius: 2px 2px 0 0;
+  min-width: 8px;
+}
+
+.comp-legend {
+  margin-top: 16px;
+  display: flex;
+  gap: 16px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+.comp-legend span::before {
+  content: '■';
+  margin-right: 4px;
+}
+.comp-legend .l-best::before { color: var(--green); }
+.comp-legend .l-good::before { color: #4a9b6a; }
+.comp-legend .l-mid::before  { color: var(--muted); }
+.comp-legend .l-slow::before { color: var(--border); }
+
+/* ══════════════════════════════════════════════
+   COMPARATIF — PODIUM & SCORE
+══════════════════════════════════════════════ */
+.comp-section-title {
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--muted);
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.comp-podium {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 32px;
+}
+.podium-row {
+  display: grid;
+  grid-template-columns: 32px 36px 1fr 140px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  transition: box-shadow .15s;
+}
+.podium-row:hover { box-shadow: var(--shadow); }
+.podium-row.rank-1 { border-left: 4px solid var(--gold); background: rgba(184,134,11,.04); }
+.podium-row.rank-2 { border-left: 4px solid #aaa; }
+.podium-row.rank-3 { border-left: 4px solid #cd7f32; }
+.podium-row.no-data { opacity: .4; }
+
+.podium-rank {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--border);
+  text-align: center;
+}
+.rank-1 .podium-rank { color: var(--gold); }
+.rank-2 .podium-rank { color: #999; }
+.rank-3 .podium-rank { color: #cd7f32; }
+
+.podium-num {
+  font-family: var(--display);
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--gold);
+  text-align: center;
+}
+.podium-nom {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+}
+.podium-ref {
+  font-family: var(--mono);
+  font-size: 10px;
+  margin-top: 2px;
+}
+.podium-score { text-align: right; }
+.score-value {
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 900;
+  color: var(--gold);
+  line-height: 1;
+  margin-bottom: 4px;
+}
+.score-bar-wrap {
+  width: 100%;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.score-bar {
+  height: 100%;
+  background: var(--gold);
+  border-radius: 2px;
+  transition: width .3s;
+}
+
+/* ── Stats carrière ── */
+.horse-stats-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 5px;
+  flex-wrap: wrap;
+}
+.stat-pill {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--cream);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.stat-pill .stat-ico { margin-right: 3px; }
+.stat-pill em { font-style: normal; color: var(--ink); font-weight: 600; }
+.stat-win   { border-color: rgba(184,134,11,.35); color: var(--gold); background: rgba(184,134,11,.07); }
+.stat-place { border-color: rgba(122,106,64,.35); color: #7a6a40; background: rgba(122,106,64,.07); }
+
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ══════════════════════════════════════════════
+   TOASTS / ALERTS
+══════════════════════════════════════════════ */
+.toast-zone {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.toast {
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 10px 16px;
+  border-radius: 6px;
+  border-left: 3px solid var(--gold);
+  animation: slideIn .2s ease;
+  max-width: 320px;
+}
+@keyframes slideIn {
+  from { transform: translateX(20px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+</style>
+</head>
+<body>
+
+<!-- ══ HEADER ════════════════════════════════════ -->
+<header>
+  <div class="logo-block">
+    <div>
+      <div class="logo-text">BROSS&amp;TRACK</div>
+      <div class="logo-sub">Analyse · Tracking · Comparatif</div>
+    </div>
+  </div>
+  <div class="header-controls">
+    <span class="date-label">PROGRAMME DU</span>
+    <input type="date" id="datePicker">
+    <button class="btn btn-primary" onclick="loadProgramme()">CHARGER</button>
+  </div>
+  <div class="header-status">
+    <span class="status-dot" id="statusDot"></span>
+    <span id="statusText">En attente</span>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- ══ SIDEBAR ════════════════════════════════ -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-title">COURSES DE PLAT</div>
+      <div class="sidebar-count" id="courseCount"></div>
+    </div>
+    <div id="sidebarContent">
+      <div class="loading-bar">
+        <div class="spin"></div>
+        Chargement du programme…
+      </div>
+    </div>
+  </aside>
+
+  <!-- ══ MAIN ═══════════════════════════════════ -->
+  <main class="main" id="mainPanel">
+    <div class="empty-state">
+      <div class="empty-glyph">🏇</div>
+      <h2>SÉLECTIONNE UNE COURSE</h2>
+      <p>Le programme du jour charge automatiquement.<br>
+         Clique sur une course pour analyser les partants et leur tracking.</p>
+    </div>
+  </main>
+</div>
+
+<div class="toast-zone" id="toastZone"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  ÉTAT GLOBAL
+// ═══════════════════════════════════════════════════════════
+const S = {
+  courses:      [],
+  activeTab:    'partants',
+  currentCours: null,
+  partantsData: null,
+  courseRef:    null,
+  filtreDistance: false,
+  filtreSurface:  false,
+  compSort:     { key: 'score', dir: 'desc' },  // tri tableau comparatif (legacy)
+  compSortAll:  {},  // tri par stratégie
+};
+
+// ═══════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  const dp = document.getElementById('datePicker');
+  dp.value = new Date().toISOString().slice(0, 10);
+  loadProgramme();
+});
+
+// ═══════════════════════════════════════════════════════════
+//  UTILITAIRES
+// ═══════════════════════════════════════════════════════════
+function setStatus(text, live = false) {
+  document.getElementById('statusText').textContent = text;
+  document.getElementById('statusDot').className = 'status-dot' + (live ? ' live' : '');
+}
+
+function toast(msg) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = msg;
+  document.getElementById('toastZone').appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+function isoToPmu(iso) {
+  const [y, m, d] = iso.split('-');
+  return `${d}${m}${y}`;
+}
+
+function msToHeure(ms) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+function clClass(cl) {
+  const n = parseInt(cl);
+  if (n === 1)   return 'cl-1';
+  if (n === 2)   return 'cl-2';
+  if (n === 3)   return 'cl-3';
+  if (!isNaN(n)) return '';
+  return 'cl-np';
+}
+
+function heatClass(val, vals) {
+  const valid = vals.filter(Boolean);
+  if (!val || valid.length < 2) return '';
+  const mn = Math.min(...valid), mx = Math.max(...valid);
+  const p  = (val - mn) / (mx - mn || 1);
+  if (p < 0.2)  return 'h-best';
+  if (p < 0.45) return 'h-good';
+  if (p < 0.72) return 'h-mid';
+  return 'h-slow';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  PROGRAMME
+// ═══════════════════════════════════════════════════════════
+async function loadProgramme() {
+  const iso = document.getElementById('datePicker').value;
+  const jour = isoToPmu(iso);
+  setStatus('Chargement du programme…');
+
+  document.getElementById('sidebarContent').innerHTML =
+    `<div class="loading-bar"><div class="spin"></div>Chargement…</div>`;
+  document.getElementById('courseCount').textContent = '';
+  document.getElementById('mainPanel').innerHTML = `
+    <div class="empty-state">
+      <div class="empty-glyph">🏇</div>
+      <h2>SÉLECTIONNE UNE COURSE</h2>
+      <p>Clique sur une course dans le menu de gauche.</p>
+    </div>`;
+
+  try {
+    const res  = await fetch(`/api/programme?jour=${jour}`);
+    const data = await res.json();
+    S.courses  = data.courses || [];
+    renderSidebar(S.courses);
+    setStatus(`${S.courses.length} courses · ${iso.split('-').reverse().join('/')}`, true);
+    document.getElementById('courseCount').textContent = `${S.courses.length} courses`;
+  } catch (e) {
+    document.getElementById('sidebarContent').innerHTML =
+      `<div class="loading-bar" style="color:#c0392b;">Erreur : ${e.message}</div>`;
+    setStatus('Erreur de chargement');
+  }
+}
+
+function renderSidebar(courses) {
+  if (!courses.length) {
+    document.getElementById('sidebarContent').innerHTML =
+      `<div class="loading-bar">Aucune course de plat ce jour.</div>`;
+    return;
+  }
+
+  // Regroupe par hippodrome
+  const groupes = {};
+  for (const c of courses) {
+    const k = c.code_hippo || c.nom_hippo;
+    if (!groupes[k]) groupes[k] = { nom: c.nom_hippo, code: c.code_hippo, courses: [] };
+    groupes[k].courses.push(c);
+  }
+
+  let html = '';
+  for (const [key, grp] of Object.entries(groupes)) {
+    html += `<div class="reunion-group">
+      <div class="reunion-label">
+        <div class="reunion-hippo">${grp.nom}</div>
+        <div class="reunion-code">${grp.code}</div>
+      </div>`;
+
+    for (const c of grp.courses) {
+      const id = `${c.num_reunion}_${c.num_course}`;
+      html += `
+        <button class="course-btn" id="cb_${id}"
+                onclick="selectCourse(${c.num_reunion}, ${c.num_course}, '${c.code_hippo}')">
+          <div class="cb-num">C${c.num_externe || c.num_course}</div>
+          <div class="cb-body">
+            <div class="cb-nom">${c.libelle_court || c.libelle || 'Course ' + c.num_course}</div>
+            <div class="cb-meta">${c.distance}m · ${c.nb_partants} partants</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
+            <div class="cb-heure">${msToHeure(c.heure)}</div>
+            ${c.course_trackee ? '<div class="badge-tracked">TRACKÉ</div>' : ''}
+          </div>
+        </button>`;
+    }
+    html += `</div>`;
+  }
+
+  document.getElementById('sidebarContent').innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SÉLECTION D'UNE COURSE
+// ═══════════════════════════════════════════════════════════
+async function selectCourse(numReunion, numCourse, codeHippo) {
+  // Highlight
+  document.querySelectorAll('.course-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById(`cb_${numReunion}_${numCourse}`);
+  if (btn) btn.classList.add('active');
+
+  const course = S.courses.find(c => c.num_reunion === numReunion && c.num_course === numCourse);
+  S.currentCours = course;
+  S.activeTab    = 'partants';
+  S.partantsData = null;
+
+  // Affiche le header tout de suite + loading
+  const iso = document.getElementById('datePicker').value;
+  renderCourseShell(course, iso, true);
+  setStatus(`Chargement R${numReunion}C${numCourse}…`);
+
+  const jour = isoToPmu(iso);
+  try {
+    const res  = await fetch(`/api/course/partants?jour=${jour}&reunion=${numReunion}&course=${numCourse}&max_hist=6`);
+    const data = await res.json();
+    S.partantsData = data.partants || [];
+    S.courseRef    = data.course_ref || null;
+    renderCourseShell(course, iso, false);
+    const nbTrack = S.partantsData.filter(p => p.nb_courses_trackers > 0).length;
+    setStatus(`${S.partantsData.length} partants · ${nbTrack} avec tracking`, true);
+    toast(`${nbTrack} partants avec données de tracking`);
+  } catch (e) {
+    setStatus('Erreur de chargement');
+    toast('Erreur : ' + e.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RENDU COURSE
+// ═══════════════════════════════════════════════════════════
+function renderCourseShell(course, iso, loading) {
+  const dateDisp = iso.split('-').reverse().join('/');
+  const tracked  = course.course_trackee ? '<div class="ch-tag green">✓ COURSE TRACKÉE</div>' : '';
+  const surfTag  = course.surface
+    ? `<div class="ch-tag" style="border-color:${course.surface==='PSF'?'#3a7bd5':'#2ecc71'};color:${course.surface==='PSF'?'#3a7bd5':'#2ecc71'};">${course.surface}</div>`
+    : '';
+
+  let html = `
+    <div class="course-header">
+      <div class="ch-eyebrow">R${course.num_reunion} · C${course.num_externe || course.num_course} · ${course.code_hippo} · ${dateDisp}</div>
+      <div class="ch-title">${course.libelle || 'Course ' + course.num_course}</div>
+      <div class="ch-tags">
+        <div class="ch-tag gold">${course.distance} m</div>
+        ${surfTag}
+        ${(S.courseRef?.terrain || course.terrain) ? `<div class="ch-tag">${S.courseRef?.terrain || course.terrain}</div>` : ''}
+        <div class="ch-tag">${course.nb_partants} partants</div>
+        ${course.dotation ? `<div class="ch-tag">${(course.dotation/1000).toFixed(0)} k€</div>` : ''}
+        ${tracked}
+      </div>
+    </div>`;
+
+  if (loading) {
+    html += `<div class="loading-bar"><div class="spin"></div>Récupération des performances et tracking… (peut prendre 10–30s)</div>`;
+  } else {
+    html += `
+      <div class="tabs-bar">
+        <button class="tab-btn ${S.activeTab === 'partants' ? 'active' : ''}"
+                onclick="switchTab('partants')">PARTANTS & HISTORIQUE</button>
+        <button class="tab-btn ${S.activeTab === 'comparatif' ? 'active' : ''}"
+                onclick="switchTab('comparatif')">COMPARATIF</button>
+        <div style="flex:1"></div>
+        <button class="filter-btn ${S.filtreDistance ? 'active' : ''}"
+                onclick="toggleFiltre('distance')" title="Afficher uniquement les courses à distance similaire (±10%)">
+          📏 Distance ±10%
+        </button>
+        <button class="filter-btn ${S.filtreSurface ? 'active' : ''}"
+                onclick="toggleFiltre('surface')" title="Afficher uniquement les courses sur même surface">
+          🌿 Même surface
+        </button>
+      </div>
+      <div class="tab-content" id="tabContent">
+        ${S.activeTab === 'partants' ? renderPartants() : renderComparatif()}
+      </div>`;
+  }
+
+  document.getElementById('mainPanel').innerHTML = html;
+}
+
+function switchTab(tab) {
+  S.activeTab = tab;
+  renderCourseShell(S.currentCours, document.getElementById('datePicker').value, false);
+}
+
+function toggleFiltre(type) {
+  if (type === 'distance') S.filtreDistance = !S.filtreDistance;
+  if (type === 'surface')  S.filtreSurface  = !S.filtreSurface;
+  // Re-render le comparatif si actif
+  if (S.activeTab === 'comparatif') switchTab('comparatif');
+  renderCourseShell(S.currentCours, document.getElementById('datePicker').value, false);
+}
+
+function courseMatcheFiltres(h) {
+  // Vérifie si une course historique passe les filtres actifs
+  const ref = S.courseRef;
+  if (!ref) return { visible: true, grise: false };
+
+  let grise = false;
+
+  if (S.filtreDistance && ref.distance && h.distance) {
+    const ratio = Math.abs(ref.distance - h.distance) / ref.distance;
+    if (ratio > 0.10) grise = true;
+  }
+
+  if (S.filtreSurface && ref.surface) {
+    // Détecte surface de la course historique depuis le terrain PMU
+    const terrain = (h.terrain || '').toUpperCase();
+    const isPsfHist = terrain.includes('STANDARD') || terrain.includes('PSF') || terrain.includes('SABLE');
+    const isPsfRef  = ref.surface === 'PSF';
+    if (isPsfHist !== isPsfRef) grise = true;
+  }
+
+  return { visible: true, grise };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  TAB : PARTANTS
+// ═══════════════════════════════════════════════════════════
+function renderPartants() {
+  if (!S.partantsData) return '';
+
+  let html = '<div class="partants-list">';
+  for (const p of S.partantsData) {
+    const nbT   = p.nb_courses_trackers || 0;
+    const tCls  = nbT > 0 ? 'has' : 'none';
+    const tTxt  = nbT > 0 ? `${nbT} tracking${nbT > 1 ? 's' : ''}` : 'pas de tracking';
+
+    // Stats carrière
+    const hasStat = p.nb_courses != null;
+    const nbC = p.nb_courses   ?? '—';
+    const nbV = p.nb_victoires ?? '—';
+    const nbP = p.nb_places    ?? '—';
+    const winRate = (p.nb_courses > 0 && p.nb_victoires != null)
+      ? Math.round(p.nb_victoires / p.nb_courses * 100) : null;
+    const placeRate = (p.nb_courses > 0 && p.nb_places != null)
+      ? Math.round(p.nb_places / p.nb_courses * 100) : null;
+
+    const statsHtml = hasStat ? `
+      <div class="horse-stats-row">
+        <span class="stat-pill" title="Courses courues"><span class="stat-ico">🏁</span>${nbC} courses</span>
+        <span class="stat-pill stat-win" title="Victoires${winRate != null ? ' (' + winRate + '%)' : ''}"><span class="stat-ico">🥇</span>${nbV} vic.${winRate != null ? ` <em>${winRate}%</em>` : ''}</span>
+        <span class="stat-pill stat-place" title="Placés (1er-3e)${placeRate != null ? ' (' + placeRate + '%)' : ''}"><span class="stat-ico">🏅</span>${nbP} placés${placeRate != null ? ` <em>${placeRate}%</em>` : ''}</span>
+      </div>` : '';
+
+    html += `
+      <div class="horse-card" id="hc_${p.num}">
+        <div class="horse-card-header" onclick="toggleHorse(${p.num})">
+          <div class="horse-num">${p.num}</div>
+          <div class="horse-info">
+            <div class="horse-nom">${p.nom}</div>
+            <div class="horse-meta">${p.jockey || '—'} · ${p.age || '?'}${p.sexe || ''} · ${p.poids ? p.poids + ' kg' : ''} · corde ${p.corde || '?'}</div>
+            ${statsHtml}
+          </div>
+          <div class="horse-musique">${p.musique || ''}</div>
+          <div class="horse-tracking-status">
+            <div class="tracking-count ${tCls}">${tTxt}</div>
+          </div>
+        </div>
+        <div class="horse-detail">
+          ${renderHorseHistory(p)}
+        </div>
+      </div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+function toggleHorse(num) {
+  const card = document.getElementById(`hc_${num}`);
+  if (card) card.classList.toggle('open');
+}
+
+function renderHorseHistory(p) {
+  const hist = p.historique || [];
+  if (!hist.length) {
+    return `<div class="no-track-badge">Aucune course récente disponible.</div>`;
+  }
+
+  let html = `<div class="history-label">HISTORIQUE · ${hist.length} COURSES · DONNÉES DE TRACKING</div>
+    <div class="history-list">`;
+
+  for (const h of hist) {
+    const hasTData = h.tracking && h.tracking.troncons && h.tracking.troncons.length > 0;
+    const cardCls  = hasTData ? 'has-tracking' : h.course_trackee ? 'has-tracking' : 'no-tracking';
+    const cl       = h.classement || '?';
+    const clCls    = clClass(String(cl));
+    const filtre   = courseMatcheFiltres(h);
+    const griseStyle = filtre.grise ? 'opacity:0.4;' : '';
+
+    // Badge surface
+    const terrain = (h.terrain || '').toUpperCase();
+    const isPsf   = terrain.includes('STANDARD') || terrain.includes('PSF') || terrain.includes('SABLE');
+    const surfBadge = `<span style="font-size:9px;font-family:var(--mono);padding:1px 5px;border-radius:3px;
+      background:${isPsf ? 'rgba(58,123,213,.15)' : 'rgba(46,204,113,.15)'};
+      color:${isPsf ? '#3a7bd5' : '#2ecc71'};
+      border:1px solid ${isPsf ? 'rgba(58,123,213,.3)' : 'rgba(46,204,113,.3)'};
+      margin-left:6px;">${isPsf ? 'PSF' : 'GAZON'}</span>`;
+
+    const stratBadge = h.resolution_strategy === 'scan_brute'
+      ? `<span title="Trouvé par scan brute force C01→C10" style="font-size:9px;font-family:var(--mono);padding:1px 5px;border-radius:3px;background:rgba(192,57,43,.12);color:#c0392b;border:1px solid rgba(192,57,43,.3);margin-left:6px;">SCAN</span>`
+      : h.resolution_strategy === 'programme_pmu'
+      ? `<span title="Trouvé via programme PMU" style="font-size:9px;font-family:var(--mono);padding:1px 5px;border-radius:3px;background:rgba(26,107,60,.12);color:var(--green);border:1px solid rgba(26,107,60,.3);margin-left:6px;">PMU</span>`
+      : '';
+
+    html += `<div class="hist-card ${cardCls}" style="${griseStyle}">
+      <div class="hist-header">
+        <div>
+          <div class="hist-prix">${h.nom_prix || h.libelle || '—'}${surfBadge}${stratBadge}</div>
+          <div class="hist-meta">
+            ${h.date_display} · ${h.hippodrome || '—'} · ${h.distance || '?'}m
+            ${h.jockey ? ' · ' + h.jockey : ''}
+            ${h.terrain ? `<span style="font-size:9px;font-family:var(--mono);padding:1px 5px;border-radius:3px;background:rgba(122,112,96,.12);color:var(--muted);border:1px solid rgba(122,112,96,.3);margin-left:4px;">${h.terrain}</span>` : ''}
+          </div>
+        </div>
+        <div class="hist-classement ${clCls}">${cl}${!isNaN(parseInt(cl)) ? '<sup style="font-size:12px">e</sup>' : ''}</div>
+      </div>`;
+
+    if (hasTData) {
+      html += renderTronconsChart(h.tracking.troncons, h.tracking);
+
+      html += `<div class="hist-footer">`;
+      if (h.tracking.temps_officiel)    html += `<span>Temps : <strong>${h.tracking.temps_officiel}</strong></span>`;
+      if (h.tracking.temps_600m)        html += `<span>600m : <strong>${h.tracking.temps_600m}</strong></span>`;
+      if (h.tracking.vitesse_max_kmh)   html += `<span>Vmax : <strong>${h.tracking.vitesse_max_kmh} km/h</strong></span>`;
+      if (h.tracking.distance_parcourue) html += `<span>Dist : <strong>${h.tracking.distance_parcourue} m</strong></span>`;
+      html += `</div>`;
+
+    } else if (h.course_trackee) {
+      html += `<div class="no-track-badge">⟳ Course trackée · données non extraites</div>`;
+    } else if (!h.resolved) {
+      html += `<div class="no-track-badge">— Course non résolue dans le programme PMU</div>`;
+    } else {
+      html += `<div class="no-track-badge">— Pas de tracking disponible pour cette course</div>`;
+    }
+
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+function renderTronconsChart(troncons, tracking) {
+  if (!troncons || !troncons.length) return '';
+
+  const hasVitesse  = troncons.some(t => t.vitesse_kmh);
+  const hasPosition = troncons.some(t => t.position);
+
+  const secs   = troncons.map(t => t.temps_sec);
+  const minSec = Math.min(...secs);
+  const maxSec = Math.max(...secs);
+  const range  = maxSec - minSec || 1;
+
+  // ── Barres de temps (existant, enrichi) ──
+  let html = `<div class="troncons-row">`;
+  for (const t of troncons) {
+    const ratio = 1 - (t.temps_sec - minSec) / range;
+    const pct   = Math.round(20 + ratio * 80);
+    const r     = Math.round(26 + (192 - 26) * (1 - ratio));
+    const g     = Math.round(107 + (57 - 107) * (1 - ratio));
+    const b     = Math.round(60 + (43 - 60) * (1 - ratio));
+    const color = `rgb(${r},${g},${b})`;
+    const posTag = t.position ? `<div style="font-size:9px;color:var(--muted);margin-top:1px;">${t.position}e</div>` : '';
+    const vitTag = t.vitesse_kmh ? `<div style="font-size:8px;color:var(--blue);margin-bottom:2px;">${t.vitesse_kmh}km/h</div>` : '';
+
+    html += `<div class="troncon-col">
+      <div class="troncon-val">${t.temps}</div>
+      ${vitTag}
+      <div class="troncon-bar" style="height:${pct}%;background:${color};"></div>
+      <div class="troncon-lbl">${t.label || 'T'+t.index}</div>
+      ${posTag}
+    </div>`;
+  }
+  html += `</div>`;
+
+  // ── Indicateurs synthétiques ──
+  if (tracking) {
+    const badges = [];
+
+    if (tracking.redk)
+      badges.push(`<span class="ind-badge ind-neutral" title="Temps réduit (comparable entre courses)">⏱ redk ${tracking.redk}</span>`);
+
+    if (tracking.vitesse_moyenne_kmh)
+      badges.push(`<span class="ind-badge ind-neutral" title="Vitesse moyenne">⚡ ${tracking.vitesse_moyenne_kmh} km/h moy.</span>`);
+
+    if (tracking.remontee_places !== undefined) {
+      const r = tracking.remontee_places;
+      if (r >= 3)
+        badges.push(`<span class="ind-badge ind-good" title="A remonté ${r} places">↑ +${r} places</span>`);
+      else if (r <= -3)
+        badges.push(`<span class="ind-badge ind-bad" title="A reculé ${Math.abs(r)} places">↓ ${r} places</span>`);
+    }
+
+    if (tracking.profil_leader)
+      badges.push(`<span class="ind-badge ind-gold" title="${tracking.pct_top3}% du temps dans le top 3">🏇 Leader</span>`);
+
+    if (tracking.score_finish !== undefined) {
+      const sf = tracking.score_finish;
+      if (sf >= 1)
+        badges.push(`<span class="ind-badge ind-good" title="Finisseur : accélère en fin de course">🏁 Finisseur +${sf}%</span>`);
+      else if (sf <= -1)
+        badges.push(`<span class="ind-badge ind-bad" title="Faiblit en fin de course">📉 Faiblit ${sf}%</span>`);
+    }
+
+    if (tracking.regularite !== undefined && tracking.regularite <= 2)
+      badges.push(`<span class="ind-badge ind-good" title="Course régulière (écart ${tracking.regularite} km/h)">✓ Régulier</span>`);
+
+    if (badges.length) {
+      html += `<div class="ind-badges-row">${badges.join('')}</div>`;
+    }
+  }
+
+  return html;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  TAB : COMPARATIF — v2 avec score global + terrain similaire
+// ═══════════════════════════════════════════════════════════
+
+// Similarité terrain : retourne un score 0-3 (3=identique)
+function terrainSimilarity(t1, t2) {
+  if (!t1 || !t2) return 0;
+  const norm = s => (s || '').toLowerCase().trim();
+  const n1 = norm(t1), n2 = norm(t2);
+  if (n1 === n2) return 10; // identique
+
+  // Échelle linéaire gazon : du plus ferme au plus lourd
+  // Chaque terrain a une valeur numérique, similarité = 10 - |diff|
+  const SCALE = {
+    'très dur': 0, 'dur': 1, 'bon': 2, 'bon souple': 3,
+    'souple': 4, 'très souple': 5, 'collant': 6,
+    'lourd': 7, 'très lourd': 8
+  };
+  // Trouver la valeur la plus proche pour chaque terrain (match partiel)
+  const findVal = n => {
+    for (const [k, v] of Object.entries(SCALE)) {
+      if (n === k || n.includes(k) || k.includes(n)) return v;
+    }
+    return null;
+  };
+  const v1 = findVal(n1), v2 = findVal(n2);
+  if (v1 === null || v2 === null) return 1; // inconnu
+  const diff = Math.abs(v1 - v2);
+  // diff=0 → 10, diff=1 → 8, diff=2 → 6, diff=3 → 4, diff>=4 → 2
+  return Math.max(2, 10 - diff * 2);
+}
+
+// Retourne un label lisible de similarité terrain
+function terrainSimLabel(score) {
+  if (score === 10) return '≡ identique';
+  if (score >= 8)   return '≈ très proche';
+  if (score >= 6)   return '~ proche';
+  if (score >= 4)   return '△ différent';
+  return '✕ très différent';
+}
+function terrainSimColor(score) {
+  if (score === 10) return 'var(--green)';
+  if (score >= 8)   return '#2ecc71';
+  if (score >= 6)   return 'var(--gold)';
+  if (score >= 4)   return 'var(--muted)';
+  return 'var(--red)';
+}
+
+// Sélectionne la meilleure course de référence pour un cheval
+// = la plus récente avec tracking dont le terrain est le plus proche
+function selectRefCourse(partant, terrainCoursDuJour, surfaceCoursDuJour) {
+  const ref = S.courseRef;
+
+  let hist = (partant.historique || []).filter(h =>
+    h.tracking && h.tracking.troncons && h.tracking.troncons.length > 0
+  );
+  if (!hist.length) return null;
+
+  // Applique les filtres actifs pour exclure les courses non comparables
+  if (S.filtreSurface && surfaceCoursDuJour) {
+    hist = hist.filter(h => {
+      const terrainH = (h.terrain || '').toUpperCase();
+      const isPsfH   = terrainH.includes('STANDARD') || terrainH.includes('PSF') || terrainH.includes('SABLE');
+      const surfH    = isPsfH ? 'PSF' : 'GAZON';
+      return surfH === surfaceCoursDuJour;
+    });
+  }
+
+  if (S.filtreDistance && ref?.distance) {
+    hist = hist.filter(h => {
+      if (!h.distance) return true; // pas de distance connue → on garde
+      return Math.abs(ref.distance - h.distance) / ref.distance <= 0.10;
+    });
+  }
+
+  if (!hist.length) return null;
+
+  // Score de similarité terrain pour chaque course restante
+  let best = null, bestScore = -1;
+  for (const h of hist) {
+    const terrainH = (h.terrain || '').toUpperCase();
+    const isPsfH   = terrainH.includes('STANDARD') || terrainH.includes('PSF') || terrainH.includes('SABLE');
+    const surfH    = isPsfH ? 'PSF' : 'GAZON';
+    const surfMatch = surfH === surfaceCoursDuJour ? 10 : 0;
+    const simTerrain = terrainSimilarity(h.terrain, terrainCoursDuJour);
+    const score = surfMatch + simTerrain * 3;
+    if (score > bestScore) { bestScore = score; best = h; }
+  }
+  return best;
+}
+
+// Normalise un tableau de valeurs en scores 0-10
+// invert=true : plus la valeur est basse, meilleur le score
+function normalize(vals, invert = false) {
+  const clean = vals.filter(v => v != null && !isNaN(v));
+  if (clean.length < 2) return vals.map(v => v != null ? 5 : null);
+  const mn = Math.min(...clean), mx = Math.max(...clean);
+  if (mx === mn) return vals.map(v => v != null ? 5 : null);
+  return vals.map(v => {
+    if (v == null || isNaN(v)) return null;
+    const ratio = (v - mn) / (mx - mn);
+    return Math.round((invert ? (1 - ratio) : ratio) * 10);
+  });
+}
+
+function rankOf(score, scores) {
+  const valid = scores.filter(s => s != null).sort((a, b) => b - a);
+  const r = valid.indexOf(score);
+  return r >= 0 ? r + 1 : null;
+}
+
+function renderComparatif() {
+  if (!S.partantsData) return '';
+
+  const terrainDuJour  = S.courseRef?.terrain || '';
+  const surfaceDuJour  = S.courseRef?.surface || 'GAZON';
+
+  // Pour chaque partant, sélectionner la course de référence
+  const refs = S.partantsData.map(p => ({
+    partant: p,
+    ref: selectRefCourse(p, terrainDuJour, surfaceDuJour)
+  }));
+
+  const avecRef = refs.filter(r => r.ref !== null);
+
+  if (!avecRef.length) {
+    return `<div class="empty-state" style="height:300px;">
+      <div class="empty-glyph" style="font-size:40px;">📊</div>
+      <h2 style="font-size:18px;">PAS DE DONNÉES DE TRACKING</h2>
+      <p>Le comparatif nécessite des données de tracking France Galop.</p>
+    </div>`;
+  }
+
+  // ── Extraction des indicateurs ──
+  const getInd = (ref, key) => ref?.tracking?.[key] ?? null;
+
+  const redkVals   = refs.map(r => getInd(r.ref, 'redk_sec'));
+  const v600Vals   = refs.map(r => {
+    const t = r.ref?.tracking;
+    if (!t) return null;
+    // Priorité : valeur officielle France Galop lue dans le PDF
+    if (t.temps_600m_sec) return t.temps_600m_sec;
+    // Fallback : somme des 3 derniers tronçons
+    if (!t.troncons?.length) return null;
+    const last3 = t.troncons.slice(-3);
+    return last3.length === 3 ? last3.reduce((s, tr) => s + tr.temps_sec, 0) : null;
+  });
+  const vmaxVals   = refs.map(r => getInd(r.ref, 'vitesse_max_kmh'));
+  const vmoyVals   = refs.map(r => getInd(r.ref, 'vitesse_moyenne_kmh'));
+  const finishVals = refs.map(r => getInd(r.ref, 'score_finish'));
+  const regVals    = refs.map(r => getInd(r.ref, 'regularite'));
+
+  // Normalisation (invert pour redk/600m/regularite : plus bas = meilleur)
+  const scoreRedk   = normalize(redkVals,   true);
+  const score600    = normalize(v600Vals,    true);
+  const scoreVmax   = normalize(vmaxVals,    false);
+  const scoreVmoy   = normalize(vmoyVals,    false);
+  const scoreFinish = normalize(finishVals,  false);
+  const scoreReg    = normalize(regVals,     true);
+
+  // Score global pondéré /100
+  const POIDS = { redk: 0.30, v600: 0.25, vmax: 0.15, vmoy: 0.15, finish: 0.10, reg: 0.05 };
+  const globalScores = refs.map((_, i) => {
+    let total = 0, totalPoids = 0;
+    const add = (score, poids) => {
+      if (score != null) { total += score * poids; totalPoids += poids; }
+    };
+    add(scoreRedk[i],   POIDS.redk);
+    add(score600[i],    POIDS.v600);
+    add(scoreVmax[i],   POIDS.vmax);
+    add(scoreVmoy[i],   POIDS.vmoy);
+    add(scoreFinish[i], POIDS.finish);
+    add(scoreReg[i],    POIDS.reg);
+    return totalPoids > 0 ? Math.round(total / totalPoids * 10) : null;
+  });
+
+  // Tri par score global décroissant
+  const ranked = refs.map((r, i) => ({ ...r, i, globalScore: globalScores[i] }))
+    .sort((a, b) => (b.globalScore ?? -1) - (a.globalScore ?? -1));
+
+  // ── SECTION 1 : Classement global ──
+  let html = `<div class="comp-section-title">CLASSEMENT GLOBAL · terrain de référence : <strong>${terrainDuJour || surfaceDuJour || '—'}</strong></div>`;
+  html += `<div class="comp-podium">`;
+
+  for (const { partant: p, ref, globalScore, i } of ranked) {
+    const rank = ranked.indexOf(ranked.find(r => r.partant === p)) + 1;
+    const hasData = ref !== null;
+    const rankCls = rank === 1 ? 'rank-1' : rank === 2 ? 'rank-2' : rank === 3 ? 'rank-3' : '';
+    const scoreBar = hasData ? `<div class="score-bar-wrap"><div class="score-bar" style="width:${globalScore}%"></div></div>` : '';
+
+    // Badge terrain similarité
+    const simScore = ref ? terrainSimilarity(ref.terrain, terrainDuJour) : 0;
+    const simLabel = terrainSimLabel(simScore);
+    const simColor = terrainSimColor(simScore);
+
+    // Badges indicateurs
+    const t = ref?.tracking;
+    const badges = [];
+    if (t?.profil_leader) badges.push(`<span class="ind-badge ind-gold">🐎 Leader</span>`);
+    if (t?.score_finish >= 1) badges.push(`<span class="ind-badge ind-good">🏁 Finisseur</span>`);
+    if (t?.remontee_places >= 3) badges.push(`<span class="ind-badge ind-good">↑ +${t.remontee_places}</span>`);
+    if (t?.remontee_places <= -3) badges.push(`<span class="ind-badge ind-bad">↓ ${t.remontee_places}</span>`);
+    if (t?.regularite <= 2) badges.push(`<span class="ind-badge ind-neutral">✓ Régulier</span>`);
+
+    html += `<div class="podium-row ${rankCls} ${!hasData ? 'no-data' : ''}">
+      <div class="podium-rank">${rank}</div>
+      <div class="podium-num">${p.num}</div>
+      <div class="podium-info">
+        <div class="podium-nom">${p.nom}</div>
+        <div class="podium-ref">
+          ${ref
+            ? `<span style="font-weight:600;color:var(--ink);">${ref.nom_prix || '—'}</span>
+               <span style="color:var(--muted)"> · ${ref.date_display} · ${ref.distance || '?'}m</span>
+               <span style="margin-left:6px;font-family:var(--mono);font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(122,112,96,.1);border:1px solid var(--border);color:var(--muted);">${ref.terrain || '—'}</span>
+               <span style="margin-left:4px;font-size:9px;color:${simColor};">${simLabel}</span>`
+            : '<span style="color:var(--border)">Pas de tracking disponible</span>'}
+        </div>
+        ${badges.length ? `<div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;">${badges.join('')}</div>` : ''}
+      </div>
+      <div class="podium-score">
+        ${hasData ? `<div class="score-value">${globalScore}<span style="font-size:11px;color:var(--muted)">/100</span></div>` : '<div style="color:var(--border);font-size:12px;">—</div>'}
+        ${scoreBar}
+      </div>
+    </div>`;
+  }
+  html += `</div>`;
+
+  // ── SECTION 2 : Tableaux détail (3 stratégies) ──
+  html += buildCompTableSection('recent', terrainDuJour, surfaceDuJour);
+  html += buildCompTableSection('best',   terrainDuJour, surfaceDuJour);
+  html += buildCompTableSection('avg',    terrainDuJour, surfaceDuJour);
+
+  return html;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Sélecteurs de course selon la stratégie
+// ─────────────────────────────────────────────────────────────
+function getHistTracked(partant, terrainDuJour, surfaceDuJour) {
+  let hist = (partant.historique || []).filter(h =>
+    h.tracking && h.tracking.troncons && h.tracking.troncons.length > 0
+  );
+  if (S.filtreSurface && surfaceDuJour) {
+    hist = hist.filter(h => {
+      const t = (h.terrain || '').toUpperCase();
+      const psf = t.includes('STANDARD') || t.includes('PSF') || t.includes('SABLE');
+      return (psf ? 'PSF' : 'GAZON') === surfaceDuJour;
+    });
+  }
+  if (S.filtreDistance && S.courseRef?.distance) {
+    hist = hist.filter(h => !h.distance ||
+      Math.abs(S.courseRef.distance - h.distance) / S.courseRef.distance <= 0.10);
+  }
+  return hist;
+}
+
+function selectRef_recent(partant, terrainDuJour, surfaceDuJour) {
+  // Déjà implémenté dans selectRefCourse — on réutilise
+  return selectRefCourse(partant, terrainDuJour, surfaceDuJour);
+}
+
+function selectRef_best(partant, terrainDuJour, surfaceDuJour) {
+  // Meilleure course = redk le plus bas (si dispo) sinon vitesse moy la plus haute
+  const hist = getHistTracked(partant, terrainDuJour, surfaceDuJour);
+  if (!hist.length) return null;
+  return hist.reduce((best, h) => {
+    const rBest = best?.tracking?.redk_sec;
+    const rH    = h.tracking?.redk_sec;
+    if (!rBest && !rH) {
+      // fallback vitesse moyenne
+      return (h.tracking?.vitesse_moyenne_kmh || 0) > (best?.tracking?.vitesse_moyenne_kmh || 0) ? h : best;
+    }
+    if (!rBest) return h;
+    if (!rH)    return best;
+    return rH < rBest ? h : best;
+  }, hist[0]);
+}
+
+function selectRef_avg(partant, terrainDuJour, surfaceDuJour) {
+  // Retourne un objet "synthétique" avec la moyenne des 3 meilleures courses
+  const hist = getHistTracked(partant, terrainDuJour, surfaceDuJour);
+  if (!hist.length) return null;
+  // Trie par redk croissant, fallback vitesse moyenne décroissante
+  const sorted = [...hist].sort((a, b) => {
+    const ra = a.tracking?.redk_sec, rb = b.tracking?.redk_sec;
+    if (ra && rb) return ra - rb;
+    if (ra) return -1; if (rb) return 1;
+    return (b.tracking?.vitesse_moyenne_kmh || 0) - (a.tracking?.vitesse_moyenne_kmh || 0);
+  });
+  const top = sorted.slice(0, 3);
+  if (top.length === 1) return top[0]; // pas besoin de moyenner
+
+  // Calcule les moyennes
+  const avg = key => {
+    const vals = top.map(h => h.tracking?.[key]).filter(v => v != null);
+    return vals.length ? Math.round(vals.reduce((s,v) => s+v, 0) / vals.length * 100) / 100 : null;
+  };
+  const avg600 = (() => {
+    const vals = top.map(h => {
+      const t = h.tracking;
+      if (!t) return null;
+      // Priorité : valeur officielle France Galop
+      if (t.temps_600m_sec) return t.temps_600m_sec;
+      // Fallback : 3 derniers tronçons
+      if (!t.troncons?.length) return null;
+      const l3 = t.troncons.slice(-3);
+      return l3.length === 3 ? l3.reduce((s, tr) => s + tr.temps_sec, 0) : null;
+    }).filter(v => v != null);
+    return vals.length ? Math.round(vals.reduce((s,v) => s+v,0)/vals.length * 100)/100 : null;
+  })();
+
+  return {
+    _isSynthetic: true,
+    _count: top.length,
+    nom_prix: `Moy. ${top.length} courses`,
+    date_display: `${top[top.length-1].date_display} → ${top[0].date_display}`,
+    distance: top[0].distance,
+    terrain: top[0].terrain, // terrain de la meilleure course
+    tracking: {
+      redk_sec:           avg('redk_sec'),
+      vitesse_max_kmh:    avg('vitesse_max_kmh'),
+      vitesse_moyenne_kmh: avg('vitesse_moyenne_kmh'),
+      score_finish:       avg('score_finish'),
+      regularite:         avg('regularite'),
+      _avg600:            avg600,
+      troncons: top[0].tracking.troncons, // tronçons de la meilleure pour affichage
+    }
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Construction d'un tableau comparatif selon la stratégie
+// ─────────────────────────────────────────────────────────────
+function buildCompTableSection(strategy, terrainDuJour, surfaceDuJour) {
+  const LABELS = {
+    recent: { title: 'OPTION RÉCENTE', sub: 'Dernière course trackée sur terrain similaire', id: 'comp-recent' },
+    best:   { title: 'OPTION A — MEILLEURE COURSE', sub: 'Course avec le meilleur redk sur terrain similaire (potentiel max)', id: 'comp-best' },
+    avg:    { title: 'OPTION B — MOYENNE DES 3 MEILLEURES', sub: 'Moyenne des 3 meilleures courses sur terrain similaire (plus robuste)', id: 'comp-avg' },
+  };
+  const { title, sub, id } = LABELS[strategy];
+
+  const selectFn = strategy === 'recent' ? selectRef_recent
+                 : strategy === 'best'   ? selectRef_best
+                 :                         selectRef_avg;
+
+  const refsS = S.partantsData.map(p => ({
+    partant: p,
+    ref: selectFn(p, terrainDuJour, surfaceDuJour),
+    i: S.partantsData.indexOf(p),
+  }));
+
+  const getInd = (ref, key) => {
+    if (!ref?.tracking) return null;
+    if (key === '_v600') {
+      if (ref._isSynthetic) return ref.tracking._avg600;
+      // Priorité : valeur officielle France Galop lue dans le PDF
+      if (ref.tracking.temps_600m_sec) return ref.tracking.temps_600m_sec;
+      // Fallback : somme des 3 derniers tronçons
+      const t = ref.tracking.troncons;
+      if (!t?.length) return null;
+      const l3 = t.slice(-3);
+      return l3.length === 3 ? l3.reduce((s, tr) => s + tr.temps_sec, 0) : null;
+    }
+    return ref.tracking[key] ?? null;
+  };
+
+  const redkV   = refsS.map(r => getInd(r.ref, 'redk_sec'));
+  const v600V   = refsS.map(r => getInd(r.ref, '_v600'));
+  const vmaxV   = refsS.map(r => getInd(r.ref, 'vitesse_max_kmh'));
+  const vmoyV   = refsS.map(r => getInd(r.ref, 'vitesse_moyenne_kmh'));
+  const finV    = refsS.map(r => getInd(r.ref, 'score_finish'));
+  const regV    = refsS.map(r => getInd(r.ref, 'regularite'));
+
+  const sRedk = normalize(redkV, true);
+  const s600  = normalize(v600V, true);
+  const sVmax = normalize(vmaxV, false);
+  const sVmoy = normalize(vmoyV, false);
+  const sFin  = normalize(finV,  false);
+  const sReg  = normalize(regV,  true);
+
+  const POIDS = { redk:0.30, v600:0.25, vmax:0.15, vmoy:0.15, finish:0.10, reg:0.05 };
+  const gScores = refsS.map((_, i) => {
+    let tot = 0, tp = 0;
+    const add = (s, p) => { if (s != null) { tot += s * p; tp += p; } };
+    add(sRedk[i], POIDS.redk); add(s600[i], POIDS.v600);
+    add(sVmax[i], POIDS.vmax); add(sVmoy[i], POIDS.vmoy);
+    add(sFin[i],  POIDS.finish); add(sReg[i], POIDS.reg);
+    return tp > 0 ? Math.round(tot / tp * 10) : null;
+  });
+
+  const INDS = [
+    { key: 'score',  label: 'SCORE',  scores: gScores, vals: gScores, fmt: v => v != null ? v+'' : '—',              desc: 'Score global',                 invert: false },
+    { key: 'redk',   label: 'REDK',   scores: sRedk,   vals: redkV,   fmt: v => v ? v.toFixed(2)+'s' : '—',          desc: 'Temps réduit (↓ meilleur)',    invert: true  },
+    { key: 'v600',   label: '600M',   scores: s600,    vals: v600V,   fmt: v => v ? v.toFixed(2)+'s' : '—',          desc: 'Derniers 600m (↓ meilleur)',   invert: true  },
+    { key: 'vmax',   label: 'V.MAX',  scores: sVmax,   vals: vmaxV,   fmt: v => v ? v+'km/h' : '—',                  desc: 'Vitesse max (↑ meilleur)',     invert: false },
+    { key: 'vmoy',   label: 'V.MOY',  scores: sVmoy,   vals: vmoyV,   fmt: v => v ? v+'km/h' : '—',                  desc: 'Vitesse moyenne (↑ meilleur)', invert: false },
+    { key: 'finish', label: 'FINISH', scores: sFin,    vals: finV,    fmt: v => v != null ? (v>0?'+':'')+v+'%' : '—', desc: 'Accélération finale',          invert: false },
+    { key: 'reg',    label: 'RÉGUL.', scores: sReg,    vals: regV,    fmt: v => v != null ? v+'km/h' : '—',          desc: 'Régularité (↓ meilleur)',      invert: true  },
+  ];
+
+  const ranked = [...refsS].sort((a, b) => (gScores[b.i] ?? -1) - (gScores[a.i] ?? -1));
+
+  // Stocker pour le tri
+  if (!S._compDataAll) S._compDataAll = {};
+  S._compDataAll[strategy] = { refs: refsS, ranked, INDS, terrainDuJour };
+
+  let html = `<div class="comp-section-title" style="margin-top:36px;">
+    ${title}
+    <span style="font-size:9px;color:var(--muted);font-weight:400;letter-spacing:1px;margin-left:8px;">— ${sub}</span>
+    <span style="font-size:9px;color:var(--muted);font-weight:400;letter-spacing:1px;"> · clic sur un en-tête pour trier</span>
+  </div>`;
+
+  html += `<div class="comp-wrapper"><table class="comp-table" id="compTable-${id}">
+    <thead><tr>${renderCompHeadersFor(INDS, strategy)}</tr></thead>
+    <tbody id="compTbody-${id}">
+      ${renderCompRowsFor(ranked, INDS, terrainDuJour, strategy)}
+    </tbody>
+  </table></div>`;
+
+  html += `<div class="comp-legend">
+    <span class="l-best">Score 8-10</span><span class="l-good">Score 6-8</span>
+    <span class="l-mid">Score 4-6</span><span class="l-slow">Score 0-4</span>
+  </div>`;
+
+  return html;
+}
+
+
+// ═══════════════════════════════════════════════════════════
+//  COMPARATIF — HELPERS TRI (versions avec stratégie)
+// ═══════════════════════════════════════════════════════════
+function renderCompHeadersFor(INDS, strategy) {
+  const cols = [
+    { key: 'num',   label: '#',           sortable: true  },
+    { key: 'nom',   label: 'CHEVAL',      sortable: true  },
+    { key: 'courses',   label: 'COURSES',  sortable: true, desc: 'Nombre de courses courues' },
+    { key: 'victoires', label: 'VICT.',    sortable: true, desc: 'Nombre de victoires' },
+    { key: 'places',    label: 'PLACÉS',   sortable: true, desc: 'Nombre de placés (top 3)' },
+    ...INDS.map(ind => ({ key: ind.key, label: ind.label, sortable: true, desc: ind.desc })),
+    { key: 'cours', label: 'COURSE RÉF.', sortable: false },
+    { key: 'terr',  label: 'TERRAIN',     sortable: false },
+  ];
+  const sort = S.compSortAll?.[strategy] || { key: 'score', dir: 'desc' };
+  return cols.map(col => {
+    if (!col.sortable) return `<th>${col.label}</th>`;
+    const isActive = sort.key === col.key;
+    const arrow    = isActive ? (sort.dir === 'desc' ? ' ↓' : ' ↑') : ' ⇅';
+    const style    = isActive ? 'color:var(--gold-lt);cursor:pointer;' : 'cursor:pointer;opacity:.7;';
+    return `<th title="${col.desc||''}" style="${style}" onclick="sortCompTableFor('${col.key}','${strategy}')">${col.label}<span style="font-size:9px;">${arrow}</span></th>`;
+  }).join('');
+}
+
+function renderCompRowsFor(ranked, INDS, terrainDuJour, strategy) {
+  const sort = S.compSortAll?.[strategy] || { key: 'score', dir: 'desc' };
+  const { key, dir } = sort;
+
+  // ── Calcul des rangs par colonne, une seule fois, indépendant du tri ──
+  // Pour chaque indicateur, on trie tous les items par valeur brute et on
+  // attribue un rang stable : le cheval avec le meilleur temps aura toujours "1e",
+  // quel que soit l'ordre d'affichage du tableau.
+  const colRanks = {}; // colRanks[ind.key][i] = rang (1-based)
+  for (const ind of INDS) {
+    // Collecte les (index, valeur) des items ayant une valeur
+    const withVal = ranked
+      .map(item => ({ i: item.i, val: ind.vals[item.i] }))
+      .filter(x => x.val != null && !isNaN(x.val));
+    // Trie : invert=true → croissant (plus bas = meilleur), sinon décroissant
+    withVal.sort((a, b) => ind.invert ? a.val - b.val : b.val - a.val);
+    const ranks = {};
+    withVal.forEach((x, pos) => { ranks[x.i] = pos + 1; });
+    colRanks[ind.key] = ranks;
+  }
+
+  const sortVal = item => {
+    if (key === 'num') return item.partant.num;
+    if (key === 'nom') return item.partant.nom;
+    if (key === 'courses')   return item.partant.nb_courses   ?? -1;
+    if (key === 'victoires') return item.partant.nb_victoires ?? -1;
+    if (key === 'places')    return item.partant.nb_places    ?? -1;
+    const ind = INDS.find(d => d.key === key);
+    if (!ind) return -Infinity;
+    return ind.vals[item.i] ?? (dir === 'desc' ? -Infinity : Infinity);
+  };
+
+  const sorted = [...ranked].sort((a, b) => {
+    const va = sortVal(a), vb = sortVal(b);
+    if (va == null || va === -Infinity) return 1;
+    if (vb == null || vb === -Infinity) return -1;
+    if (typeof va === 'string') return dir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+    return dir === 'asc' ? va - vb : vb - va;
+  });
+
+  let html = '';
+  for (const item of sorted) {
+    const { partant: p, ref, i } = item;
+    const hasData  = ref !== null;
+    const gScore   = INDS.find(d => d.key === 'score')?.vals[i];
+    const globalRank = ranked.indexOf(ranked.find(r => r.partant === p)) + 1;
+    const rankCls  = globalRank === 1 ? 'style="color:var(--gold);font-weight:700"'
+                   : globalRank <= 3  ? 'style="color:var(--muted);font-weight:600"' : '';
+
+    // Stats carrière
+    const nbC = p.nb_courses   ?? null;
+    const nbV = p.nb_victoires ?? null;
+    const nbPl = p.nb_places   ?? null;
+    const wr  = (nbC > 0 && nbV != null) ? Math.round(nbV / nbC * 100) : null;
+    const pr  = (nbC > 0 && nbPl != null) ? Math.round(nbPl / nbC * 100) : null;
+    const tdStats = `
+      <td style="text-align:center;font-family:var(--mono);font-size:11px;">${nbC ?? '—'}</td>
+      <td style="text-align:center;font-family:var(--mono);font-size:11px;color:${nbV>0?'var(--gold)':'inherit'};">
+        ${nbV ?? '—'}${wr != null ? `<div style="font-size:9px;color:var(--muted);">${wr}%</div>` : ''}
+      </td>
+      <td style="text-align:center;font-family:var(--mono);font-size:11px;color:${nbPl>0?'#7a6a40':'inherit'};">
+        ${nbPl ?? '—'}${pr != null ? `<div style="font-size:9px;color:var(--muted);">${pr}%</div>` : ''}
+      </td>`;
+
+    let tdInds = '';
+    for (const ind of INDS) {
+      const score   = ind.scores[i];
+      const val     = ind.vals[i];
+      const isSort  = sort.key === ind.key;
+      const rankInd = colRanks[ind.key]?.[i] ?? null;
+
+      let cls = '';
+      if (score != null) {
+        if (score >= 8) cls = 'h-best'; else if (score >= 6) cls = 'h-good';
+        else if (score >= 4) cls = 'h-mid'; else cls = 'h-slow';
+      }
+      tdInds += `<td class="${cls}" style="text-align:center;${isSort?'background:rgba(184,134,11,.06);':''}">
+        <div style="font-weight:600;font-size:11px;">${ind.fmt(val)}</div>
+        ${rankInd ? `<div style="font-size:9px;color:var(--muted);">${rankInd}e</div>` : ''}
+      </td>`;
+    }
+
+    const simScore  = ref ? terrainSimilarity(ref.terrain, terrainDuJour) : 0;
+    const simColor  = terrainSimColor(simScore);
+    const simLabel2 = terrainSimLabel(simScore);
+    const isSynth   = ref?._isSynthetic;
+
+    html += `<tr ${!hasData ? 'style="opacity:.4"' : ''}>
+      <td class="num-td">${p.num}</td>
+      <td class="horse-td">${p.nom}</td>
+      ${tdStats}
+      ${tdInds}
+      <td style="font-size:10px;">
+        <div style="font-weight:600;color:var(--ink);">${ref?.nom_prix || '—'}${isSynth ? ` <span style="color:var(--gold);font-size:9px;">(${ref._count})</span>` : ''}</div>
+        <div style="color:var(--muted);margin-top:1px;">${ref?.date_display || ''} ${ref?.distance ? '· '+ref.distance+'m' : ''}</div>
+      </td>
+      <td style="font-size:10px;">
+        <div style="color:var(--muted);">${ref?.terrain || '—'}</div>
+        <div style="color:${simColor};font-size:9px;margin-top:1px;">${simLabel2}</div>
+      </td>
+    </tr>`;
+  }
+  return html;
+}
+
+function sortCompTableFor(key, strategy) {
+  if (!S._compDataAll?.[strategy]) return;
+  if (!S.compSortAll) S.compSortAll = {};
+  const cur = S.compSortAll[strategy] || { key: 'score', dir: 'desc' };
+  if (cur.key === key) {
+    S.compSortAll[strategy] = { key, dir: cur.dir === 'desc' ? 'asc' : 'desc' };
+  } else {
+    const ind = S._compDataAll[strategy].INDS.find(d => d.key === key);
+    S.compSortAll[strategy] = { key, dir: ind?.invert ? 'asc' : 'desc' };
+  }
+  const { ranked, INDS, terrainDuJour } = S._compDataAll[strategy];
+  const { id } = { recent:'comp-recent', best:'comp-best', avg:'comp-avg' }[strategy]
+    ? { id: `comp-${strategy}` } : { id: `comp-${strategy}` };
+  const tableId = `compTable-comp-${strategy}`;
+  const tbodyId = `compTbody-comp-${strategy}`;
+  const table   = document.getElementById(tableId);
+  if (table) table.querySelector('thead tr').innerHTML = renderCompHeadersFor(INDS, strategy);
+  const tbody = document.getElementById(tbodyId);
+  if (tbody) tbody.innerHTML = renderCompRowsFor(ranked, INDS, terrainDuJour, strategy);
+}
+
+function renderCompHeaders(INDS) {
+  const cols = [
+    { key: 'num',    label: '#',         sortable: true  },
+    { key: 'nom',    label: 'CHEVAL',    sortable: true  },
+    ...INDS.map(ind => ({ key: ind.key, label: ind.label, sortable: true, desc: ind.desc })),
+    { key: 'cours',  label: 'COURSE RÉF.', sortable: false },
+    { key: 'terr',   label: 'TERRAIN',   sortable: false },
+  ];
+  return cols.map(col => {
+    if (!col.sortable) return `<th>${col.label}</th>`;
+    const isActive = S.compSort.key === col.key;
+    const arrow    = isActive ? (S.compSort.dir === 'desc' ? ' ↓' : ' ↑') : ' ⇅';
+    const style    = isActive ? 'color:var(--gold-lt);cursor:pointer;' : 'cursor:pointer;opacity:.7;';
+    return `<th title="${col.desc || ''}" style="${style}" onclick="sortCompTable('${col.key}')">${col.label}<span style="font-size:9px;">${arrow}</span></th>`;
+  }).join('');
+}
+
+function renderCompRows(ranked, INDS, terrainDuJour) {
+  const { key, dir } = S.compSort;
+
+  // ── Calcul des rangs par colonne en amont, stable quel que soit le tri ──
+  const colRanks = {};
+  for (const ind of INDS) {
+    const withVal = ranked
+      .map(item => ({ i: item.i, val: ind.vals[item.i] }))
+      .filter(x => x.val != null && !isNaN(x.val));
+    withVal.sort((a, b) => ind.invert ? a.val - b.val : b.val - a.val);
+    const ranks = {};
+    withVal.forEach((x, pos) => { ranks[x.i] = pos + 1; });
+    colRanks[ind.key] = ranks;
+  }
+
+  // Valeur de tri pour une ligne
+  const sortVal = (item) => {
+    if (key === 'num')  return item.partant.num;
+    if (key === 'nom')  return item.partant.nom;
+    const ind = INDS.find(d => d.key === key);
+    if (!ind) return -Infinity;
+    return ind.vals[item.i] ?? (dir === 'desc' ? -Infinity : Infinity);
+  };
+
+  const sorted = [...ranked].sort((a, b) => {
+    const va = sortVal(a), vb = sortVal(b);
+    if (va == null || va === -Infinity) return 1;
+    if (vb == null || vb === -Infinity) return -1;
+    if (typeof va === 'string') return dir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+    return dir === 'asc' ? va - vb : vb - va;
+  });
+
+  let html = '';
+  for (const item of sorted) {
+    const { partant: p, ref, globalScore, i } = item;
+    const t       = ref?.tracking;
+    const hasData = ref !== null;
+    // Rang dans le classement global (pas le tri actuel)
+    const globalRank = ranked.indexOf(ranked.find(r => r.partant === p)) + 1;
+    const rankCls = globalRank === 1 ? 'style="color:var(--gold);font-weight:700"'
+                  : globalRank <= 3  ? 'style="color:var(--muted);font-weight:600"' : '';
+
+    let tdInds = '';
+    for (const ind of INDS) {
+      const score = ind.scores[i];
+      const val   = ind.vals[i];
+      const isSort    = S.compSort.key === ind.key;
+      const rankInd   = colRanks[ind.key]?.[i] ?? null;
+
+      let cls = '';
+      if (score != null) {
+        if (score >= 8)      cls = 'h-best';
+        else if (score >= 6) cls = 'h-good';
+        else if (score >= 4) cls = 'h-mid';
+        else                 cls = 'h-slow';
+      }
+
+      tdInds += `<td class="${cls}" style="text-align:center;${isSort ? 'background:rgba(184,134,11,.06);' : ''}">
+        <div style="font-weight:600;font-size:11px;">${ind.fmt(val)}</div>
+        ${rankInd ? `<div style="font-size:9px;color:var(--muted);">${rankInd}e</div>` : ''}
+      </td>`;
+    }
+
+    const simScore  = ref ? terrainSimilarity(ref?.terrain, terrainDuJour) : 0;
+    const simColor  = terrainSimColor(simScore);
+    const simLabel2 = terrainSimLabel(simScore);
+
+    html += `<tr ${!hasData ? 'style="opacity:.4"' : ''}>
+      <td class="num-td">${p.num}</td>
+      <td class="horse-td">${p.nom}</td>
+      ${tdInds}
+      <td style="font-size:10px;">
+        <div style="font-weight:600;color:var(--ink);">${ref?.nom_prix || '—'}</div>
+        <div style="color:var(--muted);margin-top:1px;">${ref?.date_display || ''} ${ref?.distance ? '· ' + ref.distance + 'm' : ''}</div>
+      </td>
+      <td style="font-size:10px;">
+        <div style="color:var(--muted);">${ref?.terrain || '—'}</div>
+        <div style="color:${simColor};font-size:9px;margin-top:1px;">${simLabel2}</div>
+      </td>
+    </tr>`;
+  }
+  return html;
+}
+
+function sortCompTable(key) {
+  if (!S._compData) return;
+  // Toggle direction si même colonne, sinon desc par défaut
+  if (S.compSort.key === key) {
+    S.compSort.dir = S.compSort.dir === 'desc' ? 'asc' : 'desc';
+  } else {
+    S.compSort.key = key;
+    // Pour les indicateurs "invert" (redk, 600m, reg) → asc = meilleur en premier
+    const ind = S._compData.INDS.find(d => d.key === key);
+    S.compSort.dir = ind?.invert ? 'asc' : 'desc';
+  }
+  const { ranked, INDS, terrainDuJour } = S._compData;
+  // Re-render headers + tbody
+  const table = document.getElementById('compTable');
+  if (!table) return;
+  table.querySelector('thead tr').innerHTML = renderCompHeaders(INDS);
+  document.getElementById('compTbody').innerHTML = renderCompRows(ranked, INDS, terrainDuJour);
+}
+
+</script>
+</body>
+</html>
