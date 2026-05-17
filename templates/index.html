@@ -848,6 +848,90 @@ input[type="date"]:focus { border-color: var(--gold); }
   from { transform: translateX(20px); opacity: 0; }
   to   { transform: translateX(0);    opacity: 1; }
 }
+
+/* ══════════════════════════════════════════════
+   MOBILE
+══════════════════════════════════════════════ */
+.mobile-back {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: var(--gold);
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  cursor: pointer;
+  padding: 0 16px;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  /* Header */
+  header { height: 52px; }
+  .logo-sub { display: none; }
+  .logo-block { padding: 0 14px; border-right: none; }
+  .date-label { display: none; }
+  .header-controls { padding: 0 10px; gap: 8px; flex: 1; }
+  .header-status { display: none; }
+  input[type="date"] { font-size: 13px; padding: 6px 8px; }
+  .btn { padding: 7px 12px; font-size: 9px; }
+
+  /* Layout : colonne unique */
+  .layout {
+    grid-template-columns: 1fr;
+    height: calc(100vh - 52px);
+  }
+
+  /* Par défaut sur mobile : sidebar visible, main caché */
+  .sidebar { display: flex; width: 100%; }
+  .main    { display: none; }
+
+  /* Quand une course est sélectionnée */
+  body.mobile-course .sidebar { display: none; }
+  body.mobile-course .main    { display: block; }
+  body.mobile-course .mobile-back { display: flex; }
+
+  /* Sidebar */
+  .course-btn { padding: 14px 16px; }
+  .cb-nom { font-size: 13px; }
+  .cb-meta { font-size: 11px; }
+
+  /* Course header */
+  .course-header { padding: 16px 16px 14px; }
+  .ch-title { font-size: 19px; }
+  .ch-tags { gap: 6px; }
+
+  /* Tabs */
+  .tabs-bar { padding: 0 16px; overflow-x: auto; gap: 0; }
+  .tab-btn { padding: 12px 14px; font-size: 9px; white-space: nowrap; }
+  .filter-btn { font-size: 10px; padding: 5px 10px; }
+
+  /* Contenu */
+  .tab-content { padding: 16px 12px 64px; }
+  .loading-bar { padding: 10px 16px; }
+
+  /* Cartes cheval */
+  .horse-card-header {
+    grid-template-columns: 40px 1fr auto;
+    padding: 12px 14px;
+    gap: 10px;
+  }
+  .horse-musique { display: none; }
+  .horse-num { font-size: 20px; }
+  .horse-info .horse-nom { font-size: 14px; }
+  .horse-detail { padding: 14px 12px 16px; }
+
+  /* Comparatif */
+  .podium-row { flex-direction: column; gap: 6px; }
+  .comp-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Toast */
+  .toast-zone { bottom: 16px; right: 12px; left: 12px; }
+  .toast { max-width: 100%; }
+}
 </style>
 </head>
 <body>
@@ -860,6 +944,7 @@ input[type="date"]:focus { border-color: var(--gold); }
       <div class="logo-sub">Analyse · Tracking · Comparatif</div>
     </div>
   </div>
+  <button class="mobile-back" onclick="mobileBack()">← COURSES</button>
   <div class="header-controls">
     <span class="date-label">PROGRAMME DU</span>
     <input type="date" id="datePicker">
@@ -1063,6 +1148,7 @@ async function selectCourse(numReunion, numCourse, codeHippo) {
   S.currentCours = course;
   S.activeTab    = 'partants';
   S.partantsData = null;
+  document.body.classList.add('mobile-course');
 
   // Affiche le header tout de suite + loading
   const iso = document.getElementById('datePicker').value;
@@ -1085,6 +1171,10 @@ async function selectCourse(numReunion, numCourse, codeHippo) {
     setStatus('Erreur de chargement');
     toast('Erreur : ' + e.message);
   }
+}
+
+function mobileBack() {
+  document.body.classList.remove('mobile-course');
 }
 
 async function loadAllTrackings(jour, reunion, course, gen) {
