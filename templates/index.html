@@ -1243,16 +1243,43 @@ async function triggerParse() {
 }
 
 async function pollCacheStatus(dateGalop, codeHippo, numCourse, jour, reunion) {
-  const check = async () => {
+  const btn = document.getElementById('parseBtn');
+
+  const updateBtn = (text) => {
+    if (btn) btn.textContent = text;
+  };
+
+  const checkWorkflow = async () => {
+    try {
+      const res  = await fetch('/api/workflow/status');
+      const data = await res.json();
+      if (data.status === 'queued')      updateBtn('⋯ En attente…');
+      if (data.status === 'in_progress') updateBtn('⚙️ GitHub tourne…');
+      if (data.status === 'completed') {
+        if (data.conclusion === 'success') {
+          updateBtn('✓ Terminé — chargement…');
+          await checkCache();
+        } else {
+          updateBtn('💾 Parser');
+          if (btn) btn.disabled = false;
+          toast('Erreur GitHub Actions — vérifie le workflow');
+        }
+        return;
+      }
+    } catch (_) {}
+    if (!S.currentCours || S.currentCours.code_hippo !== codeHippo) return;
+    setTimeout(checkWorkflow, 8000);
+  };
+
+  const checkCache = async () => {
     if (!S.currentCours || S.currentCours.code_hippo !== codeHippo) return;
     try {
       const res  = await fetch(`/api/course/cache-status?date_galop=${dateGalop}&hippo=${codeHippo}&course=${numCourse}`);
       const data = await res.json();
       if (data.cached) {
-        toast('✓ Données en cache — rechargement…');
-        const btn = document.getElementById('parseBtn');
+        toast('⚡ Données en cache — rechargement…');
         if (btn) { btn.textContent = '⚡ En cache'; btn.disabled = true; }
-        // Recharge le tracking depuis le cache
+        S.trackingGen++;
         const gen = S.trackingGen;
         S.partantsData?.forEach(p => {
           const detailEl = document.getElementById(`hd_${p.num}`);
@@ -1260,26 +1287,32 @@ async function pollCacheStatus(dateGalop, codeHippo, numCourse, jour, reunion) {
         });
         loadAllTrackings(jour, reunion, numCourse, gen, dateGalop, codeHippo);
       } else {
-        setTimeout(check, 15000); // re-vérifie dans 15s
+        setTimeout(checkCache, 10000);
       }
     } catch (_) {
-      setTimeout(check, 15000);
+      setTimeout(checkCache, 10000);
     }
   };
-  setTimeout(check, 20000); // première vérification après 20s
+
+  setTimeout(checkWorkflow, 5000);
 }
 
 async function loadAllTrackings(jour, reunion, course, gen, dateGalop, codeHippo) {
   if (!S.partantsData?.length) return;
-  let done = 0;
+  let done = 0, fromCache = 0;
   const total = S.partantsData.length;
   await Promise.allSettled(
-    S.partantsData.map(p => loadHorseTracking(p, jour, reunion, course, gen, dateGalop, codeHippo, () => {
+    S.partantsData.map(p => loadHorseTracking(p, jour, reunion, course, gen, dateGalop, codeHippo, (cached) => {
       done++;
+      if (cached) fromCache++;
       if (gen !== S.trackingGen) return;
       const nbTrack = S.partantsData.filter(x => x.nb_courses_trackers > 0).length;
       if (done === total) {
         setStatus(`${total} partants · ${nbTrack} avec tracking`, true);
+        if (fromCache === total) {
+          const btn = document.getElementById('parseBtn');
+          if (btn) { btn.textContent = '⚡ En cache'; btn.disabled = true; }
+        }
         if (S.activeTab === 'comparatif') {
           document.getElementById('tabContent').innerHTML = renderComparatif();
         }
@@ -1297,20 +1330,22 @@ async function loadHorseTracking(p, jour, reunion, course, gen, dateGalop, codeH
     if (gen !== S.trackingGen) return;
     p.historique          = data.historique || [];
     p.nb_courses_trackers = data.nb_courses_trackers || 0;
+    p.from_cache          = data.from_cache || false;
     const detailEl = document.getElementById(`hd_${p.num}`);
     if (detailEl) detailEl.innerHTML = renderHorseHistory(p);
     const countEl = document.getElementById(`tc_${p.num}`);
     if (countEl) {
       const nbT = p.nb_courses_trackers;
+      const cacheTag = p.from_cache ? ' ⚡' : '';
       countEl.className   = `tracking-count ${nbT > 0 ? 'has' : 'none'}`;
-      countEl.textContent = nbT > 0 ? `${nbT} tracking${nbT > 1 ? 's' : ''}` : 'pas de tracking';
+      countEl.textContent = nbT > 0 ? `${nbT} tracking${nbT > 1 ? 's' : ''}${cacheTag}` : 'pas de tracking';
     }
+    onDone(p.from_cache);
   } catch (_) {
     if (gen !== S.trackingGen) return;
     const detailEl = document.getElementById(`hd_${p.num}`);
     if (detailEl) detailEl.innerHTML = `<div class="no-track-badge">Erreur de chargement du tracking.</div>`;
-  } finally {
-    onDone();
+    onDone(false);
   }
 }
 

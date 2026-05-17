@@ -329,6 +329,29 @@ def api_cache_status():
     return jsonify({"cached": data is not None})
 
 
+@app.route("/api/workflow/status")
+@login_required
+def api_workflow_status():
+    if not GITHUB_PAT:
+        return jsonify({"status": "unknown"})
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/parse_course.yml/runs"
+    try:
+        r = requests.get(url, headers=GITHUB_HEADERS, params={"per_page": 1}, timeout=5)
+        if r.status_code == 200:
+            runs = r.json().get("workflow_runs", [])
+            if runs:
+                run = runs[0]
+                return jsonify({
+                    "status":     run.get("status"),      # queued, in_progress, completed
+                    "conclusion": run.get("conclusion"),  # success, failure, None
+                    "started_at": run.get("run_started_at", ""),
+                    "url":        run.get("html_url", ""),
+                })
+    except Exception:
+        pass
+    return jsonify({"status": "unknown"})
+
+
 @app.route("/api/course/parse", methods=["POST"])
 @login_required
 def api_parse_course():
