@@ -323,11 +323,34 @@ input[type="date"]:focus { border-color: var(--gold); }
   line-height: 1.1;
   margin-bottom: 12px;
 }
+.ch-top-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
 .ch-tags {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
 }
+.parse-btn {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 4px;
+  border: 1px solid rgba(184,134,11,.4);
+  background: rgba(184,134,11,.12);
+  color: var(--gold-lt);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all .15s;
+}
+.parse-btn:hover:not(:disabled) { background: rgba(184,134,11,.25); }
+.parse-btn:disabled { opacity: .5; cursor: default; }
 .ch-tag {
   font-family: var(--mono);
   font-size: 10px;
@@ -1156,17 +1179,18 @@ async function selectCourse(numReunion, numCourse, codeHippo) {
   setStatus(`Chargement R${numReunion}C${numCourse}…`);
 
   const jour = isoToPmu(iso);
+  const dateGalop = pmuToGalop(jour);
   S.trackingGen++;
   const gen = S.trackingGen;
   try {
     const res  = await fetch(`/api/course/partants?jour=${jour}&reunion=${numReunion}&course=${numCourse}`);
     const data = await res.json();
-    if (gen !== S.trackingGen) return; // course changée entre temps
+    if (gen !== S.trackingGen) return;
     S.partantsData = data.partants || [];
     S.courseRef    = data.course_ref || null;
     renderCourseShell(course, iso, false);
     setStatus(`${S.partantsData.length} partants · chargement tracking…`, true);
-    loadAllTrackings(jour, numReunion, numCourse, gen);
+    loadAllTrackings(jour, numReunion, numCourse, gen, dateGalop, course.code_hippo);
   } catch (e) {
     setStatus('Erreur de chargement');
     toast('Erreur : ' + e.message);
@@ -1177,12 +1201,80 @@ function mobileBack() {
   document.body.classList.remove('mobile-course');
 }
 
-async function loadAllTrackings(jour, reunion, course, gen) {
+function pmuToGalop(jour) {
+  // DDMMYYYY → YYYYMMDD
+  return jour.slice(4) + jour.slice(2, 4) + jour.slice(0, 2);
+}
+
+async function triggerParse() {
+  const course = S.currentCours;
+  if (!course) return;
+  const iso      = document.getElementById('datePicker').value;
+  const jour     = isoToPmu(iso);
+  const dateGalop = pmuToGalop(jour);
+
+  const btn = document.getElementById('parseBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⋯ En cours…'; }
+
+  try {
+    const res = await fetch('/api/course/parse', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jour,
+        reunion:    course.num_reunion,
+        course:     course.num_course,
+        date_galop: dateGalop,
+        code_hippo: course.code_hippo,
+      }),
+    });
+    const data = await res.json();
+    if (data.status === 'triggered') {
+      toast('Parsing lancé sur GitHub Actions (~2 min)');
+      pollCacheStatus(dateGalop, course.code_hippo, course.num_course, jour, course.num_reunion);
+    } else {
+      toast('Erreur : ' + (data.error || 'inconnue'));
+      if (btn) { btn.disabled = false; btn.textContent = '💾 Parser'; }
+    }
+  } catch (e) {
+    toast('Erreur : ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Parser'; }
+  }
+}
+
+async function pollCacheStatus(dateGalop, codeHippo, numCourse, jour, reunion) {
+  const check = async () => {
+    if (!S.currentCours || S.currentCours.code_hippo !== codeHippo) return;
+    try {
+      const res  = await fetch(`/api/course/cache-status?date_galop=${dateGalop}&hippo=${codeHippo}&course=${numCourse}`);
+      const data = await res.json();
+      if (data.cached) {
+        toast('✓ Données en cache — rechargement…');
+        const btn = document.getElementById('parseBtn');
+        if (btn) { btn.textContent = '⚡ En cache'; btn.disabled = true; }
+        // Recharge le tracking depuis le cache
+        const gen = S.trackingGen;
+        S.partantsData?.forEach(p => {
+          const detailEl = document.getElementById(`hd_${p.num}`);
+          if (detailEl) detailEl.innerHTML = `<div class="loading-bar"><div class="spin"></div>Chargement depuis cache…</div>`;
+        });
+        loadAllTrackings(jour, reunion, numCourse, gen, dateGalop, codeHippo);
+      } else {
+        setTimeout(check, 15000); // re-vérifie dans 15s
+      }
+    } catch (_) {
+      setTimeout(check, 15000);
+    }
+  };
+  setTimeout(check, 20000); // première vérification après 20s
+}
+
+async function loadAllTrackings(jour, reunion, course, gen, dateGalop, codeHippo) {
   if (!S.partantsData?.length) return;
   let done = 0;
   const total = S.partantsData.length;
   await Promise.allSettled(
-    S.partantsData.map(p => loadHorseTracking(p, jour, reunion, course, gen, () => {
+    S.partantsData.map(p => loadHorseTracking(p, jour, reunion, course, gen, dateGalop, codeHippo, () => {
       done++;
       if (gen !== S.trackingGen) return;
       const nbTrack = S.partantsData.filter(x => x.nb_courses_trackers > 0).length;
@@ -1196,9 +1288,11 @@ async function loadAllTrackings(jour, reunion, course, gen) {
   );
 }
 
-async function loadHorseTracking(p, jour, reunion, course, gen, onDone) {
+async function loadHorseTracking(p, jour, reunion, course, gen, dateGalop, codeHippo, onDone) {
   try {
-    const res  = await fetch(`/api/horse/tracking?jour=${jour}&reunion=${reunion}&course=${course}&nom=${encodeURIComponent(p.nom)}`);
+    const cacheParams = (dateGalop && codeHippo)
+      ? `&date_galop=${dateGalop}&code_hippo=${codeHippo}` : '';
+    const res  = await fetch(`/api/horse/tracking?jour=${jour}&reunion=${reunion}&course=${course}&nom=${encodeURIComponent(p.nom)}${cacheParams}`);
     const data = await res.json();
     if (gen !== S.trackingGen) return;
     p.historique          = data.historique || [];
@@ -1232,8 +1326,15 @@ function renderCourseShell(course, iso, loading) {
 
   let html = `
     <div class="course-header">
-      <div class="ch-eyebrow">R${course.num_reunion} · C${course.num_externe || course.num_course} · ${course.code_hippo} · ${dateDisp}</div>
-      <div class="ch-title">${course.libelle || 'Course ' + course.num_course}</div>
+      <div class="ch-top-row">
+        <div>
+          <div class="ch-eyebrow">R${course.num_reunion} · C${course.num_externe || course.num_course} · ${course.code_hippo} · ${dateDisp}</div>
+          <div class="ch-title">${course.libelle || 'Course ' + course.num_course}</div>
+        </div>
+        <button class="parse-btn" id="parseBtn" onclick="triggerParse()" title="Parser et sauvegarder cette course via GitHub Actions">
+          💾 Parser
+        </button>
+      </div>
       <div class="ch-tags">
         <div class="ch-tag gold">${course.distance} m</div>
         ${surfTag}
