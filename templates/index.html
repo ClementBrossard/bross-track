@@ -1214,6 +1214,12 @@ async function triggerParse() {
   const dateGalop = pmuToGalop(jour);
 
   const btn = document.getElementById('parseBtn');
+
+  if (!course.code_hippo) {
+    toast('Hippodrome non identifié — recharge le programme');
+    return;
+  }
+
   if (btn) { btn.disabled = true; btn.textContent = '⋯ En cours…'; }
 
   try {

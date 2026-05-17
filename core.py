@@ -101,6 +101,8 @@ def get_courses_plat(date_pmu: str) -> list:
         hippo       = reunion.get("hippodrome", {})
         code_hippo  = hippo.get("codeHippodrome", "")
         nom_hippo   = hippo.get("libelleLong", hippo.get("libelleCourt", ""))
+        if not code_hippo:
+            code_hippo = hippo_to_code(nom_hippo)
         num_reunion = reunion.get("numOfficiel", reunion.get("numExterneReunion", 0))
 
         for c in reunion.get("courses", []):
