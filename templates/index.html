@@ -498,8 +498,9 @@ input[type="date"]:focus { border-color: var(--gold); }
   font-size: 11px;
   font-weight: 500;
 }
-.tracking-count.has  { color: var(--green); }
-.tracking-count.none { color: var(--border); }
+.tracking-count.has     { color: var(--green); }
+.tracking-count.none    { color: var(--border); }
+.tracking-count.loading { color: var(--muted); font-style: italic; }
 
 /* ── Horse detail (accordéon) ── */
 .horse-detail {
@@ -911,8 +912,9 @@ const S = {
   courseRef:    null,
   filtreDistance: false,
   filtreSurface:  false,
-  compSort:     { key: 'score', dir: 'desc' },  // tri tableau comparatif (legacy)
-  compSortAll:  {},  // tri par stratégie
+  compSort:     { key: 'score', dir: 'desc' },
+  compSortAll:  {},
+  trackingGen:  0,  // incrémenté à chaque nouvelle course, annule les chargements en cours
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -1068,18 +1070,63 @@ async function selectCourse(numReunion, numCourse, codeHippo) {
   setStatus(`Chargement R${numReunion}C${numCourse}…`);
 
   const jour = isoToPmu(iso);
+  S.trackingGen++;
+  const gen = S.trackingGen;
   try {
-    const res  = await fetch(`/api/course/partants?jour=${jour}&reunion=${numReunion}&course=${numCourse}&max_hist=6`);
+    const res  = await fetch(`/api/course/partants?jour=${jour}&reunion=${numReunion}&course=${numCourse}`);
     const data = await res.json();
+    if (gen !== S.trackingGen) return; // course changée entre temps
     S.partantsData = data.partants || [];
     S.courseRef    = data.course_ref || null;
     renderCourseShell(course, iso, false);
-    const nbTrack = S.partantsData.filter(p => p.nb_courses_trackers > 0).length;
-    setStatus(`${S.partantsData.length} partants · ${nbTrack} avec tracking`, true);
-    toast(`${nbTrack} partants avec données de tracking`);
+    setStatus(`${S.partantsData.length} partants · chargement tracking…`, true);
+    loadAllTrackings(jour, numReunion, numCourse, gen);
   } catch (e) {
     setStatus('Erreur de chargement');
     toast('Erreur : ' + e.message);
+  }
+}
+
+async function loadAllTrackings(jour, reunion, course, gen) {
+  if (!S.partantsData?.length) return;
+  let done = 0;
+  const total = S.partantsData.length;
+  await Promise.allSettled(
+    S.partantsData.map(p => loadHorseTracking(p, jour, reunion, course, gen, () => {
+      done++;
+      if (gen !== S.trackingGen) return;
+      const nbTrack = S.partantsData.filter(x => x.nb_courses_trackers > 0).length;
+      if (done === total) {
+        setStatus(`${total} partants · ${nbTrack} avec tracking`, true);
+        if (S.activeTab === 'comparatif') {
+          document.getElementById('tabContent').innerHTML = renderComparatif();
+        }
+      }
+    }))
+  );
+}
+
+async function loadHorseTracking(p, jour, reunion, course, gen, onDone) {
+  try {
+    const res  = await fetch(`/api/horse/tracking?jour=${jour}&reunion=${reunion}&course=${course}&nom=${encodeURIComponent(p.nom)}`);
+    const data = await res.json();
+    if (gen !== S.trackingGen) return;
+    p.historique          = data.historique || [];
+    p.nb_courses_trackers = data.nb_courses_trackers || 0;
+    const detailEl = document.getElementById(`hd_${p.num}`);
+    if (detailEl) detailEl.innerHTML = renderHorseHistory(p);
+    const countEl = document.getElementById(`tc_${p.num}`);
+    if (countEl) {
+      const nbT = p.nb_courses_trackers;
+      countEl.className   = `tracking-count ${nbT > 0 ? 'has' : 'none'}`;
+      countEl.textContent = nbT > 0 ? `${nbT} tracking${nbT > 1 ? 's' : ''}` : 'pas de tracking';
+    }
+  } catch (_) {
+    if (gen !== S.trackingGen) return;
+    const detailEl = document.getElementById(`hd_${p.num}`);
+    if (detailEl) detailEl.innerHTML = `<div class="no-track-badge">Erreur de chargement du tracking.</div>`;
+  } finally {
+    onDone();
   }
 }
 
@@ -1178,9 +1225,6 @@ function renderPartants() {
 
   let html = '<div class="partants-list">';
   for (const p of S.partantsData) {
-    const nbT   = p.nb_courses_trackers || 0;
-    const tCls  = nbT > 0 ? 'has' : 'none';
-    const tTxt  = nbT > 0 ? `${nbT} tracking${nbT > 1 ? 's' : ''}` : 'pas de tracking';
 
     // Stats carrière
     const hasStat = p.nb_courses != null;
@@ -1210,11 +1254,11 @@ function renderPartants() {
           </div>
           <div class="horse-musique">${p.musique || ''}</div>
           <div class="horse-tracking-status">
-            <div class="tracking-count ${tCls}">${tTxt}</div>
+            <div class="tracking-count loading" id="tc_${p.num}">⋯</div>
           </div>
         </div>
-        <div class="horse-detail">
-          ${renderHorseHistory(p)}
+        <div class="horse-detail" id="hd_${p.num}">
+          <div class="loading-bar"><div class="spin"></div>Chargement du tracking…</div>
         </div>
       </div>`;
   }
