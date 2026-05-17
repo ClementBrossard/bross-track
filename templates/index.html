@@ -1271,15 +1271,20 @@ async function pollCacheStatus(dateGalop, codeHippo, numCourse, jour, reunion) {
 
 async function loadAllTrackings(jour, reunion, course, gen, dateGalop, codeHippo) {
   if (!S.partantsData?.length) return;
-  let done = 0;
+  let done = 0, fromCache = 0;
   const total = S.partantsData.length;
   await Promise.allSettled(
-    S.partantsData.map(p => loadHorseTracking(p, jour, reunion, course, gen, dateGalop, codeHippo, () => {
+    S.partantsData.map(p => loadHorseTracking(p, jour, reunion, course, gen, dateGalop, codeHippo, (cached) => {
       done++;
+      if (cached) fromCache++;
       if (gen !== S.trackingGen) return;
       const nbTrack = S.partantsData.filter(x => x.nb_courses_trackers > 0).length;
       if (done === total) {
         setStatus(`${total} partants · ${nbTrack} avec tracking`, true);
+        if (fromCache === total) {
+          const btn = document.getElementById('parseBtn');
+          if (btn) { btn.textContent = '⚡ En cache'; btn.disabled = true; }
+        }
         if (S.activeTab === 'comparatif') {
           document.getElementById('tabContent').innerHTML = renderComparatif();
         }
@@ -1297,20 +1302,22 @@ async function loadHorseTracking(p, jour, reunion, course, gen, dateGalop, codeH
     if (gen !== S.trackingGen) return;
     p.historique          = data.historique || [];
     p.nb_courses_trackers = data.nb_courses_trackers || 0;
+    p.from_cache          = data.from_cache || false;
     const detailEl = document.getElementById(`hd_${p.num}`);
     if (detailEl) detailEl.innerHTML = renderHorseHistory(p);
     const countEl = document.getElementById(`tc_${p.num}`);
     if (countEl) {
       const nbT = p.nb_courses_trackers;
+      const cacheTag = p.from_cache ? ' ⚡' : '';
       countEl.className   = `tracking-count ${nbT > 0 ? 'has' : 'none'}`;
-      countEl.textContent = nbT > 0 ? `${nbT} tracking${nbT > 1 ? 's' : ''}` : 'pas de tracking';
+      countEl.textContent = nbT > 0 ? `${nbT} tracking${nbT > 1 ? 's' : ''}${cacheTag}` : 'pas de tracking';
     }
+    onDone(p.from_cache);
   } catch (_) {
     if (gen !== S.trackingGen) return;
     const detailEl = document.getElementById(`hd_${p.num}`);
     if (detailEl) detailEl.innerHTML = `<div class="no-track-badge">Erreur de chargement du tracking.</div>`;
-  } finally {
-    onDone();
+    onDone(false);
   }
 }
 
