@@ -1243,16 +1243,43 @@ async function triggerParse() {
 }
 
 async function pollCacheStatus(dateGalop, codeHippo, numCourse, jour, reunion) {
-  const check = async () => {
+  const btn = document.getElementById('parseBtn');
+
+  const updateBtn = (text) => {
+    if (btn) btn.textContent = text;
+  };
+
+  const checkWorkflow = async () => {
+    try {
+      const res  = await fetch('/api/workflow/status');
+      const data = await res.json();
+      if (data.status === 'queued')      updateBtn('⋯ En attente…');
+      if (data.status === 'in_progress') updateBtn('⚙️ GitHub tourne…');
+      if (data.status === 'completed') {
+        if (data.conclusion === 'success') {
+          updateBtn('✓ Terminé — chargement…');
+          await checkCache();
+        } else {
+          updateBtn('💾 Parser');
+          if (btn) btn.disabled = false;
+          toast('Erreur GitHub Actions — vérifie le workflow');
+        }
+        return;
+      }
+    } catch (_) {}
+    if (!S.currentCours || S.currentCours.code_hippo !== codeHippo) return;
+    setTimeout(checkWorkflow, 8000);
+  };
+
+  const checkCache = async () => {
     if (!S.currentCours || S.currentCours.code_hippo !== codeHippo) return;
     try {
       const res  = await fetch(`/api/course/cache-status?date_galop=${dateGalop}&hippo=${codeHippo}&course=${numCourse}`);
       const data = await res.json();
       if (data.cached) {
-        toast('✓ Données en cache — rechargement…');
-        const btn = document.getElementById('parseBtn');
+        toast('⚡ Données en cache — rechargement…');
         if (btn) { btn.textContent = '⚡ En cache'; btn.disabled = true; }
-        // Recharge le tracking depuis le cache
+        S.trackingGen++;
         const gen = S.trackingGen;
         S.partantsData?.forEach(p => {
           const detailEl = document.getElementById(`hd_${p.num}`);
@@ -1260,13 +1287,14 @@ async function pollCacheStatus(dateGalop, codeHippo, numCourse, jour, reunion) {
         });
         loadAllTrackings(jour, reunion, numCourse, gen, dateGalop, codeHippo);
       } else {
-        setTimeout(check, 15000); // re-vérifie dans 15s
+        setTimeout(checkCache, 10000);
       }
     } catch (_) {
-      setTimeout(check, 15000);
+      setTimeout(checkCache, 10000);
     }
   };
-  setTimeout(check, 20000); // première vérification après 20s
+
+  setTimeout(checkWorkflow, 5000);
 }
 
 async function loadAllTrackings(jour, reunion, course, gen, dateGalop, codeHippo) {
