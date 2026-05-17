@@ -829,7 +829,6 @@ def api_partants():
         nom  = p.get("nomCheval", "")
         num  = p.get("numPmu", 0)
         info = participants_info.get(num, {})
-        hist = get_horse_tracking_history(p.get("coursesCourues", []), nom, max_courses=max_hist)
 
         nb_courses   = info.get("nb_courses")   or p.get("nombreCourses",   p.get("nbCourses",   None))
         nb_victoires = info.get("nb_victoires") or p.get("nombreVictoires", p.get("nbVictoires", None))
@@ -847,8 +846,8 @@ def api_partants():
             "nb_courses":   nb_courses,
             "nb_victoires": nb_victoires,
             "nb_places":    nb_places,
-            "historique": hist,
-            "nb_courses_trackers": sum(1 for h in hist if h.get("has_tracking_data")),
+            "historique": [],
+            "nb_courses_trackers": 0,
         }
 
     partants_out = []
@@ -868,6 +867,34 @@ def api_partants():
     return jsonify({
         "partants": sorted(partants_out, key=lambda x: x["num"]),
         "course_ref": course_ref,
+    })
+
+
+@app.route("/api/horse/tracking")
+@login_required
+def api_horse_tracking():
+    jour     = request.args.get("jour", datetime.now().strftime("%d%m%Y"))
+    reunion  = int(request.args.get("reunion", 1))
+    course_n = int(request.args.get("course", 1))
+    nom      = request.args.get("nom", "").strip()
+    max_hist = int(request.args.get("max_hist", 6))
+
+    if not nom:
+        return jsonify({"error": "nom requis", "historique": [], "nb_courses_trackers": 0})
+
+    perfs = fetch_perfs(jour, reunion, course_n)
+    horse_perf = next(
+        (p for p in perfs if p.get("nomCheval", "").upper().strip() == nom.upper()),
+        None
+    )
+    if not horse_perf:
+        return jsonify({"error": "Cheval non trouvé", "historique": [], "nb_courses_trackers": 0})
+
+    historique = get_horse_tracking_history(horse_perf.get("coursesCourues", []), nom, max_courses=max_hist)
+    return jsonify({
+        "nom": nom,
+        "historique": historique,
+        "nb_courses_trackers": count_with_tracking(historique),
     })
 
 
