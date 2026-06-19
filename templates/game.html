@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>JCB AVENTURE — le jeu</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: #0a0c10;
+    color: #f5f2eb;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow-x: hidden;
+  }
+  .wrap {
+    width: 100%;
+    max-width: 920px;
+    padding: 16px;
+  }
+  .topbar {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .title {
+    font-weight: 900;
+    font-size: 22px;
+    letter-spacing: 2px;
+    color: #d4a017;
+  }
+  .title span { color: #4fc3f7; }
+  a.back {
+    color: #5a5d6a;
+    font-size: 12px;
+    letter-spacing: 1px;
+    text-decoration: none;
+    border: 1px solid #2a2d35;
+    border-radius: 4px;
+    padding: 6px 10px;
+  }
+  a.back:hover { color: #f5f2eb; border-color: #b8860b; }
+
+  .stage {
+    position: relative;
+    width: 100%;
+    border: 1px solid #2a2d35;
+    border-top: 3px solid #b8860b;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #87CEEB;
+  }
+  canvas { display: block; width: 100%; height: auto; }
+
+  .hud {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    font-weight: 700;
+    font-size: 14px;
+    color: #102027;
+    text-shadow: 0 1px 2px rgba(255,255,255,.5);
+    pointer-events: none;
+  }
+  .clean-bar-wrap {
+    width: 150px;
+    height: 14px;
+    background: rgba(255,255,255,.55);
+    border: 2px solid #102027;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .clean-bar {
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(90deg, #29b6f6, #00e5ff);
+    transition: width .15s linear;
+  }
+  .clean-label { font-size: 10px; letter-spacing: 1px; margin-bottom: 2px; }
+
+  .mode-pill {
+    background: rgba(10,12,16,.55);
+    border-radius: 12px;
+    padding: 4px 10px;
+    color: #f5f2eb;
+    font-size: 12px;
+    text-shadow: none;
+  }
+
+  .toast {
+    position: absolute;
+    top: 46px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(10,12,16,.78);
+    color: #f5f2eb;
+    padding: 6px 14px;
+    border-radius: 14px;
+    font-size: 13px;
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity .3s;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .toast.show { opacity: 1; }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(8,10,14,.82);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 10px;
+    padding: 20px;
+  }
+  .overlay h1 {
+    font-size: 26px;
+    color: #d4a017;
+    letter-spacing: 1px;
+  }
+  .overlay p { color: #c7c9d1; font-size: 13px; max-width: 420px; line-height: 1.5; }
+  .overlay .score-big { font-size: 40px; font-weight: 900; color: #4fc3f7; }
+  .overlay .sub-score { font-size: 12px; color: #9a9da8; }
+  .btn {
+    background: #b8860b;
+    color: #0a0c10;
+    border: none;
+    border-radius: 6px;
+    padding: 12px 28px;
+    font-weight: 800;
+    font-size: 14px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    margin-top: 6px;
+  }
+  .btn:hover { background: #d4a017; }
+  .hidden { display: none !important; }
+
+  .controls-help {
+    display: flex;
+    gap: 18px;
+    margin-top: 4px;
+    font-size: 12px;
+    color: #6f7280;
+  }
+  .controls-help b { color: #c7c9d1; }
+
+  .mobile-controls {
+    display: none;
+    margin-top: 10px;
+    gap: 10px;
+  }
+  .mobile-controls button {
+    flex: 1;
+    background: #12151c;
+    border: 1px solid #2a2d35;
+    color: #f5f2eb;
+    border-radius: 6px;
+    padding: 16px;
+    font-weight: 800;
+    font-size: 13px;
+    letter-spacing: 1px;
+  }
+  @media (max-width: 640px) {
+    .mobile-controls { display: flex; }
+    .controls-help { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="title">JCB <span>AVENTURE</span></div>
+    <a class="back" href="/">← BROSS&amp;TRACK</a>
+  </div>
+
+  <div class="stage">
+    <canvas id="game" width="900" height="400"></canvas>
+
+    <div class="hud">
+      <div class="mode-pill" id="modePill">⛷ SKI</div>
+      <div>
+        <div class="clean-label">MAINS PROPRES</div>
+        <div class="clean-bar-wrap"><div class="clean-bar" id="cleanBar"></div></div>
+      </div>
+      <div class="mode-pill" id="scorePill">SCORE 0</div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <div class="overlay" id="startScreen">
+      <h1>🧴 JCB AVENTURE 🏔️</h1>
+      <p>
+        JCB adore le ski, la moto... et avoir les mains propres ! Aide-le à dévaler la pente
+        et la route en évitant les obstacles, et fais le plein de savon avant que les microbes
+        ne gagnent.
+      </p>
+      <button class="btn" id="startBtn">JOUER</button>
+      <div class="controls-help">
+        <div><b>↑ / Espace</b> sauter</div>
+        <div><b>↓</b> se baisser</div>
+      </div>
+      <div class="mobile-controls">
+        <button id="mHelp">↑ tape en haut pour sauter · ↓ en bas pour te baisser</button>
+      </div>
+    </div>
+
+    <div class="overlay hidden" id="overScreen">
+      <h1 id="overTitle">😱 JCB A ATTRAPÉ UN MICROBE !</h1>
+      <div class="score-big" id="finalScore">0</div>
+      <div class="sub-score" id="bestScore">Meilleur score : 0</div>
+      <button class="btn" id="retryBtn">REJOUER</button>
+    </div>
+
+    <div class="mobile-controls" id="mobileControls" style="position:absolute;bottom:10px;left:10px;right:10px;display:none;">
+      <button id="btnJump">⬆ SAUTER</button>
+      <button id="btnDuck">⬇ BAISSER</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const GROUND_Y = 320;
+
+  const cleanBarEl = document.getElementById('cleanBar');
+  const modePillEl = document.getElementById('modePill');
+  const scorePillEl = document.getElementById('scorePill');
+  const toastEl = document.getElementById('toast');
+  const startScreen = document.getElementById('startScreen');
+  const overScreen = document.getElementById('overScreen');
+  const overTitle = document.getElementById('overTitle');
+  const finalScoreEl = document.getElementById('finalScore');
+  const bestScoreEl = document.getElementById('bestScore');
+  const mobileControls = document.getElementById('mobileControls');
+
+  const PHRASES = [
+    "Lave-toi les mains, JCB !",
+    "Un coup de savon et ça repart !",
+    "Vroum vroum, attention au virage !",
+    "Belle ligne dans la poudreuse !",
+    "Propre comme un sou neuf ✨",
+    "Allez JCB, fonce !",
+    "Shaka, on assure !",
+  ];
+
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastEl._t);
+    toastEl._t = setTimeout(() => toastEl.classList.remove('show'), 1200);
+  }
+
+  // ── Input state ─────────────────────────────────────────
+  const keys = { jump: false, duck: false };
+
+  function bindKey(code, name) {
+    window.addEventListener('keydown', e => {
+      if (code.includes(e.code)) { keys[name] = true; e.preventDefault(); }
+    });
+    window.addEventListener('keyup', e => {
+      if (code.includes(e.code)) { keys[name] = false; e.preventDefault(); }
+    });
+  }
+  bindKey(['ArrowUp', 'Space', 'KeyW'], 'jump');
+  bindKey(['ArrowDown', 'KeyS'], 'duck');
+
+  document.getElementById('btnJump').addEventListener('touchstart', e => { e.preventDefault(); keys.jump = true; });
+  document.getElementById('btnJump').addEventListener('touchend', e => { e.preventDefault(); keys.jump = false; });
+  document.getElementById('btnDuck').addEventListener('touchstart', e => { e.preventDefault(); keys.duck = true; });
+  document.getElementById('btnDuck').addEventListener('touchend', e => { e.preventDefault(); keys.duck = false; });
+
+  // ── Player ──────────────────────────────────────────────
+  const player = {
+    x: 110,
+    y: GROUND_Y,
+    w: 46,
+    h: 74,
+    vy: 0,
+    jumping: false,
+    ducking: false,
+    bob: 0,
+    thumbsUp: 0,
+  };
+  const GRAVITY = 0.85;
+  const JUMP_V = -14.5;
+
+  function updatePlayer(dt, speed) {
+    player.ducking = keys.duck && !player.jumping;
+
+    if (keys.jump && !player.jumping) {
+      player.jumping = true;
+      player.vy = JUMP_V;
+    }
+    if (player.jumping) {
+      player.vy += GRAVITY;
+      player.y += player.vy;
+      if (player.y >= GROUND_Y) {
+        player.y = GROUND_Y;
+        player.jumping = false;
+        player.vy = 0;
+      }
+    } else {
+      player.bob += dt * 0.012 * speed;
+    }
+    if (player.thumbsUp > 0) player.thumbsUp -= dt;
+  }
+
+  function playerRect() {
+    const duckH = player.ducking ? player.h * 0.55 : player.h;
+    return {
+      x: player.x,
+      y: player.y - duckH,
+      w: player.w,
+      h: duckH,
+    };
+  }
+
+  // ── Drawing JCB ─────────────────────────────────────────
+  function drawJCB(skiMode) {
+    const r = playerRect();
+    const cx = r.x + r.w / 2;
+    const top = r.y;
+    const bottom = r.y + r.h;
+    const bobOff = player.jumping ? 0 : Math.sin(player.bob) * 2;
+
+    ctx.save();
+    ctx.translate(0, bobOff);
+
+    // legs / vehicle
+    if (skiMode) {
+      ctx.strokeStyle = '#1d2b4f';
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(cx - 16, bottom);
+      ctx.lineTo(cx - 26, bottom + 6);
+      ctx.moveTo(cx + 16, bottom);
+      ctx.lineTo(cx + 26, bottom + 6);
+      ctx.stroke();
+      // skis
+      ctx.strokeStyle = '#e53935';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(cx - 34, bottom + 6); ctx.lineTo(cx - 6, bottom + 6);
+      ctx.moveTo(cx + 6, bottom + 6); ctx.lineTo(cx + 34, bottom + 6);
+      ctx.stroke();
+    } else {
+      // motorcycle
+      ctx.fillStyle = '#15171c';
+      ctx.fillRect(cx - 22, bottom - 6, 44, 10);
+      ctx.strokeStyle = '#15171c';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(cx - 20, bottom + 8, 10, 0, Math.PI * 2);
+      ctx.arc(cx + 20, bottom + 8, 10, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#444';
+      ctx.beginPath();
+      ctx.arc(cx - 20, bottom + 8, 4, 0, Math.PI * 2);
+      ctx.arc(cx + 20, bottom + 8, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // body (jacket)
+    const bodyH = (bottom - top) * 0.55;
+    const bodyTop = bottom - bodyH - (skiMode ? 4 : 10);
+    ctx.fillStyle = skiMode ? '#2255d8' : '#1c1c22';
+    roundRect(cx - 18, bodyTop, 36, bodyH, 10);
+    ctx.fill();
+
+    // arm + thumbs up
+    ctx.strokeStyle = skiMode ? '#2255d8' : '#1c1c22';
+    ctx.lineWidth = 9;
+    ctx.lineCap = 'round';
+    const armUp = player.thumbsUp > 0;
+    ctx.beginPath();
+    ctx.moveTo(cx + 16, bodyTop + 8);
+    if (armUp) {
+      ctx.lineTo(cx + 32, bodyTop - 16);
+    } else {
+      ctx.lineTo(cx + 26, bodyTop + bodyH * 0.6);
+    }
+    ctx.stroke();
+    if (armUp) {
+      ctx.fillStyle = '#e8b08a';
+      ctx.beginPath();
+      ctx.arc(cx + 33, bodyTop - 19, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // head
+    const headR = 14;
+    const headY = bodyTop - headR - 2;
+    ctx.fillStyle = '#e8b08a';
+    ctx.beginPath();
+    ctx.arc(cx, headY, headR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // ears
+    ctx.beginPath();
+    ctx.arc(cx - headR + 1, headY + 2, 3, 0, Math.PI * 2);
+    ctx.arc(cx + headR - 1, headY + 2, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // beard
+    ctx.fillStyle = '#d8d4cc';
+    ctx.beginPath();
+    ctx.arc(cx, headY + 7, headR - 3, 0, Math.PI, false);
+    ctx.fill();
+
+    // glasses
+    ctx.strokeStyle = '#15171c';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx - 6, headY - 1, 5.5, 0, Math.PI * 2);
+    ctx.arc(cx + 6, headY - 1, 5.5, 0, Math.PI * 2);
+    ctx.moveTo(cx - 0.5, headY - 1); ctx.lineTo(cx + 0.5, headY - 1);
+    ctx.stroke();
+    ctx.fillStyle = skiMode ? '#4fc3f7' : '#0a0c10';
+    ctx.beginPath();
+    ctx.arc(cx - 6, headY - 1, 4.2, 0, Math.PI * 2);
+    ctx.arc(cx + 6, headY - 1, 4.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // smile
+    ctx.strokeStyle = '#7a4a30';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(cx, headY + 5, 4, 0.15 * Math.PI, 0.85 * Math.PI);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  // ── World / obstacles / soap ────────────────────────────
+  let obstacles = [];
+  let soaps = [];
+  let particles = [];
+  let distance = 0;
+  let speed = 6;
+  let skiMode = true;
+  let cleanliness = 100;
+  let soapCollected = 0;
+  let running = false;
+  let spawnTimer = 0;
+  let soapTimer = 0;
+  let phraseTimer = 0;
+  let lastTime = 0;
+  let bgOffset = 0;
+  let bestScore = parseInt(localStorage.getItem('jcb_highscore') || '0', 10);
+
+  function reset() {
+    obstacles = [];
+    soaps = [];
+    particles = [];
+    distance = 0;
+    speed = 6;
+    skiMode = true;
+    cleanliness = 100;
+    soapCollected = 0;
+    spawnTimer = 0;
+    soapTimer = 60;
+    phraseTimer = 200;
+    bgOffset = 0;
+    player.y = GROUND_Y;
+    player.jumping = false;
+    player.vy = 0;
+    player.thumbsUp = 0;
+    modePillEl.textContent = '⛷ SKI';
+  }
+
+  function spawnObstacle() {
+    const ground = Math.random() < 0.65;
+    const o = {
+      x: W + 20,
+      w: ground ? 30 : 46,
+      h: ground ? 36 : 26,
+      ground: ground,
+      type: skiMode
+        ? (ground ? 'rock' : 'branch')
+        : (ground ? 'cone' : 'sign'),
+    };
+    o.y = ground ? GROUND_Y - o.h : GROUND_Y - 95;
+    obstacles.push(o);
+  }
+
+  function spawnSoap() {
+    const high = Math.random() < 0.5;
+    soaps.push({
+      x: W + 20,
+      y: high ? GROUND_Y - 110 : GROUND_Y - 40,
+      w: 18, h: 22,
+      collected: false,
+    });
+  }
+
+  function rectsOverlap(a, b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  }
+
+  function update(dt) {
+    const speedFactor = speed * dt * 0.06;
+    distance += speedFactor;
+    speed = 6 + distance / 900;
+    bgOffset = (bgOffset + speedFactor) % 9999;
+
+    // mode switch every 700 distance
+    const newSkiMode = Math.floor(distance / 700) % 2 === 0;
+    if (newSkiMode !== skiMode) {
+      skiMode = newSkiMode;
+      modePillEl.textContent = skiMode ? '⛷ SKI' : '🏍 MOTO';
+      toast(skiMode ? 'Place au ski !' : 'En selle, moto time !');
+    }
+
+    updatePlayer(dt, speed);
+
+    // cleanliness drains
+    cleanliness -= dt * 0.01 * (1 + speed / 12);
+    if (cleanliness < 0) cleanliness = 0;
+    cleanBarEl.style.width = cleanliness + '%';
+    cleanBarEl.style.background = cleanliness < 30
+      ? 'linear-gradient(90deg,#e53935,#ff7043)'
+      : 'linear-gradient(90deg,#29b6f6,#00e5ff)';
+
+    if (cleanliness <= 0) {
+      gameOver(false);
+      return;
+    }
+
+    // spawn obstacles
+    spawnTimer -= dt;
+    if (spawnTimer <= 0) {
+      spawnObstacle();
+      spawnTimer = Math.max(38, 80 - speed * 3) + Math.random() * 20;
+    }
+    soapTimer -= dt;
+    if (soapTimer <= 0) {
+      spawnSoap();
+      soapTimer = 90 + Math.random() * 60;
+    }
+
+    phraseTimer -= dt;
+    if (phraseTimer <= 0) {
+      toast(PHRASES[Math.floor(Math.random() * PHRASES.length)]);
+      phraseTimer = 260 + Math.random() * 200;
+    }
+
+    const pr = playerRect();
+
+    for (const o of obstacles) {
+      o.x -= speedFactor * 6;
+      if (rectsOverlap(pr, o)) {
+        gameOver(false);
+        return;
+      }
+    }
+    obstacles = obstacles.filter(o => o.x > -60);
+
+    for (const s of soaps) {
+      if (s.collected) continue;
+      s.x -= speedFactor * 6;
+      if (rectsOverlap(pr, s)) {
+        s.collected = true;
+        soapCollected++;
+        cleanliness = Math.min(100, cleanliness + 24);
+        player.thumbsUp = 20;
+        for (let i = 0; i < 8; i++) {
+          particles.push({
+            x: s.x + 9, y: s.y + 11,
+            vx: (Math.random() - 0.5) * 3, vy: -Math.random() * 3 - 1,
+            life: 24, color: '#4fc3f7',
+          });
+        }
+      }
+    }
+    soaps = soaps.filter(s => s.x > -40 && !s.collected);
+
+    for (const p of particles) { p.x += p.vx; p.y += p.vy; p.vy += 0.12; p.life--; }
+    particles = particles.filter(p => p.life > 0);
+
+    scorePillEl.textContent = 'SCORE ' + score();
+  }
+
+  function score() {
+    return Math.floor(distance / 4) + soapCollected * 25;
+  }
+
+  function gameOver(win) {
+    running = false;
+    const s = score();
+    if (s > bestScore) {
+      bestScore = s;
+      localStorage.setItem('jcb_highscore', String(bestScore));
+    }
+    overTitle.textContent = '😱 JCB A ATTRAPÉ UN MICROBE !';
+    finalScoreEl.textContent = s;
+    bestScoreEl.textContent = 'Meilleur score : ' + bestScore;
+    overScreen.classList.remove('hidden');
+  }
+
+  // ── Drawing world ───────────────────────────────────────
+  function drawBackground() {
+    if (skiMode) {
+      const grad = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+      grad.addColorStop(0, '#7ec8f0');
+      grad.addColorStop(1, '#e8f4fb');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, GROUND_Y);
+
+      ctx.fillStyle = '#cfe8f7';
+      for (let i = -1; i < 4; i++) {
+        const x = (i * 260 - (bgOffset * 0.3) % 260);
+        ctx.beginPath();
+        ctx.moveTo(x, GROUND_Y - 40);
+        ctx.lineTo(x + 110, GROUND_Y - 170);
+        ctx.lineTo(x + 220, GROUND_Y - 40);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+      ctx.fillStyle = '#eaf6ff';
+      for (let i = -1; i < 8; i++) {
+        const x = (i * 90 - bgOffset) % (W + 90);
+        ctx.beginPath();
+        ctx.ellipse(x, GROUND_Y + 14, 30, 7, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else {
+      const grad = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+      grad.addColorStop(0, '#5b7fa6');
+      grad.addColorStop(1, '#c7d6e0');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, GROUND_Y);
+
+      ctx.fillStyle = '#7c9a6b';
+      for (let i = -1; i < 6; i++) {
+        const x = (i * 150 - (bgOffset * 0.5) % 150);
+        ctx.beginPath();
+        ctx.arc(x + 60, GROUND_Y - 30, 26, Math.PI, 0);
+        ctx.fillRect(x + 50, GROUND_Y - 30, 20, 30);
+        ctx.fill();
+      }
+      ctx.fillStyle = '#3b3f45';
+      ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+      ctx.fillStyle = '#e8c93a';
+      for (let i = -1; i < 12; i++) {
+        const x = (i * 70 - bgOffset) % (W + 70);
+        ctx.fillRect(x, GROUND_Y + 18, 36, 4);
+      }
+    }
+  }
+
+  function drawObstacle(o) {
+    if (o.type === 'rock') {
+      ctx.fillStyle = '#8d8f96';
+      ctx.beginPath();
+      ctx.moveTo(o.x, o.y + o.h);
+      ctx.lineTo(o.x + 6, o.y + 4);
+      ctx.lineTo(o.x + o.w / 2, o.y);
+      ctx.lineTo(o.x + o.w - 4, o.y + 6);
+      ctx.lineTo(o.x + o.w, o.y + o.h);
+      ctx.closePath();
+      ctx.fill();
+    } else if (o.type === 'branch') {
+      ctx.fillStyle = '#5d4630';
+      ctx.fillRect(o.x, o.y, o.w, 10);
+      ctx.fillStyle = '#3f7d3f';
+      ctx.beginPath();
+      ctx.ellipse(o.x + o.w / 2, o.y + 14, o.w / 2, 14, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (o.type === 'cone') {
+      ctx.fillStyle = '#ff7a00';
+      ctx.beginPath();
+      ctx.moveTo(o.x + o.w / 2, o.y);
+      ctx.lineTo(o.x, o.y + o.h);
+      ctx.lineTo(o.x + o.w, o.y + o.h);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(o.x + 4, o.y + o.h * 0.55, o.w - 8, 4);
+    } else if (o.type === 'sign') {
+      ctx.fillStyle = '#777';
+      ctx.fillRect(o.x + o.w / 2 - 3, o.y, 6, o.h + 40);
+      ctx.fillStyle = '#e53935';
+      ctx.beginPath();
+      ctx.arc(o.x + o.w / 2, o.y + 14, 18, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(o.x + o.w / 2 - 12, o.y + 11, 24, 6);
+    }
+  }
+
+  function drawSoap(s) {
+    ctx.fillStyle = '#4fc3f7';
+    roundRect(s.x, s.y, s.w, s.h, 4);
+    ctx.fill();
+    ctx.fillStyle = '#1976d2';
+    ctx.fillRect(s.x + 5, s.y - 5, s.w - 10, 6);
+    ctx.fillStyle = 'rgba(255,255,255,.6)';
+    ctx.fillRect(s.x + 3, s.y + 4, 3, s.h - 8);
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    drawBackground();
+    for (const o of obstacles) drawObstacle(o);
+    for (const s of soaps) drawSoap(s);
+    drawJCB(skiMode);
+    for (const p of particles) {
+      ctx.globalAlpha = Math.max(p.life / 24, 0);
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  function loop(t) {
+    if (!lastTime) lastTime = t;
+    const dt = Math.min(t - lastTime, 40) / (1000 / 60);
+    lastTime = t;
+    if (running) update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function startGame() {
+    reset();
+    running = true;
+    startScreen.classList.add('hidden');
+    overScreen.classList.add('hidden');
+    mobileControls.style.display = window.matchMedia('(max-width: 640px)').matches ? 'flex' : 'none';
+    toast('À toi de jouer, JCB !');
+  }
+
+  document.getElementById('startBtn').addEventListener('click', startGame);
+  document.getElementById('retryBtn').addEventListener('click', startGame);
+
+  bestScoreEl.textContent = 'Meilleur score : ' + bestScore;
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
