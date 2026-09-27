@@ -260,7 +260,7 @@ def test_health_detects_gaps_and_renders(tmp_path, raw):
     assert h['coherence']['troncons_sans_tracking_30j'] > 0
     assert h['status'] in ('warn', 'error')
     msgs = ' '.join(a['msg'] for a in h['alerts'])
-    assert 'sans résumé tracking' in msgs and 'aucun PDF de tracking' in msgs
+    assert 'pas de résumé tracking' in msgs and 'aucun PDF de tracking' in msgs
     assert any(a['msg'].startswith('« tracking » en retard') for a in h['alerts'])
     assert any('Aucun modèle' in a['msg'] for a in h['alerts'])
     assert len(h['recent_days']) == health.RECENT_DAYS
