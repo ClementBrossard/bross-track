@@ -1,37 +1,34 @@
 """
-BROSS&TRACK — Backend Flask
+GalopTrack — site web (Render)
+
+Sert, derrière un mot de passe, les pages générées chaque jour par le
+pipeline (GitHub Actions) et stockées sur Cloudflare R2 :
+  /          -> /dashboard
+  /dashboard    dashboard GalopTrack (dashboards/latest.html)
+  /sante        contrôle de santé des données (dashboards/sante.html)
+
+Variables d'environnement : APP_PASSWORD, SECRET_KEY, R2_ACCOUNT_ID,
+R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET.
 """
 
-import base64
-import json
+import gzip
+import hmac
 import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+import time
 from functools import wraps
 
-import requests
-from flask import Flask, jsonify, render_template, request, session, redirect
-
-from core import (
-    get_courses_plat, fetch_perfs, fetch_participants,
-    get_horse_tracking_history, count_with_tracking,
-    fetch_tracking_pdf, parse_tracking_for_horse,
-    ts_to_date_pmu, ts_to_date_galop,
-)
+from flask import Flask, redirect, request, session
 
 app = Flask(__name__)
-# À définir dans les variables d'environnement Render (les valeurs par défaut
-# ci-dessous sont visibles dans le code et devraient être changées).
-app.secret_key = os.environ.get("SECRET_KEY", "br0ss_tr4ck_s3cr3t_k3y_2024")
-PASSWORD = os.environ.get("APP_PASSWORD", "BROSSARDTRACKWIN")
+app.secret_key = os.environ.get("SECRET_KEY") or os.urandom(32)
+if not os.environ.get("SECRET_KEY"):
+    app.logger.warning("SECRET_KEY non défini : les sessions ne tiendront pas entre deux workers")
+PASSWORD = os.environ.get("APP_PASSWORD", "")
+if not PASSWORD:
+    app.logger.warning("APP_PASSWORD non défini : connexion impossible tant qu'il n'est pas configuré")
 
-GITHUB_PAT  = os.environ.get("GITHUB_PAT", "")
-GITHUB_REPO = "ClementBrossard/bross-track"
-DATA_BRANCH = "data"
-GITHUB_HEADERS = {
-    "Authorization": f"Bearer {GITHUB_PAT}",
-    "Accept": "application/vnd.github.v3+json",
-}
+REFRESH_S = 300
+_page_caches = {}
 
 
 def login_required(f):
@@ -43,188 +40,12 @@ def login_required(f):
     return decorated
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  GitHub cache helpers
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _cache_path(date_galop: str, code_hippo: str, num_course: int) -> str:
-    return f"data/{date_galop}/{code_hippo}_C{num_course:02d}.json"
-
-
-def get_race_cache(date_galop: str, code_hippo: str, num_course: int) -> dict | None:
-    if not GITHUB_PAT:
-        return None
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{_cache_path(date_galop, code_hippo, num_course)}"
-    try:
-        r = requests.get(url, headers=GITHUB_HEADERS, params={"ref": DATA_BRANCH}, timeout=5)
-        if r.status_code == 200:
-            content = base64.b64decode(r.json()["content"]).decode()
-            return json.loads(content)
-    except Exception:
-        pass
-    return None
-
-
-def trigger_github_parse(date_pmu: str, date_galop: str, code_hippo: str,
-                          num_reunion: int, num_course: int) -> bool:
-    if not GITHUB_PAT:
-        return False
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/parse_course.yml/dispatches"
-    payload = {
-        "ref": "main",
-        "inputs": {
-            "date_pmu":    date_pmu,
-            "date_galop":  date_galop,
-            "code_hippo":  code_hippo,
-            "num_reunion": str(num_reunion),
-            "num_course":  str(num_course),
-        },
-    }
-    try:
-        r = requests.post(url, json=payload, headers=GITHUB_HEADERS, timeout=10)
-        return r.status_code == 204
-    except Exception:
-        return False
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  Login
-# ══════════════════════════════════════════════════════════════════════════════
-
-LOGIN_PAGE = """<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BROSS&TRACK — Accès</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: #0a0c10;
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-family: 'DM Mono', monospace;
-  }
-  .box {
-    background: #12151c;
-    border: 1px solid #2a2d35;
-    border-top: 3px solid #b8860b;
-    border-radius: 8px;
-    padding: 48px 40px;
-    width: 100%;
-    max-width: 380px;
-    text-align: center;
-  }
-  .logo {
-    font-family: sans-serif;
-    font-weight: 900;
-    font-size: 22px;
-    letter-spacing: 3px;
-    color: #d4a017;
-    margin-bottom: 8px;
-  }
-  .sub {
-    font-size: 11px;
-    letter-spacing: 2px;
-    color: #5a5d6a;
-    margin-bottom: 36px;
-  }
-  input[type=password] {
-    width: 100%;
-    background: #0a0c10;
-    border: 1px solid #2a2d35;
-    border-radius: 4px;
-    color: #f5f2eb;
-    padding: 12px 14px;
-    font-family: 'DM Mono', monospace;
-    font-size: 14px;
-    letter-spacing: 3px;
-    text-align: center;
-    outline: none;
-    margin-bottom: 16px;
-  }
-  input[type=password]:focus { border-color: #b8860b; }
-  button {
-    width: 100%;
-    background: #b8860b;
-    color: #0a0c10;
-    border: none;
-    border-radius: 4px;
-    padding: 12px;
-    font-weight: 700;
-    font-size: 13px;
-    letter-spacing: 2px;
-    cursor: pointer;
-    font-family: sans-serif;
-  }
-  button:hover { background: #d4a017; }
-  .error {
-    color: #c0392b;
-    font-size: 11px;
-    margin-top: 12px;
-    letter-spacing: 1px;
-  }
-</style>
-</head>
-<body>
-<div class="box">
-  <div class="logo">BROSS&amp;TRACK</div>
-  <div class="sub">ANALYSE · TRACKING · COMPARATIF</div>
-  <form method="POST" action="/login">
-    <input type="password" name="password" placeholder="MOT DE PASSE" autofocus>
-    <button type="submit">ACCÉDER</button>
-    {error}
-  </form>
-</div>
-</body>
-</html>"""
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  Routes
-# ══════════════════════════════════════════════════════════════════════════════
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        if request.form.get("password") == PASSWORD:
-            session["authenticated"] = True
-            return redirect("/")
-        return LOGIN_PAGE.replace("{error}", '<div class="error">Mot de passe incorrect.</div>')
-    return LOGIN_PAGE.replace("{error}", "")
-
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect("/login")
-
-
-@app.route("/")
-@login_required
-def index():
-    return render_template("index.html")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  Dashboard GalopTrack (généré chaque jour par GitHub Actions, stocké sur R2)
-# ══════════════════════════════════════════════════════════════════════════════
-
-_page_caches = {}
-DASHBOARD_REFRESH_S = 300
-
-
-def _load_dashboard(key="dashboards/latest.html"):
-    """Relit une page générée (dashboard, santé) sur R2 si le fichier a changé
-    (vérifié au plus toutes les 5 minutes). Retourne (html, gzip) ou (None, None)."""
-    import time
-    import gzip as _gzip
-
+def _load_page(key):
+    """Relit une page générée sur R2 si elle a changé (vérifié au plus toutes
+    les 5 minutes). Retourne (html, gzip) ou (None, None)."""
     now = time.time()
     c = _page_caches.setdefault(key, {"html": None, "gz": None, "checked": 0.0, "etag": None})
-    if c["html"] is not None and now - c["checked"] < DASHBOARD_REFRESH_S:
+    if c["html"] is not None and now - c["checked"] < REFRESH_S:
         return c["html"], c["gz"]
     c["checked"] = now
     try:
@@ -238,20 +59,78 @@ def _load_dashboard(key="dashboards/latest.html"):
         elif not st.exists(key):
             return None, None
         data = st.read_bytes(key)
-        c["html"], c["gz"] = data, _gzip.compress(data, compresslevel=6)
+        c["html"], c["gz"] = data, gzip.compress(data, compresslevel=6)
     except Exception as e:  # stockage non configuré / fichier absent
-        app.logger.warning("Dashboard indisponible : %s", e)
+        app.logger.warning("Page %s indisponible : %s", key, e)
     return c["html"], c["gz"]
 
 
 def _serve_generated(key, missing_msg):
-    html, gz = _load_dashboard(key)
+    html, gz = _load_page(key)
     if html is None:
         return (missing_msg, 503)
     if "gzip" in request.headers.get("Accept-Encoding", ""):
         return app.response_class(gz, mimetype="text/html",
                                   headers={"Content-Encoding": "gzip", "Cache-Control": "private, max-age=300"})
     return app.response_class(html, mimetype="text/html")
+
+
+LOGIN_PAGE = """<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GalopTrack</title>
+<style>
+:root{--bg:#f6f3ea;--paper:#fffdf8;--ink:#221f1a;--soft:#6b6357;--line:#ddd6c4;--green:#1f3d2e;--red:#a8402c}
+@media (prefers-color-scheme: dark){:root{--bg:#16140f;--paper:#211e18;--ink:#eee8da;--soft:#a79e8e;
+--line:#3a352b;--green:#9fc9ad;--red:#f08c78}}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);min-height:100vh;display:flex;align-items:center;
+justify-content:center;font:14px/1.45 Inter,system-ui,sans-serif;padding:16px}
+.box{background:var(--paper);border:1px solid var(--line);border-top:3px solid var(--green);border-radius:8px;
+padding:40px 32px;width:100%;max-width:360px;text-align:center}
+.logo{font-weight:700;font-size:24px;color:var(--green);margin-bottom:4px}
+.sub{font-size:12px;color:var(--soft);margin-bottom:28px}
+input{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--ink);
+padding:12px;font-size:15px;text-align:center;margin-bottom:12px}
+input:focus{outline:2px solid var(--green);border-color:transparent}
+button{width:100%;background:var(--green);color:var(--paper);border:0;border-radius:6px;padding:12px;
+font-weight:600;font-size:14px;cursor:pointer}
+.error{color:var(--red);font-size:13px;margin-top:12px}
+</style></head><body>
+<div class="box">
+  <div class="logo">GalopTrack</div>
+  <div class="sub">Tracking · Modèle · Courses du jour</div>
+  <form method="POST" action="/login">
+    <input type="password" name="password" placeholder="Mot de passe" autofocus>
+    <button type="submit">Accéder</button>
+    {error}
+  </form>
+</div>
+</body></html>"""
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        given = request.form.get("password", "")
+        if PASSWORD and hmac.compare_digest(given, PASSWORD):
+            session["authenticated"] = True
+            session.permanent = True
+            return redirect("/dashboard")
+        return LOGIN_PAGE.replace("{error}", '<div class="error">Mot de passe incorrect.</div>')
+    return LOGIN_PAGE.replace("{error}", "")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/login")
+
+
+@app.route("/")
+@login_required
+def index():
+    return redirect("/dashboard")
 
 
 @app.route("/dashboard")
@@ -268,190 +147,10 @@ def sante_page():
                             "Contrôle de santé pas encore généré (voir le workflow GitHub « Pipeline — quotidien »).")
 
 
-@app.route("/api/programme")
-@login_required
-def api_programme():
-    jour = request.args.get("jour", datetime.now().strftime("%d%m%Y"))
-    return jsonify({"jour": jour, "courses": get_courses_plat(jour)})
-
-
-@app.route("/api/course/partants")
-@login_required
-def api_partants():
-    jour     = request.args.get("jour", datetime.now().strftime("%d%m%Y"))
-    reunion  = int(request.args.get("reunion", 1))
-    course_n = int(request.args.get("course", 1))
-
-    perfs = fetch_perfs(jour, reunion, course_n)
-    if not perfs:
-        return jsonify({"error": "Impossible de récupérer les performances", "partants": []})
-
-    participants_info = fetch_participants(jour, reunion, course_n)
-
-    courses_du_jour = get_courses_plat(jour)
-    course_ref = next(
-        (c for c in courses_du_jour if c["num_reunion"] == reunion and c["num_course"] == course_n),
-        None
-    )
-
-    def traiter_partant(p):
-        nom  = p.get("nomCheval", "")
-        num  = p.get("numPmu", 0)
-        info = participants_info.get(num, {})
-
-        nb_courses   = info.get("nb_courses")   or p.get("nombreCourses",   p.get("nbCourses",   None))
-        nb_victoires = info.get("nb_victoires") or p.get("nombreVictoires", p.get("nbVictoires", None))
-        nb_places    = info.get("nb_places")    or p.get("nombrePlaces",    p.get("nbPlaces",    None))
-
-        return {
-            "num":        num, "nom": nom,
-            "jockey":     info.get("jockey") or p.get("nomJockey", ""),
-            "entraineur": info.get("entraineur") or p.get("entraineur", ""),
-            "age":        info.get("age") or str(p.get("age", "")),
-            "sexe":       info.get("sexe") or p.get("sexe", ""),
-            "poids":      info.get("poids") or "",
-            "corde":      info.get("corde") or "",
-            "musique":    info.get("musique") or p.get("musique", ""),
-            "nb_courses":   nb_courses,
-            "nb_victoires": nb_victoires,
-            "nb_places":    nb_places,
-            "historique": [],
-            "nb_courses_trackers": 0,
-        }
-
-    partants_out = []
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = {executor.submit(traiter_partant, p): p for p in perfs}
-        for future in as_completed(futures):
-            try:
-                partants_out.append(future.result())
-            except Exception:
-                pass
-
-    if course_ref and not course_ref.get("terrain") and perfs:
-        terrain_perf = perfs[0].get("etatTerrain", perfs[0].get("terrain", ""))
-        if terrain_perf:
-            course_ref["terrain"] = terrain_perf
-
-    return jsonify({
-        "partants": sorted(partants_out, key=lambda x: x["num"]),
-        "course_ref": course_ref,
-    })
-
-
-@app.route("/api/horse/tracking")
-@login_required
-def api_horse_tracking():
-    jour       = request.args.get("jour", datetime.now().strftime("%d%m%Y"))
-    reunion    = int(request.args.get("reunion", 1))
-    course_n   = int(request.args.get("course", 1))
-    nom        = request.args.get("nom", "").strip()
-    max_hist   = int(request.args.get("max_hist", 6))
-    date_galop = request.args.get("date_galop", "")
-    code_hippo = request.args.get("code_hippo", "").upper()
-
-    if not nom:
-        return jsonify({"error": "nom requis", "historique": [], "nb_courses_trackers": 0})
-
-    # Vérifie le cache GitHub en priorité
-    if date_galop and code_hippo:
-        cache = get_race_cache(date_galop, code_hippo, course_n)
-        if cache:
-            horse_data = cache.get("horses", {}).get(nom)
-            if horse_data:
-                return jsonify({"nom": nom, "from_cache": True, **horse_data})
-
-    # Parse à la volée
-    perfs = fetch_perfs(jour, reunion, course_n)
-    horse_perf = next(
-        (p for p in perfs if p.get("nomCheval", "").upper().strip() == nom.upper()),
-        None
-    )
-    if not horse_perf:
-        return jsonify({"error": "Cheval non trouvé", "historique": [], "nb_courses_trackers": 0})
-
-    historique = get_horse_tracking_history(horse_perf.get("coursesCourues", []), nom, max_courses=max_hist)
-    return jsonify({
-        "nom": nom,
-        "from_cache": False,
-        "historique": historique,
-        "nb_courses_trackers": count_with_tracking(historique),
-    })
-
-
-@app.route("/api/course/cache-status")
-@login_required
-def api_cache_status():
-    date_galop = request.args.get("date_galop", "")
-    code_hippo = request.args.get("hippo", "").upper()
-    course_n   = int(request.args.get("course", 1))
-    if not (date_galop and code_hippo):
-        return jsonify({"cached": False})
-    data = get_race_cache(date_galop, code_hippo, course_n)
-    return jsonify({"cached": data is not None})
-
-
-@app.route("/api/workflow/status")
-@login_required
-def api_workflow_status():
-    if not GITHUB_PAT:
-        return jsonify({"status": "unknown"})
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/parse_course.yml/runs"
-    try:
-        r = requests.get(url, headers=GITHUB_HEADERS, params={"per_page": 1}, timeout=5)
-        if r.status_code == 200:
-            runs = r.json().get("workflow_runs", [])
-            if runs:
-                run = runs[0]
-                return jsonify({
-                    "status":     run.get("status"),      # queued, in_progress, completed
-                    "conclusion": run.get("conclusion"),  # success, failure, None
-                    "started_at": run.get("run_started_at", ""),
-                    "url":        run.get("html_url", ""),
-                })
-    except Exception:
-        pass
-    return jsonify({"status": "unknown"})
-
-
-@app.route("/api/course/parse", methods=["POST"])
-@login_required
-def api_parse_course():
-    body       = request.get_json() or {}
-    jour       = body.get("jour", "")
-    reunion    = int(body.get("reunion", 1))
-    course_n   = int(body.get("course", 1))
-    date_galop = body.get("date_galop", "")
-    code_hippo = body.get("code_hippo", "").upper()
-
-    if not all([jour, date_galop, code_hippo]):
-        return jsonify({"error": "Paramètres manquants"}), 400
-    if not GITHUB_PAT:
-        return jsonify({"error": "GITHUB_PAT non configuré"}), 503
-
-    ok = trigger_github_parse(jour, date_galop, code_hippo, reunion, course_n)
-    if ok:
-        return jsonify({"status": "triggered"})
-    return jsonify({"error": "Impossible de déclencher le workflow GitHub"}), 500
-
-
-@app.route("/api/tracking/pdf")
-@login_required
-def api_tracking_pdf():
-    date_g   = request.args.get("date")
-    hippo    = request.args.get("hippo", "").upper()
-    course_n = int(request.args.get("course", 1))
-    cheval   = request.args.get("cheval", "")
-    pdf = fetch_tracking_pdf(date_g, hippo, course_n)
-    if not pdf:
-        return jsonify({"found": False})
-    if cheval:
-        return jsonify({"found": True, "cheval": cheval, "tracking": parse_tracking_for_horse(pdf, cheval)})
-    return jsonify({"found": True, "size_kb": len(pdf) // 1024})
+@app.route("/healthz")
+def healthz():
+    return "ok"
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    print("\n🏇  BROSS&TRACK — démarrage")
-    print(f"   → http://localhost:{port}\n")
-    app.run(debug=False, host="0.0.0.0", port=port)
+    app.run(debug=True, port=5000)
