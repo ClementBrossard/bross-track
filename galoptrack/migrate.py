@@ -94,39 +94,69 @@ def clean_basic(df, dedup_cols, name, report, prefer_col=None):
     return df
 
 
+COTE_CANDIDATES = ['cote_directe', 'cote', 'cote_direct', 'rapport_direct', 'dernier_rapport_direct',
+                   'rapport', 'cote_simple_gagnant']
+
+
+def _find_cote_column(cot):
+    for c in COTE_CANDIDATES:
+        if c in cot.columns:
+            return c
+    # Repli : première colonne dont le nom contient « cote » ou « rapport »
+    for c in cot.columns:
+        if 'cote' in c.lower() or 'rapport' in c.lower():
+            return c
+    return None
+
+
 def merge_cotes(ch, cot, report):
     """cotes_data -> chevaux.cote_directe, jointure (date, n° course, nom) :
-    le code hippodrome de cotes_data n'est pas fiable (table différente)."""
-    rep = {'raw': _describe(cot)}
+    le code hippodrome de cotes_data n'est pas fiable (table différente).
+    Jamais bloquant : si le fichier est inexploitable, la migration continue
+    sans cotes (elles seront re-collectées par le rattrapage)."""
+    rep = {'raw': _describe(cot) if cot is not None and {'date'} <= set(cot.columns) else {},
+           'columns': list(cot.columns) if cot is not None else None}
+    report['cotes_data'] = rep
+    ch = ch.copy()
+    ch['cote_directe'] = pd.NA
+    rep['matched'] = 0
     if cot is None or cot.empty:
-        ch['cote_directe'] = pd.NA
-        rep['matched'] = 0
-        report['cotes_data'] = rep
+        rep['status'] = 'absent ou vide'
         return ch
+    col = _find_cote_column(cot)
+    missing = [c for c in ('date', 'num_course', 'nom_cheval') if c not in cot.columns]
+    if col is None or missing:
+        rep['status'] = (f"ignoré : colonne de cote introuvable" if col is None
+                         else f"ignoré : colonnes manquantes {missing}")
+        log.warning("cotes_data %s (colonnes : %s)", rep['status'], list(cot.columns))
+        return ch
+    rep['cote_column_used'] = col
     cot = cot[_valid_keys(cot, check_hippo=False)].copy()
     cot['date'] = pd.to_numeric(cot['date']).astype('int64')
     cot['num_course'] = pd.to_numeric(cot['num_course']).astype('int64')
     cot['nom_cheval'] = cot['nom_cheval'].astype(str).str.strip().str.upper()
-    cot['cote_directe'] = pd.to_numeric(cot['cote_directe'], errors='coerce')
-    cot = cot.dropna(subset=['cote_directe'])
+    cot['_cote'] = pd.to_numeric(cot[col].astype(str).str.replace(',', '.', regex=False), errors='coerce')
+    cot = cot.dropna(subset=['_cote'])
+    if cot.empty:
+        rep['status'] = f"ignoré : colonne '{col}' sans valeur numérique"
+        return ch
     k = ['date', 'num_course', 'nom_cheval']
     # Une même clé avec deux cotes différentes = ambigu -> ignorée
-    nvals = cot.groupby(k)['cote_directe'].nunique()
+    nvals = cot.groupby(k)['_cote'].nunique()
     ambig = nvals[nvals > 1].index
     cot = cot.drop_duplicates(k).set_index(k)
     cot = cot[~cot.index.isin(ambig)]
     rep['ambiguous_keys_ignored'] = int(len(ambig))
 
-    ch = ch.copy()
     nom_up = ch['nom_cheval'].astype(str).str.strip().str.upper()
     idx = pd.MultiIndex.from_arrays([ch['date'], ch['num_course'], nom_up])
-    ch['cote_directe'] = cot['cote_directe'].reindex(idx).values
+    ch['cote_directe'] = cot['_cote'].reindex(idx).values
     in_range = ch['date'].between(cot.index.get_level_values(0).min(), cot.index.get_level_values(0).max())
     rep['chevaux_rows_in_cotes_period'] = int(in_range.sum())
     rep['matched'] = int(ch['cote_directe'].notna().sum())
     rep['match_rate_in_period'] = round(float(ch.loc[in_range, 'cote_directe'].notna().mean()), 4) \
         if in_range.any() else None
-    report['cotes_data'] = rep
+    rep['status'] = 'ok'
     return ch
 
 
@@ -246,6 +276,8 @@ def to_markdown(report):
                              f"{r['rows_gaining_result_vs_keep_first']:,}")
     c = report.get('cotes_data', {})
     lines += ['## cotes_data → chevaux.cote_directe', '',
+              f"- Statut : {c.get('status')} (colonne utilisée : {c.get('cote_column_used')})",
+              f"- Colonnes du fichier : {c.get('columns')}",
               f"- Lignes cotes : {c.get('raw', {}).get('rows', 0):,}, période "
               f"{c.get('raw', {}).get('date_min')} → {c.get('raw', {}).get('date_max')}",
               f"- Chevaux avec cote : {c.get('matched', 0):,} "
@@ -267,6 +299,7 @@ def to_markdown(report):
 def run(storage):
     report = {'generated_at': config.now_paris().isoformat(timespec='seconds')}
     raw = {n: read_raw(storage, n) for n in RAW_FILES}
+    report['raw_columns'] = {n: (list(df.columns) if df is not None else None) for n, df in raw.items()}
     missing = [n for n in ('tracking_data', 'troncons_data', 'chevaux_data') if raw[n] is None]
     if missing:
         raise RuntimeError(f"Fichiers bruts manquants sous raw/ : {missing}")
