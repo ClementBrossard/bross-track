@@ -109,7 +109,7 @@ def upsert_races(storage, name, rows, existing=None):
     for c in cols:
         if c not in existing.columns:
             existing[c] = pd.NA
-    merged = pd.concat([existing[cols], new[cols]], ignore_index=True)
+    merged = pd.concat([existing[cols], new[cols]], ignore_index=True) if len(existing) else new[cols]
     merged = normalize(merged)
     merged = merged.sort_values('date', kind='stable').reset_index(drop=True)
     write_table(storage, name, merged)

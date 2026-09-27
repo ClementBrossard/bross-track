@@ -52,7 +52,10 @@ def test_features_parity_with_notebook(built):
     for f in FEATURES:
         a, b = ref[f], new[f]
         if isinstance(a.dtype, pd.CategoricalDtype) or isinstance(b.dtype, pd.CategoricalDtype) or a.dtype == object:
-            assert (a.astype(str).values == b.astype(str).values).all(), f
+            def norm(s):
+                s = s.astype(object)
+                return np.where(pd.isna(s), '<manquant>', s.astype(str))
+            assert (norm(a) == norm(b)).all(), f
         else:
             np.testing.assert_allclose(a.astype(float).values, b.astype(float).values, rtol=1e-9,
                                        equal_nan=True, err_msg=f)

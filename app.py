@@ -20,8 +20,10 @@ from core import (
 )
 
 app = Flask(__name__)
-app.secret_key = "br0ss_tr4ck_s3cr3t_k3y_2024"
-PASSWORD = "BROSSARDTRACKWIN"
+# À définir dans les variables d'environnement Render (les valeurs par défaut
+# ci-dessous sont visibles dans le code et devraient être changées).
+app.secret_key = os.environ.get("SECRET_KEY", "br0ss_tr4ck_s3cr3t_k3y_2024")
+PASSWORD = os.environ.get("APP_PASSWORD", "BROSSARDTRACKWIN")
 
 GITHUB_PAT  = os.environ.get("GITHUB_PAT", "")
 GITHUB_REPO = "ClementBrossard/bross-track"
@@ -204,6 +206,56 @@ def logout():
 @login_required
 def index():
     return render_template("index.html")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Dashboard GalopTrack (généré chaque jour par GitHub Actions, stocké sur R2)
+# ══════════════════════════════════════════════════════════════════════════════
+
+_dashboard_cache = {"html": None, "gz": None, "checked": 0.0, "etag": None}
+DASHBOARD_REFRESH_S = 300
+
+
+def _load_dashboard():
+    """Relit dashboards/latest.html sur R2 si le fichier a changé (vérifié au
+    plus toutes les 5 minutes). Retourne (html_bytes, gzip_bytes) ou (None, None)."""
+    import time
+    import gzip as _gzip
+
+    now = time.time()
+    c = _dashboard_cache
+    if c["html"] is not None and now - c["checked"] < DASHBOARD_REFRESH_S:
+        return c["html"], c["gz"]
+    c["checked"] = now
+    try:
+        from galoptrack.storage import get_storage
+        st = get_storage()
+        key = "dashboards/latest.html"
+        if hasattr(st, "s3"):
+            head = st.s3.head_object(Bucket=st.bucket, Key=key)
+            if head["ETag"] == c["etag"] and c["html"] is not None:
+                return c["html"], c["gz"]
+            c["etag"] = head["ETag"]
+        elif not st.exists(key):
+            return None, None
+        data = st.read_bytes(key)
+        c["html"], c["gz"] = data, _gzip.compress(data, compresslevel=6)
+    except Exception as e:  # stockage non configuré / fichier absent
+        app.logger.warning("Dashboard indisponible : %s", e)
+    return c["html"], c["gz"]
+
+
+@app.route("/dashboard")
+@login_required
+def dashboard_page():
+    html, gz = _load_dashboard()
+    if html is None:
+        return ("Dashboard pas encore généré (voir le workflow GitHub "
+                "« Pipeline — quotidien »).", 503)
+    if "gzip" in request.headers.get("Accept-Encoding", ""):
+        return app.response_class(gz, mimetype="text/html",
+                                  headers={"Content-Encoding": "gzip", "Cache-Control": "private, max-age=300"})
+    return app.response_class(html, mimetype="text/html")
 
 
 @app.route("/api/programme")
