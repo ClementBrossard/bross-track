@@ -98,6 +98,8 @@ tbody tr:last-child td{border-bottom:none;}
 .hero .meta{display:flex;gap:8px;flex-wrap:wrap;}
 
 .subtabs{display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line);}
+.horse-link{cursor:pointer;color:var(--green);text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px;}
+.horse-link:hover{text-decoration-color:var(--green);}
 .subtab{background:transparent;border:none;color:var(--ink-soft);padding:9px 16px;font-family:'Inter',sans-serif;
   font-weight:600;font-size:13px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;}
 .subtab.active{color:var(--green);border-bottom-color:var(--green);}
@@ -190,8 +192,8 @@ tbody tr:last-child td{border-bottom:none;}
   <div class="kpis" id="kpis"></div>
 
   <div class="tabs">
-    <button class="tab active" data-tab="courses">Courses</button>
-    <button class="tab" data-tab="today">Aujourd'hui</button>
+    <button class="tab active" data-tab="today">Aujourd'hui</button>
+    <button class="tab" data-tab="courses">Courses</button>
     <button class="tab" data-tab="chevaux">Chevaux</button>
     <button class="tab" data-tab="methodologie">Méthodologie</button>
     <button class="tab" data-tab="backtest">Résultats des tests</button>
@@ -199,7 +201,7 @@ tbody tr:last-child td{border-bottom:none;}
   </div>
 
   <!-- ===================== VUE COURSES ===================== -->
-  <div class="view active" id="view-courses">
+  <div class="view" id="view-courses">
     <div class="controls">
       <label>Recherche cheval
         <input type="text" id="f-search" placeholder="Nom du cheval...">
@@ -248,7 +250,7 @@ tbody tr:last-child td{border-bottom:none;}
   </div>
 
   <!-- ===================== VUE AUJOURD'HUI ===================== -->
-  <div class="view" id="view-today">
+  <div class="view active" id="view-today">
     <p class="count" id="todayCount"></p>
     <div id="todayList"></div>
   </div>
@@ -294,7 +296,7 @@ tbody tr:last-child td{border-bottom:none;}
   <!-- ===================== VUE COURSE (detail) ===================== -->
   <div class="view" id="view-race">
     <div class="breadcrumb">
-      <a data-nav="courses">Liste des courses</a>
+      <a data-nav="courses" class="bc-list">Liste des courses</a>
       <div class="nav-arrows">
         <button id="racePrev" onclick="raceNav(-1)">&#8592; Precedente</button>
         <button id="raceNext" onclick="raceNav(1)">Suivante &#8594;</button>
@@ -303,12 +305,12 @@ tbody tr:last-child td{border-bottom:none;}
     <div class="hero" id="raceHero"></div>
 
     <div class="subtabs">
+      <button class="subtab" data-sub="modele">Modèle</button>
       <button class="subtab active" data-sub="troncons">Troncons &amp; vitesses</button>
       <button class="subtab" data-sub="metrics">Metriques de course</button>
       <button class="subtab" data-sub="simulation">Simulation tactique</button>
       <button class="subtab" data-sub="duel">Duels</button>
       <button class="subtab" data-sub="paris">Paris Simulation</button>
-      <button class="subtab" data-sub="modele">Modèle</button>
     </div>
 
     <div class="subview active" id="sub-troncons">
@@ -448,7 +450,7 @@ tbody tr:last-child td{border-bottom:none;}
   </div>
   <div class="view" id="view-horse">
     <div class="breadcrumb" id="horseBreadcrumb">
-      <a data-nav="courses">Liste des courses</a><span class="sep">/</span>
+      <a data-nav="courses" class="bc-list">Liste des courses</a><span class="sep">/</span>
       <a id="bcRace" data-nav="race">Course</a><span class="sep">/</span>
       <span id="bcHorseName"></span>
       <div class="nav-arrows">
@@ -2350,6 +2352,11 @@ function openRace(raceId, navList){
   if(navList) state.raceNavList = navList;
   updateRaceNavButtons();
   const r = RACE_BY_ID[raceId];
+  // Fil d'Ariane : retour vers « Aujourd'hui » pour une course du jour
+  document.querySelectorAll('.bc-list').forEach(a=>{
+    a.dataset.nav = r.today ? 'today' : 'courses';
+    a.textContent = r.today ? "Courses du jour" : 'Liste des courses';
+  });
 
   document.getElementById('raceHero').innerHTML = `
     <div>
@@ -2404,7 +2411,8 @@ function openRace(raceId, navList){
   }
 
   goToTab('race');
-  goToSubTab('troncons');
+  // Courses du jour : on arrive sur le modèle ; courses passées : sur les tronçons
+  goToSubTab(r.today ? 'modele' : 'troncons');
   state.raceBenchDist = false;
   state.raceBenchTerrain = false;
   state.todayFilterSuspect = false;
@@ -3364,7 +3372,7 @@ function renderModele(){
     return `<tr class="modele-row" data-horse="${encodeURIComponent(h.nom)}" style="cursor:pointer;border-bottom:1px solid var(--line);">
       <td style="padding:7px 10px;font-weight:700;font-size:13px;">${i+1}</td>
       <td style="padding:7px 10px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--ink-soft);">${h.npart ?? '—'}</td>
-      <td style="padding:7px 10px;font-size:13px;font-weight:600;">${h.nom}</td>
+      <td style="padding:7px 10px;font-size:13px;font-weight:600;"><span class="horse-link">${h.nom}</span></td>
       <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;">${h.cote ? h.cote.toFixed(1) : '—'}</td>
       <td style="padding:7px 10px;min-width:170px;">
         <div style="background:#ece6d4;border-radius:3px;height:13px;margin-bottom:2px;">
@@ -3394,7 +3402,7 @@ function renderModele(){
         <span class="shap-arrow" data-arrow="${i}" style="font-size:11px;color:var(--ink-soft);width:12px;">${arrowChar}</span>
         <span style="font-weight:700;font-size:13px;min-width:26px;">${i+1}</span>
         <span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--ink-soft);min-width:22px;">N°${h.npart ?? '—'}</span>
-        <span style="font-weight:600;font-size:13.5px;flex:1;">${h.nom}</span>
+        <span style="font-weight:600;font-size:13.5px;flex:1;"><span class="horse-link" data-open-horse="${encodeURIComponent(h.nom)}">${h.nom}</span></span>
         <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-soft);">cote ${h.cote?h.cote.toFixed(1):'—'}</span>
         <span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--green);">modèle ${h.model_prob.toFixed(1)}%</span>
       </div>
@@ -3426,10 +3434,14 @@ function renderModele(){
     <div id="shapDetail">${shapPanels}</div>
   `;
 
+  // Clic sur une ligne du tableau ou sur un nom dans le détail SHAP : fiche du cheval
   container.querySelectorAll('.modele-row').forEach(row=>{
-    row.addEventListener('click', ()=>{
-      const idx = sorted.findIndex(h=>h.nom===decodeURIComponent(row.dataset.horse));
-      if(idx>=0) toggleShapPanel(idx);
+    row.addEventListener('click', ()=> openHorse(decodeURIComponent(row.dataset.horse), r.id, 'race'));
+  });
+  container.querySelectorAll('[data-open-horse]').forEach(el=>{
+    el.addEventListener('click', ev=>{
+      ev.stopPropagation();
+      openHorse(decodeURIComponent(el.dataset.openHorse), r.id, 'race');
     });
   });
   container.querySelectorAll('[data-toggle-shap]').forEach(el=>{
