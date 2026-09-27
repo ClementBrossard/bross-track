@@ -27,7 +27,10 @@ jobs:
           cache-dependency-path: requirements-pipeline.txt
       - run: pip install -r requirements-pipeline.txt
       - name: Migration
-        run: python -m galoptrack migrate | tee migration_report.md
+        run: |
+          set -o pipefail
+          python -m galoptrack migrate | tee migration_report.md
       - name: Rapport dans le résumé du run
+        if: always()
         run: cat migration_report.md >> "$GITHUB_STEP_SUMMARY"
       - run: python -m galoptrack status

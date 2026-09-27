@@ -228,3 +228,18 @@ def test_migration(tmp_path, raw, monkeypatch):
     # Après migration, le dashboard se construit sur les tables migrées
     html, stats = dashboard.build(st, with_today=False)
     assert stats['model_version'] == 'v7'
+
+
+def test_merge_cotes_tolerates_other_column_names(raw):
+    ch = raw['chevaux'].head(200).copy()
+    cot = ch[['date', 'code_hippo', 'num_course', 'nom_cheval']].copy()
+    cot['cote'] = '4,5'
+    rep = {}
+    out = migrate.merge_cotes(ch, cot, rep)
+    assert rep['cotes_data']['cote_column_used'] == 'cote'
+    assert (out['cote_directe'] == 4.5).all()
+    # fichier inexploitable : pas d'exception, migration non bloquée
+    rep = {}
+    out = migrate.merge_cotes(ch, cot.drop(columns=['cote']), rep)
+    assert out['cote_directe'].isna().all()
+    assert rep['cotes_data']['status'].startswith('ignoré')
