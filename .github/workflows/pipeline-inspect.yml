@@ -1,0 +1,38 @@
+name: Pipeline — diagnostic d'une course
+
+# Affiche les lignes brutes de chaque table pour une course, et les courses
+# que le dashboard en construit. Lecture seule : ne modifie rien.
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Date (YYYY-MM-DD)"
+        required: true
+      hippo:
+        description: "Code hippodrome (ex : VIC)"
+        required: true
+      course:
+        description: "N° de course (vide = toutes)"
+        required: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    env:
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-pipeline.txt
+      - run: pip install -r requirements-pipeline.txt
+      - name: Diagnostic
+        run: |
+          ARGS="--date ${{ inputs.date }} --hippo ${{ inputs.hippo }}"
+          if [ -n "${{ inputs.course }}" ]; then ARGS="$ARGS --course ${{ inputs.course }}"; fi
+          python -m galoptrack inspect $ARGS

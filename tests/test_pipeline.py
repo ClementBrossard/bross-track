@@ -269,3 +269,14 @@ def test_health_detects_gaps_and_renders(tmp_path, raw):
     assert 'Santé des données' in page and 'sans résumé tracking' in page
     badged = health.inject_badge('<html><body>x</body></html>', h)
     assert 'href="/sante"' in badged and 'alerte' in badged
+
+
+def test_finishing_position_is_integer_text(raw):
+    from galoptrack.races import norm_pa
+    assert norm_pa(1.0) == '1' and norm_pa('3.0') == '3' and norm_pa(12) == '12'
+    assert norm_pa(float('nan')) is None and norm_pa('') is None and norm_pa('DAI') == 'DAI'
+    tr = raw['tracking'].copy()
+    tr['position_arrivee'] = tr['position_arrivee'].astype(float)   # « 1.0 » comme en production
+    races_list, _, _ = build_races(tr, raw['troncons'], raw['chevaux'])
+    tracked = [r for r in races_list if r.get('tracked')]
+    assert tracked and all(any(h['pa'] == '1' for h in r['horses']) for r in tracked)
