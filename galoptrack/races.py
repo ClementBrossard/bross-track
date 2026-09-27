@@ -36,6 +36,21 @@ def safe_str(v):
     return s if s else None
 
 
+def norm_pa(v):
+    """Place à l'arrivée en texte : '1' et non '1.0' (le dashboard repère le
+    vainqueur par pa === '1'). Les valeurs non numériques sont gardées."""
+    if v is None or (not isinstance(v, str) and pd.isna(v)):
+        return None
+    try:
+        f = float(v)
+        if f == int(f):
+            return str(int(f))
+    except (TypeError, ValueError):
+        pass
+    s = str(v).strip()
+    return s if s else None
+
+
 def clean_tables(tr, tc, ch):
     """Cellule 3 : conversion des clés, retrait des lignes corrompues,
     dédoublonnage cheval x course."""
@@ -142,7 +157,7 @@ def build_races(tr, tc, ch):
 
         races[race_key]['horses'].append({
             'nom': r['nom_cheval'],
-            'pa': safe_str(r['position_arrivee']),
+            'pa': norm_pa(r['position_arrivee']),
             'jk': safe_str(r.get('jockey')),
             'en': safe_str(r.get('entraineur')),
             'ag': safe_int(r.get('age')),

@@ -240,6 +240,7 @@ tbody tr:last-child td{border-bottom:none;}
           <th data-sort="alloc">Allocation <span class="arrow"></span></th>
           <th data-sort="nbh">Partants <span class="arrow"></span></th>
           <th data-sort="winner">Vainqueur <span class="arrow"></span></th>
+          <th>Tracking</th>
         </tr>
       </thead>
       <tbody id="listBody"></tbody>
@@ -553,10 +554,13 @@ function fmtDate(d){
   const s = String(d);
   return `${s.slice(6,8)}/${s.slice(4,6)}/${s.slice(0,4)}`;
 }
+// Certains hippodromes ont un autre code dans l'URL des PDF France Galop
+const PDF_HIPPO_CODES = {LPA:'LON', CLF:'CLA', LSO:'VIL', MAR:'BOR', BOR:'BOU', TOU:'CEP', NAR:'PET'};
 function pdfUrl(date, hippo, num){
   // https://www7.france-galop.com/Casaques/Tracking/{YYYYMMDD}{HIPPO}{NN}_last_times_fr.pdf
   const nn = String(num).padStart(2,'0');
-  return `https://www7.france-galop.com/Casaques/Tracking/${date}${hippo}${nn}_last_times_fr.pdf`;
+  const code = PDF_HIPPO_CODES[hippo] || hippo;
+  return `https://www7.france-galop.com/Casaques/Tracking/${date}${code}${nn}_last_times_fr.pdf`;
 }
 function dateInputToInt(v){
   if(!v) return null;
@@ -1209,7 +1213,7 @@ function renderList(){
 
   const body = document.getElementById('listBody');
   if(filtered.length===0){
-    body.innerHTML = `<tr><td colspan="9"><div class="empty">Aucune course ne correspond a ces filtres.</div></td></tr>`;
+    body.innerHTML = `<tr><td colspan="10"><div class="empty">Aucune course ne correspond a ces filtres.</div></td></tr>`;
     return;
   }
   const MAX_ROWS = 600;
@@ -1226,10 +1230,13 @@ function renderList(){
       <td class="mono">${fmtAlloc(r.alloc)}</td>
       <td class="mono">${r.horses.length}</td>
       <td class="name-cell">${winner ? winner.nom : '—'}</td>
+      <td>${r.tracked !== false && !r.today
+        ? `<a href="${pdfUrl(r.date,r.hippo,r.num)}" target="_blank" rel="noopener" onclick="event.stopPropagation();" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--green);border:1px solid var(--green);padding:2px 7px;border-radius:4px;text-decoration:none;">PDF</a>`
+        : '<span style="color:var(--ink-soft);font-size:11px;">—</span>'}</td>
     </tr>`;
   }).join('');
   if(filtered.length>MAX_ROWS){
-    body.innerHTML += `<tr><td colspan="9"><div class="empty">... et ${filtered.length-MAX_ROWS} courses de plus. Affine les filtres pour reduire la liste.</div></td></tr>`;
+    body.innerHTML += `<tr><td colspan="10"><div class="empty">... et ${filtered.length-MAX_ROWS} courses de plus. Affine les filtres pour reduire la liste.</div></td></tr>`;
   }
   body.querySelectorAll('tr[data-id]').forEach(tr=>{
     tr.addEventListener('click', ()=> openRace(tr.dataset.id, filtered.map(r=>r.id)));
