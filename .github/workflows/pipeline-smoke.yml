@@ -42,5 +42,5 @@ jobs:
           assert n['tracking'] > 0 and n['troncons'] > 0, "aucun PDF de tracking parsé"
           assert n['rapports'] > 0, "aucun rapport définitif"
           PY
-      - name: Dashboard (sans modèle, avec courses du jour)
+      - name: Dashboard (sans modèle, avec courses du jour) + santé
         run: python -m galoptrack dashboard

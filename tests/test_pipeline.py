@@ -243,3 +243,29 @@ def test_merge_cotes_tolerates_other_column_names(raw):
     out = migrate.merge_cotes(ch, cot.drop(columns=['cote']), rep)
     assert out['cote_directe'].isna().all()
     assert rep['cotes_data']['status'].startswith('ignoré')
+
+
+def test_health_detects_gaps_and_renders(tmp_path, raw):
+    from datetime import datetime, timedelta
+    from galoptrack import health
+    st = LocalStorage(tmp_path)
+    tr = raw['tracking'].copy()
+    last = int(tr['date'].max())
+    # Simule le bug du Drive : les 5 derniers jours de tracking perdus, tronçons gardés
+    cut = int((datetime.strptime(str(last), '%Y%m%d') - timedelta(days=5)).strftime('%Y%m%d'))
+    raw2 = dict(raw, tracking=tr[tr['date'] <= cut])
+    _store_tables(st, raw2)
+    today = datetime.strptime(str(last), '%Y%m%d').date() + timedelta(days=1)
+    h = health.compute(st, today=today, dashboard_stats={'races_today': 0})
+    assert h['coherence']['troncons_sans_tracking_30j'] > 0
+    assert h['status'] in ('warn', 'error')
+    msgs = ' '.join(a['msg'] for a in h['alerts'])
+    assert 'pas de résumé tracking' in msgs and 'aucun PDF de tracking' in msgs
+    assert any(a['msg'].startswith('« tracking » en retard') for a in h['alerts'])
+    assert any('Aucun modèle' in a['msg'] for a in h['alerts'])
+    assert len(h['recent_days']) == health.RECENT_DAYS
+    health.publish(st, h)
+    page = st.read_bytes('dashboards/sante.html').decode()
+    assert 'Santé des données' in page and 'sans résumé tracking' in page
+    badged = health.inject_badge('<html><body>x</body></html>', h)
+    assert 'href="/sante"' in badged and 'alerte' in badged

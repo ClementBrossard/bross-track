@@ -8,6 +8,7 @@ galoptrack_cotes et galoptrack_rapports. Toutes les tables sont écrites en
 import json
 import logging
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
@@ -200,7 +201,9 @@ def collect_days(storage, days, what=('tracking', 'participants', 'rapports')):
             rows = [r for res in results for r in res[k]]
             acc[k].extend(rows)
             day[k] = len(rows)
-        errors.extend(e for res in results for e in res['errors'])
+        day_errors = [e for res in results for e in res['errors']]
+        day['erreurs'] = dict(Counter(e.rsplit(' ', 1)[-1] for e in day_errors))
+        errors.extend(day_errors)
         summary_days[config.yyyymmdd(d)] = day
         log.info("%s : %s", config.yyyymmdd(d), day)
 

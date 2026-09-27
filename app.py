@@ -212,25 +212,24 @@ def index():
 #  Dashboard GalopTrack (généré chaque jour par GitHub Actions, stocké sur R2)
 # ══════════════════════════════════════════════════════════════════════════════
 
-_dashboard_cache = {"html": None, "gz": None, "checked": 0.0, "etag": None}
+_page_caches = {}
 DASHBOARD_REFRESH_S = 300
 
 
-def _load_dashboard():
-    """Relit dashboards/latest.html sur R2 si le fichier a changé (vérifié au
-    plus toutes les 5 minutes). Retourne (html_bytes, gzip_bytes) ou (None, None)."""
+def _load_dashboard(key="dashboards/latest.html"):
+    """Relit une page générée (dashboard, santé) sur R2 si le fichier a changé
+    (vérifié au plus toutes les 5 minutes). Retourne (html, gzip) ou (None, None)."""
     import time
     import gzip as _gzip
 
     now = time.time()
-    c = _dashboard_cache
+    c = _page_caches.setdefault(key, {"html": None, "gz": None, "checked": 0.0, "etag": None})
     if c["html"] is not None and now - c["checked"] < DASHBOARD_REFRESH_S:
         return c["html"], c["gz"]
     c["checked"] = now
     try:
         from galoptrack.storage import get_storage
         st = get_storage()
-        key = "dashboards/latest.html"
         if hasattr(st, "s3"):
             head = st.s3.head_object(Bucket=st.bucket, Key=key)
             if head["ETag"] == c["etag"] and c["html"] is not None:
@@ -245,17 +244,28 @@ def _load_dashboard():
     return c["html"], c["gz"]
 
 
-@app.route("/dashboard")
-@login_required
-def dashboard_page():
-    html, gz = _load_dashboard()
+def _serve_generated(key, missing_msg):
+    html, gz = _load_dashboard(key)
     if html is None:
-        return ("Dashboard pas encore généré (voir le workflow GitHub "
-                "« Pipeline — quotidien »).", 503)
+        return (missing_msg, 503)
     if "gzip" in request.headers.get("Accept-Encoding", ""):
         return app.response_class(gz, mimetype="text/html",
                                   headers={"Content-Encoding": "gzip", "Cache-Control": "private, max-age=300"})
     return app.response_class(html, mimetype="text/html")
+
+
+@app.route("/dashboard")
+@login_required
+def dashboard_page():
+    return _serve_generated("dashboards/latest.html",
+                            "Dashboard pas encore généré (voir le workflow GitHub « Pipeline — quotidien »).")
+
+
+@app.route("/sante")
+@login_required
+def sante_page():
+    return _serve_generated("dashboards/sante.html",
+                            "Contrôle de santé pas encore généré (voir le workflow GitHub « Pipeline — quotidien »).")
 
 
 @app.route("/api/programme")
