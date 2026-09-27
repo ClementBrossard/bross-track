@@ -3150,14 +3150,16 @@ function renderHorseHistory(){
   if(!nom || !r) return;
 
   let hist = [];
+  // Courses trackées (les courses sans tracking sont ajoutées juste après,
+  // avec leur propre carte : ne pas les compter deux fois)
   RACES.forEach(race=>{
-    if(race.id===r.id) return;
+    if(race.id===r.id || race.tracked===false) return;
     const h = race.horses.find(x=>x.nom===nom);
     if(h) hist.push({race, horse:h});
   });
   // Ajouter les courses sans tracking (NT) pour ce cheval
   RACES.forEach(race=>{
-    if(race.tracked===false && !race.today){
+    if(race.tracked===false && !race.today && race.id!==r.id){
       const h = race.horses.find(x=>x.nom===nom);
       if(h) hist.push({race, horse:h, nt:true});
     }
