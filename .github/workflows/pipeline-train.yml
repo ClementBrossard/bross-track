@@ -1,0 +1,42 @@
+name: Pipeline — entraînement mensuel
+
+on:
+  schedule:
+    - cron: "15 3 1 * *"   # le 1er de chaque mois
+  workflow_dispatch:
+    inputs:
+      promote:
+        description: "Mettre la nouvelle version en production si elle passe le garde-fou"
+        type: boolean
+        default: true
+
+concurrency:
+  group: galoptrack-data
+  cancel-in-progress: false
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-pipeline.txt
+      - run: pip install -r requirements-pipeline.txt
+      - name: Entraînement
+        run: |
+          if [ "${{ inputs.promote }}" = "false" ]; then
+            python -m galoptrack train --no-promote
+          else
+            python -m galoptrack train
+          fi
+      - name: Dashboard avec le modèle à jour
+        run: python -m galoptrack dashboard

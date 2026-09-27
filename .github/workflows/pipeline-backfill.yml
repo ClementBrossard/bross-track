@@ -1,0 +1,38 @@
+name: Pipeline — rattrapage d'une période
+
+on:
+  workflow_dispatch:
+    inputs:
+      date_from:
+        description: "Début (YYYY-MM-DD)"
+        required: true
+      date_to:
+        description: "Fin (YYYY-MM-DD)"
+        required: true
+      what:
+        description: "Sources (tracking,participants,rapports)"
+        default: "tracking,participants,rapports"
+
+concurrency:
+  group: galoptrack-data
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-pipeline.txt
+      - run: pip install -r requirements-pipeline.txt
+      - run: python -m galoptrack collect --from "${{ inputs.date_from }}" --to "${{ inputs.date_to }}" --what "${{ inputs.what }}"
+      - run: python -m galoptrack status
