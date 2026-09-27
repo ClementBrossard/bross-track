@@ -1,0 +1,3475 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GalopTrack — Dashboard Tronçons</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+<style>
+:root{
+  --bg:#f6f3ea; --paper:#fffdf8; --ink:#221f1a; --ink-soft:#6b6357;
+  --line:#ddd6c4; --green:#1f3d2e; --green-soft:#3d6650;
+  --gold:#b8841f; --gold-soft:#e8c373; --red:#a8402c; --red-soft:#f0c4ba;
+  --good:#2f6e4a; --good-bg:#e3efe2;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;font-size:14px;line-height:1.45;}
+::-webkit-scrollbar{width:10px;height:10px;}
+::-webkit-scrollbar-track{background:var(--bg);}
+::-webkit-scrollbar-thumb{background:var(--line);border-radius:5px;}
+::-webkit-scrollbar-thumb:hover{background:var(--gold);}
+
+.wrap{max-width:1500px;margin:0 auto;padding:28px 24px 80px;}
+h1{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:32px;letter-spacing:.4px;margin:0 0 2px;color:var(--green);}
+.sub{font-size:13px;color:var(--ink-soft);margin:0 0 22px;}
+
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:22px;}
+.kpi{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:14px 16px;}
+.kpi .label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);margin-bottom:4px;}
+.kpi .val{font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:600;color:var(--green);}
+
+.tabs{display:flex;gap:2px;margin-bottom:14px;border-bottom:2px solid var(--green);}
+.tab{font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:16px;letter-spacing:.3px;padding:8px 18px;cursor:pointer;background:transparent;border:none;color:var(--ink-soft);}
+.tab.active{background:var(--green);color:var(--paper);border-radius:4px 4px 0 0;}
+
+.view{display:none;}
+.view.active{display:block;}
+
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px;padding:12px 14px;background:var(--paper);border:1px solid var(--line);border-radius:6px;}
+.controls input[type=text], .controls input[type=number], .controls input[type=date]{
+  font-family:'Inter',sans-serif;font-size:13px;padding:7px 10px;border:1px solid var(--line);
+  border-radius:4px;background:#fff;min-width:140px;
+}
+.controls input[type=text]{min-width:200px;}
+.controls select{font-family:'Inter',sans-serif;font-size:13px;padding:7px 8px;border:1px solid var(--line);border-radius:4px;background:#fff;min-width:130px;}
+.controls select[multiple]{min-height:62px;}
+.controls label{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);display:flex;flex-direction:column;gap:4px;}
+
+.chip-row{display:flex;gap:6px;flex-wrap:wrap;}
+.chip{font-family:'JetBrains Mono',monospace;font-size:12px;padding:5px 11px;border:1px solid var(--line);border-radius:14px;cursor:pointer;background:#fff;color:var(--ink-soft);}
+.chip.active{background:var(--green);border-color:var(--green);color:var(--paper);}
+.chip:hover:not(.active){border-color:var(--green-soft);}
+
+.btn{font-family:'Inter',sans-serif;font-weight:600;font-size:12.5px;padding:8px 14px;border-radius:5px;
+  border:1px solid var(--line);background:#fff;color:var(--ink-soft);cursor:pointer;white-space:nowrap;}
+.btn:hover{border-color:var(--green);color:var(--green);}
+.btn.primary{background:var(--green);color:var(--paper);border-color:var(--green);}
+.btn.primary:hover{background:var(--green-soft);}
+
+table{width:100%;border-collapse:collapse;background:var(--paper);border:1px solid var(--line);border-radius:6px;overflow:hidden;}
+thead th{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:600;text-align:left;letter-spacing:.3px;
+  text-transform:uppercase;color:var(--paper);background:var(--green);padding:9px 10px;cursor:pointer;user-select:none;white-space:nowrap;}
+thead th:hover{background:var(--green-soft);}
+thead th .arrow{opacity:.5;font-size:10px;margin-left:3px;}
+tbody td{padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:middle;white-space:nowrap;}
+tbody tr:hover{background:#f1ecdc;cursor:pointer;}
+tbody tr:last-child td{border-bottom:none;}
+.mono{font-family:'JetBrains Mono',monospace;}
+.name-cell{font-weight:600;color:var(--ink);}
+
+.badge{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:2px 8px;border-radius:3px;display:inline-block;}
+.badge.p1{background:var(--gold-soft);color:#4d3a08;}
+.badge.p2{background:#e3e1d8;color:var(--ink-soft);}
+.badge.p3{background:#ead9c0;color:#6b4a1a;}
+.badge.other{background:#ece6d4;color:var(--ink-soft);}
+
+.tag{font-family:'JetBrains Mono',monospace;font-size:10.5px;padding:2px 8px;border-radius:10px;background:#ece6d4;color:var(--ink-soft);border:1px solid var(--line);display:inline-block;}
+.tag.gI{background:var(--gold-soft);color:#4d3a08;border-color:var(--gold);}
+.tag.gII{background:#f0e4bd;color:#6b4a1a;border-color:var(--gold-soft);}
+.tag.gIII{background:#f3ead0;color:#7a5c24;border-color:var(--gold-soft);}
+
+.empty{padding:40px;text-align:center;color:var(--ink-soft);font-size:13px;}
+.count{font-size:12px;color:var(--ink-soft);margin-bottom:8px;}
+
+.breadcrumb{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-soft);margin-bottom:14px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.breadcrumb a{color:var(--green);cursor:pointer;text-decoration:none;font-weight:600;}
+.breadcrumb a:hover{text-decoration:underline;}
+.breadcrumb .sep{opacity:.4;}
+.nav-arrows{display:flex;gap:4px;margin-left:auto;}
+.nav-arrows button{font-family:'JetBrains Mono',monospace;font-size:11px;padding:4px 10px;border:1px solid var(--line);border-radius:4px;background:#fff;color:var(--ink-soft);cursor:pointer;}
+.nav-arrows button:hover:not(:disabled){border-color:var(--green);color:var(--green);}
+.nav-arrows button:disabled{opacity:.3;cursor:default;}
+
+.hero{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:18px 20px;margin-bottom:18px;
+  display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;}
+.hero h2{font-family:'Barlow Condensed',sans-serif;font-size:24px;font-weight:700;color:var(--green);margin-bottom:6px;}
+.hero .meta{display:flex;gap:8px;flex-wrap:wrap;}
+
+.subtabs{display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line);}
+.subtab{background:transparent;border:none;color:var(--ink-soft);padding:9px 16px;font-family:'Inter',sans-serif;
+  font-weight:600;font-size:13px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;}
+.subtab.active{color:var(--green);border-bottom-color:var(--green);}
+.subview{display:none;}
+.subview.active{display:block;}
+
+.spark{vertical-align:middle;}
+
+.poschart-block{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:16px 18px;margin-bottom:18px;}
+.poschart-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px;}
+.poschart-title{font-family:'Barlow Condensed',sans-serif;font-size:15px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.4px;}
+.poschart-svg{display:block;width:100%;height:auto;}
+.poschart-svg path{transition:opacity .15s;}
+.poschart-legend{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+.poschart-legend-item{display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:11px;
+  padding:3px 9px;border-radius:12px;border:1px solid var(--line);background:#fff;cursor:pointer;color:var(--ink-soft);}
+.poschart-legend-item:hover{border-color:var(--green-soft);}
+.poschart-legend-item.active{background:var(--green);color:var(--paper);border-color:var(--green);}
+.poschart-legend-item i{width:9px;height:9px;border-radius:50%;display:inline-block;flex-shrink:0;}
+.poschart-mini{margin:10px 0;}
+
+.info-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-top:12px;}
+.info-grid .item{background:#fff;border:1px solid var(--line);border-radius:5px;padding:8px 10px;}
+.info-grid .item .lbl{font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);margin-bottom:3px;}
+.info-grid .item .val{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--ink);}
+
+.profile-tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10.5px;font-weight:600;margin-left:6px;font-family:'Inter',sans-serif;}
+.profile-tag.finisseur{background:var(--good-bg);color:var(--good);}
+.profile-tag.cuit{background:var(--red-soft);color:var(--red);}
+.profile-tag.regulier{background:var(--gold-soft);color:#4d3a08;}
+.profile-tag.irregulier{background:#ece6d4;color:var(--ink-soft);}
+
+.metric-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:20px;}
+.metric-card{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:14px 16px;}
+.metric-card .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);margin-bottom:6px;}
+.metric-card .val{font-family:'JetBrains Mono',monospace;font-size:21px;font-weight:600;color:var(--ink);}
+.metric-card .sub{font-size:10.5px;color:var(--ink-soft);margin-top:4px;}
+.metric-card .delta{font-family:'JetBrains Mono',monospace;font-size:11px;margin-top:4px;font-weight:600;}
+.delta.pos{color:var(--good);}
+.delta.neg{color:var(--red);}
+
+.section-title{font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;color:var(--green);
+  text-transform:uppercase;letter-spacing:.4px;margin:24px 0 12px;}
+.section-title:first-child{margin-top:0;}
+
+.hist-card{margin-bottom:12px;border:1px solid var(--line);border-radius:6px;overflow:hidden;}
+.hist-head{padding:11px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;
+  background:#ece6d4;cursor:pointer;}
+.hist-detail{display:none;background:var(--paper);}
+.hist-detail table{border:none;border-radius:0;}
+
+.badge-nt{display:inline-block;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;padding:2px 7px;border-radius:3px;background:#f0ede4;color:#999;border:1px solid #d9d5c8;letter-spacing:.3px;margin-left:4px;}
+.hist-card-nt{background:#f8f6f1;border:1px solid #e8e4d8;}
+.hist-card-nt .hist-head{background:#f8f6f1;}
+.badge-today{display:inline-block;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;
+  padding:2px 8px;border-radius:3px;background:var(--gold-soft);color:#4d3a08;border:1px solid var(--gold);vertical-align:middle;margin-left:6px;}
+.not-run-block{background:#f5f3ed;border:1px dashed var(--line);border-radius:6px;padding:32px;
+  text-align:center;color:var(--ink-soft);font-size:13px;margin-bottom:24px;}
+.not-run-block .nr-title{font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.4px;color:var(--line);margin-bottom:6px;}
+
+.today-card{margin-bottom:16px;border:1px solid var(--gold-soft);border-radius:6px;overflow:hidden;background:var(--paper);}
+.today-card-head{padding:14px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;
+  background:#fdf7e8;cursor:pointer;border-bottom:1px solid var(--gold-soft);}
+.today-card-head h3{font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:700;color:var(--green);}
+.today-card-body{display:none;}
+  align-items:center;justify-content:center;gap:14px;}
+.loading-overlay .spinner{width:34px;height:34px;border:3px solid var(--line);border-top-color:var(--green);
+  border-radius:50%;animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.loading-overlay .txt{font-family:'JetBrains Mono',monospace;color:var(--ink-soft);font-size:13px;}
+
+@media (max-width:700px){
+  .wrap{padding:16px;}
+  thead th, tbody td{padding:7px 8px;font-size:11.5px;}
+}
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="txt" id="loadingTxt">Decompression de la base GalopTrack...</div>
+</div>
+
+<div class="wrap">
+  <h1>GalopTrack — Dashboard Tronçons</h1>
+  <p class="sub">Exploration des donnees de tracking France Galop (positions, vitesses et temps par troncon de 200m)</p>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="courses">Courses</button>
+    <button class="tab" data-tab="today">Aujourd'hui</button>
+    <button class="tab" data-tab="chevaux">Chevaux</button>
+    <button class="tab" data-tab="methodologie">Méthodologie</button>
+    <button class="tab" data-tab="backtest">Résultats des tests</button>
+    <button class="tab" data-tab="verifparis">Vérification paris</button>
+  </div>
+
+  <!-- ===================== VUE COURSES ===================== -->
+  <div class="view active" id="view-courses">
+    <div class="controls">
+      <label>Recherche cheval
+        <input type="text" id="f-search" placeholder="Nom du cheval...">
+      </label>
+      <label>Hippodrome
+        <select id="f-hippo" multiple></select>
+      </label>
+      <label>Categorie
+        <select id="f-cat" multiple></select>
+      </label>
+      <label>Terrain
+        <select id="f-terrain" multiple></select>
+      </label>
+      <label>Distance min (m)
+        <input type="number" id="f-dist-min" placeholder="0">
+      </label>
+      <label>Distance max (m)
+        <input type="number" id="f-dist-max" placeholder="3400">
+      </label>
+      <label>Date min
+        <input type="date" id="f-date-min">
+      </label>
+      <label>Date max
+        <input type="date" id="f-date-max">
+      </label>
+      <button class="btn" id="f-reset">Reinitialiser</button>
+    </div>
+    <p class="count" id="listCount"></p>
+    <table>
+      <thead>
+        <tr>
+          <th data-sort="date">Date <span class="arrow"></span></th>
+          <th data-sort="hippo">Hippo <span class="arrow"></span></th>
+          <th data-sort="num">N. <span class="arrow"></span></th>
+          <th data-sort="dist">Distance <span class="arrow"></span></th>
+          <th data-sort="terrain">Terrain <span class="arrow"></span></th>
+          <th data-sort="cat">Categorie <span class="arrow"></span></th>
+          <th data-sort="alloc">Allocation <span class="arrow"></span></th>
+          <th data-sort="nbh">Partants <span class="arrow"></span></th>
+          <th data-sort="winner">Vainqueur <span class="arrow"></span></th>
+        </tr>
+      </thead>
+      <tbody id="listBody"></tbody>
+    </table>
+  </div>
+
+  <!-- ===================== VUE AUJOURD'HUI ===================== -->
+  <div class="view" id="view-today">
+    <p class="count" id="todayCount"></p>
+    <div id="todayList"></div>
+  </div>
+
+  <!-- ===================== VUE CHEVAUX (agrege) ===================== -->
+  <div class="view" id="view-chevaux">
+    <div class="controls">
+      <label>Recherche
+        <input type="text" id="f-search-cheval" placeholder="Nom du cheval...">
+      </label>
+    </div>
+    <p class="count" id="chevauxCount"></p>
+    <table>
+      <thead>
+        <tr>
+          <th data-sort="nom">Cheval <span class="arrow"></span></th>
+          <th data-sort="nb_courses">Courses trackees <span class="arrow"></span></th>
+          <th data-sort="nb_victoires">Victoires <span class="arrow"></span></th>
+          <th data-sort="vy_moy">V. moy. (toutes courses)<span class="arrow"></span></th>
+          <th data-sort="vm_max">V. max enregistree <span class="arrow"></span></th>
+          <th data-sort="derniere_date">Derniere course <span class="arrow"></span></th>
+        </tr>
+      </thead>
+      <tbody id="chevauxBody"></tbody>
+    </table>
+  </div>
+
+  <!-- ===================== VUE METHODOLOGIE ===================== -->
+  <div class="view" id="view-methodologie">
+    <div id="methoContainer"></div>
+  </div>
+
+  <!-- ===================== VUE RESULTATS DES TESTS (backtest) ===================== -->
+  <div class="view" id="view-backtest">
+    <div id="backtestContainer"></div>
+  </div>
+
+  <!-- ===================== VUE VERIFICATION PARIS ===================== -->
+  <div class="view" id="view-verifparis">
+    <div id="verifParisContainer"></div>
+  </div>
+
+  <!-- ===================== VUE COURSE (detail) ===================== -->
+  <div class="view" id="view-race">
+    <div class="breadcrumb">
+      <a data-nav="courses">Liste des courses</a>
+      <div class="nav-arrows">
+        <button id="racePrev" onclick="raceNav(-1)">&#8592; Precedente</button>
+        <button id="raceNext" onclick="raceNav(1)">Suivante &#8594;</button>
+      </div>
+    </div>
+    <div class="hero" id="raceHero"></div>
+
+    <div class="subtabs">
+      <button class="subtab active" data-sub="troncons">Troncons &amp; vitesses</button>
+      <button class="subtab" data-sub="metrics">Metriques de course</button>
+      <button class="subtab" data-sub="simulation">Simulation tactique</button>
+      <button class="subtab" data-sub="duel">Duels</button>
+      <button class="subtab" data-sub="paris">Paris Simulation</button>
+      <button class="subtab" data-sub="modele">Modèle</button>
+    </div>
+
+    <div class="subview active" id="sub-troncons">
+      <div class="poschart-block">
+        <div class="poschart-head">
+          <span class="poschart-title">Positions dans le peloton (par tronçon)</span>
+          <button class="btn" id="btn-race-chart-reset">Tous les chevaux</button>
+        </div>
+        <div id="raceChartContainer"></div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Pos</th><th>Cheval</th><th>Jockey</th><th>Cde</th><th>Poids</th>
+            <th>Temps off.</th><th>V. moy</th><th>V. max</th><th id="colLastHead">Profil vitesse</th>
+          </tr>
+        </thead>
+        <tbody id="raceTroncBody"></tbody>
+      </table>
+    </div>
+
+    <div class="subview" id="sub-metrics">
+      <div class="controls">
+        <button class="btn" id="btn-dist-sim">Distance similaire +/-10% (benchmark)</button>
+        <button class="btn" id="btn-terrain-sim">Meme terrain (benchmark)</button>
+        <button class="btn" id="btn-filter-suspect">Masquer les courses suspectes</button>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <span style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);">Terrain référence</span>
+          <div class="chip-row" id="f-ref-terrain"></div>
+        </div>
+        <label style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);display:flex;flex-direction:column;gap:4px;">
+          Distance min (m)
+          <input type="number" id="f-ref-dist-min" placeholder="ex: 1000" style="min-width:90px;font-size:12px;padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:#fff;">
+        </label>
+        <label style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);display:flex;flex-direction:column;gap:4px;">
+          Distance max (m)
+          <input type="number" id="f-ref-dist-max" placeholder="ex: 1400" style="min-width:90px;font-size:12px;padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:#fff;">
+        </label>
+        <button class="btn" id="f-ref-reset" style="align-self:flex-end;">Reset filtres</button>
+      </div>
+      <p class="count" id="benchInfo"></p>
+      <table>
+        <thead id="raceMetricsHead">
+          <tr>
+            <th>Pos</th><th>Cheval</th><th>200m depart</th><th>400m depart</th><th>600m final</th><th>200m final</th>
+            <th>V. moyenne</th><th>V. max</th><th>Ratio fin/debut</th><th>Regularite</th><th>Delta position</th>
+          </tr>
+        </thead>
+        <tbody id="raceMetricsBody"></tbody>
+      </table>
+    </div>
+
+    <div class="subview" id="sub-simulation">
+      <div class="controls">
+        <button class="btn" id="btn-sim-dist">Distance ±10%</button>
+        <button class="btn" id="btn-sim-terrain">Même terrain (groupe)</button>
+        <button class="btn" id="btn-sim-suspect">Masquer suspectes</button>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <span style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);">Terrain exact</span>
+          <div class="chip-row" id="f-sim-terrain"></div>
+        </div>
+        <label style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);display:flex;flex-direction:column;gap:4px;">
+          Distance min (m)
+          <input type="number" id="f-sim-dist-min" placeholder="ex: 1000" style="min-width:90px;font-size:12px;padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:#fff;">
+        </label>
+        <label style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);display:flex;flex-direction:column;gap:4px;">
+          Distance max (m)
+          <input type="number" id="f-sim-dist-max" placeholder="ex: 1400" style="min-width:90px;font-size:12px;padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:#fff;">
+        </label>
+        <button class="btn" id="f-sim-reset" style="align-self:flex-end;">Reset</button>
+      </div>
+      <div id="simulationContainer"></div>
+    </div>
+
+    <div class="subview" id="sub-duel">
+      <div id="duelContainer"></div>
+    </div>
+
+    <!-- Paris Simulation -->
+    <div class="subview" id="sub-paris">
+      <div style="display:flex;gap:20px;align-items:flex-start;margin-top:10px;">
+        <div style="flex:1;">
+          <table style="width:100%;border-collapse:collapse;">
+            <thead>
+              <tr style="text-align:left;border-bottom:2px solid var(--border);">
+                <th style="padding:6px 10px;font-size:12px;">N°</th>
+                <th style="padding:6px 10px;font-size:12px;">Cheval</th>
+                <th style="padding:6px 10px;font-size:12px;text-align:right;">Cote</th>
+                <th style="padding:6px 10px;font-size:12px;text-align:center;">Sélection</th>
+                <th style="padding:6px 10px;font-size:12px;text-align:center;">Placé</th>
+              </tr>
+            </thead>
+            <tbody id="paris-body"></tbody>
+          </table>
+        </div>
+        <div style="min-width:230px;background:var(--paper);border:1px solid var(--border);border-radius:6px;padding:18px 16px;position:sticky;top:10px;">
+          <div style="font-weight:700;font-size:13px;margin-bottom:14px;">Résultat</div>
+          <div style="margin-bottom:12px;">
+            <div style="font-size:11px;color:var(--ink-soft);margin-bottom:4px;">Mise unitaire</div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <input type="number" id="paris-mise" value="1" min="0.5" step="0.5"
+                style="width:70px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;">
+              <span style="font-size:12px;color:var(--ink-soft);">€</span>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+            <span style="font-size:12px;color:var(--ink-soft);">Couples</span>
+            <span id="paris-couples" style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:13px;">0</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:14px;">
+            <span style="font-size:12px;color:var(--ink-soft);">Montant du pari</span>
+            <span id="paris-montant" style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:13px;">0 €</span>
+          </div>
+          <div style="border-top:1px solid var(--border);padding-top:12px;">
+            <div style="font-size:11px;color:var(--ink-soft);margin-bottom:6px;">Gain si placés cochés gagnent</div>
+            <div id="paris-gain-detail" style="font-size:11px;color:var(--ink-soft);line-height:1.7;margin-bottom:10px;"></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:13px;font-weight:700;color:var(--green);">Gain total</span>
+              <span id="paris-gain" style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:800;color:var(--green);">0 €</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+              <span style="font-size:13px;font-weight:700;color:var(--ink);">Gain net</span>
+              <span id="paris-gain-net" style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:800;color:var(--ink);">0 €</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Fin Paris Simulation -->
+
+    <!-- Modele -->
+    <div class="subview" id="sub-modele">
+      <div id="modeleContainer"></div>
+    </div>
+    <!-- Fin Modele -->
+
+  </div>
+  <div class="view" id="view-horse">
+    <div class="breadcrumb" id="horseBreadcrumb">
+      <a data-nav="courses">Liste des courses</a><span class="sep">/</span>
+      <a id="bcRace" data-nav="race">Course</a><span class="sep">/</span>
+      <span id="bcHorseName"></span>
+      <div class="nav-arrows">
+        <button id="horsePrev" onclick="horseNav(-1)">&#8592; Sortie precedente</button>
+        <button id="horseNext" onclick="horseNav(1)">Sortie suivante &#8594;</button>
+      </div>
+    </div>
+    <div class="hero" id="horseHero" style="display:block;"></div>
+
+    <div class="section-title" id="horseSectionTitle">Derniere course — detail troncons</div>
+    <div id="horseNotRun" class="not-run-block" style="display:none;">
+      <div class="nr-title">Course non courue</div>
+      <div>Cette course est programmee aujourd'hui — aucune donnee de tracking disponible pour l'instant.</div>
+    </div>
+    <div class="poschart-block" id="horseChartBlock" style="display:none;"></div>
+    <div id="horseCurrentTroncons" style="margin-bottom:24px;"></div>
+
+    <div class="section-title">Historique des courses precedentes</div>
+    <div class="controls">
+      <button class="btn" id="btn-h-dist-sim">Distance similaire +/-10%</button>
+      <button class="btn" id="btn-h-terrain-sim">Meme terrain (groupe)</button>
+      <button class="btn" id="btn-h-suspect">Masquer suspectes</button>
+      <div style="display:flex;flex-direction:column;gap:4px;">
+        <span style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);">Terrain exact</span>
+        <div class="chip-row" id="f-h-terrain"></div>
+      </div>
+      <label style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);display:flex;flex-direction:column;gap:4px;">
+        Distance min (m)
+        <input type="number" id="f-h-dist-min" placeholder="ex: 1000" style="min-width:90px;font-size:12px;padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:#fff;">
+      </label>
+      <label style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);display:flex;flex-direction:column;gap:4px;">
+        Distance max (m)
+        <input type="number" id="f-h-dist-max" placeholder="ex: 2000" style="min-width:90px;font-size:12px;padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:#fff;">
+      </label>
+      <button class="btn" id="btn-h-reset" style="align-self:flex-end;">Reset filtres</button>
+    </div>
+    <p class="count" id="histCount"></p>
+    <div id="histList"></div>
+  </div>
+
+</div>
+
+<script>
+/* =========================================================
+   GALOPTRACK DASHBOARD — DATA LOADING
+   ========================================================= */
+const DATA_B64 = "__DATA_B64__";
+
+let LABELS = [];
+let RACES = [];
+let RACE_BY_ID = {};
+let HORSE_INDEX = [];
+let MODEL_META = null;
+let BACKTEST_DATA = null;
+
+function boot(){
+  try{
+    const bin = atob(DATA_B64);
+    const len = bin.length;
+    const bytes = new Uint8Array(len);
+    for(let i=0;i<len;i++) bytes[i] = bin.charCodeAt(i);
+    document.getElementById('loadingTxt').textContent = 'Decompression...';
+    const json = pako.ungzip(bytes, {to:'string'});
+    document.getElementById('loadingTxt').textContent = 'Indexation des courses...';
+    const parsed = JSON.parse(json);
+    LABELS = parsed.labels;
+    RACES = parsed.races;
+    MODEL_META = parsed.model_meta || null;
+    BACKTEST_DATA = parsed.backtest || null;
+    RACES.forEach(r => RACE_BY_ID[r.id] = r);
+    buildHorseIndex();
+    initApp();
+    document.getElementById('loadingOverlay').style.display = 'none';
+  }catch(e){
+    document.getElementById('loadingTxt').textContent = 'Erreur de chargement : ' + e.message;
+    console.error(e);
+  }
+}
+
+function buildHorseIndex(){
+  const map = {};
+  RACES.forEach(r=>{
+    r.horses.forEach(h=>{
+      if(!map[h.nom]) map[h.nom] = { nom:h.nom, nb_courses:0, nb_victoires:0, vySum:0, vyN:0, vmMax:null, derniere_date:0 };
+      const e = map[h.nom];
+      e.nb_courses += 1;
+      if(h.pa==='1') e.nb_victoires += 1;
+      if(h.vy!==null){ e.vySum += h.vy; e.vyN += 1; }
+      if(h.vm!==null){ e.vmMax = (e.vmMax===null) ? h.vm : Math.max(e.vmMax, h.vm); }
+      if(r.date > e.derniere_date) e.derniere_date = r.date;
+    });
+  });
+  HORSE_INDEX = Object.values(map).map(e=>({
+    nom:e.nom, nb_courses:e.nb_courses, nb_victoires:e.nb_victoires,
+    vy_moy: e.vyN ? e.vySum/e.vyN : null, vm_max: e.vmMax, derniere_date:e.derniere_date
+  }));
+}
+
+/* =========================================================
+   UTILS
+   ========================================================= */
+function fmtDate(d){
+  const s = String(d);
+  return `${s.slice(6,8)}/${s.slice(4,6)}/${s.slice(0,4)}`;
+}
+function pdfUrl(date, hippo, num){
+  // https://www7.france-galop.com/Casaques/Tracking/{YYYYMMDD}{HIPPO}{NN}_last_times_fr.pdf
+  const nn = String(num).padStart(2,'0');
+  return `https://www7.france-galop.com/Casaques/Tracking/${date}${hippo}${nn}_last_times_fr.pdf`;
+}
+function dateInputToInt(v){
+  if(!v) return null;
+  return parseInt(v.replaceAll('-',''),10);
+}
+function fmtNum(v, dec=1, suffix=''){
+  if(v===null||v===undefined||isNaN(v)) return '—';
+  return v.toFixed(dec) + suffix;
+}
+function fmtAlloc(v){
+  if(v===null||v===undefined) return '—';
+  if(v>=1000) return Math.round(v/1000)+'k EUR';
+  return v+' EUR';
+}
+function fmtEUR(v){
+  if(v===null||v===undefined||isNaN(v)) return '—';
+  return (v>=0?'+':'')+v.toFixed(2)+' €';
+}
+function speedFromTime(dist, t){
+  if(!t || t<=0) return null;
+  return dist/t*3.6;
+}
+function catLabel(cat){
+  const map = {
+    'GROUPE_I':'Groupe I','GROUPE_II':'Groupe II','GROUPE_III':'Groupe III',
+    'COURSE_A_CONDITIONS':'Course a conditions','HANDICAP':'Handicap',
+    'HANDICAP_DIVISE':'Handicap divise','HANDICAP_CATEGORIE_DIVISE':'Handicap cat. divise',
+    'HANDICAP_DE_CATEGORIE':'Handicap de categorie','A_RECLAMER':'A reclamer',
+    'HANDICAP_A_RECLAMER':'Handicap a reclamer','COURSE_A_CONDITION_QUALIF_HP':'Cond. qualif. HP',
+    'COURSE_INTERNATIONALE':'Internationale','QUALIFICATION_ACCAF':'Qualif. ACCAF',
+    'FINALE_REGIONALE_ACCAF':'Finale regionale ACCAF','MIXTE':'Mixte','INCONNU':'Inconnu'
+  };
+  return map[cat] || cat || '—';
+}
+function catTagClass(cat){
+  if(cat==='GROUPE_I') return 'gI';
+  if(cat==='GROUPE_II') return 'gII';
+  if(cat==='GROUPE_III') return 'gIII';
+  return '';
+}
+function posBadgeClass(p){
+  if(p==='1') return 'p1';
+  if(p==='2') return 'p2';
+  if(p==='3') return 'p3';
+  return 'other';
+}
+function terrainGroup(t){
+  if(!t) return null;
+  const tl = t.toLowerCase().trim();
+  if(tl.includes('psf')) return 'psf';
+  // Echelle France Galop — du plus ferme (Bon léger ~2.8) au plus lourd (Très lourd 5.1+)
+  if(tl === 'bon léger' || tl === 'bon leger' || tl === 'bon') return 'rapide';
+  if(tl === 'bon souple' || tl === 'souple') return 'intermediaire';
+  if(tl === 'très souple' || tl === 'tres souple' || tl === 'collant') return 'souple';
+  if(tl === 'lourd' || tl === 'très lourd' || tl === 'tres lourd') return 'lourd';
+  return tl; // fallback: correspondance exacte
+}
+function profileTag(h){
+  const tags = [];
+  if(h.dp!==null && h.dp>=2) tags.push('<span class="profile-tag finisseur">Finisseur</span>');
+  if(h.dp!==null && h.dp<=-2) tags.push('<span class="profile-tag cuit">A cramé</span>');
+  if(h.rg!==null && h.rg<2.5) tags.push('<span class="profile-tag regulier">Regulier</span>');
+  if(h.rg!==null && h.rg>=5) tags.push('<span class="profile-tag irregulier">Irregulier</span>');
+  return tags.join('');
+}
+function numBadge(cd){
+  if(cd===null||cd===undefined) return '';
+  return `<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--green);color:var(--paper);font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;flex-shrink:0;vertical-align:middle;margin-right:5px;">${cd}</span>`;
+}
+
+function sparkline(tr, w=140, h=26){
+  const speeds = tr.map(t=>t[2]).filter(v=>v!==null && v!==undefined);
+  if(speeds.length<2) return '';
+  const min = Math.min(...speeds), max = Math.max(...speeds);
+  const range = (max-min)||1;
+  const stepX = w/(speeds.length-1);
+  const pts = speeds.map((v,i)=>{
+    const x = i*stepX;
+    const y = h - ((v-min)/range)*h*0.85 - h*0.075;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const lastV = speeds[speeds.length-1], firstV = speeds[0];
+  const color = '#b05c10';
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+    <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+  </svg>`;
+}
+
+/* Sparkline de position (même logique que le graphique peloton :
+   position 1 = haut, position N = bas — cohérent avec buildPositionChart) */
+function posSparkline(tr, w=100, h=22){
+  const poss = tr.map(t=>t[3]).filter(v=>v!==null && v!==undefined);
+  if(poss.length<2) return '';
+  const minP=1, maxP=Math.max(...poss);
+  const range = (maxP-minP)||1;
+  const stepX = w/(poss.length-1);
+  const pts = poss.map((v,i)=>{
+    const x = i*stepX;
+    const y = ((v-minP)/range)*h*0.85 + h*0.075; // 1 = haut, N = bas
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const first=poss[0], last=poss[poss.length-1];
+  const color = '#2f6e4a'; // toujours vert — positions dans le peloton
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+    <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+  </svg>`;
+}
+
+/* =========================================================
+   GRAPHIQUE DE POSITIONS DANS LE PELOTON
+   ========================================================= */
+const CHART_PALETTE = [
+  '#1f3d2e','#b8841f','#a8402c','#2e6b8a','#7a3d8a','#4d8a1f','#8a5a44',
+  '#1f8a6b','#8a1f4d','#4d6b8a','#8a6b1f','#3d8a8a','#6b1f8a','#8a3d1f','#1f6b8a'
+];
+
+function buildPositionChart(race, opts){
+  opts = opts || {};
+  const mode = opts.mode || 'multi';
+  const highlightName = opts.highlightName || null;
+  const width = opts.width || 760;
+  const height = opts.height || 220;
+
+  const horses = race.horses.filter(h=>h.tr && h.tr.length>=2);
+  if(!horses.length){
+    return { svg: '<div class="empty">Pas de donnees de position pour cette course.</div>', legend: '' };
+  }
+
+  const maxLen = Math.max(...horses.map(h=>h.tr.length));
+  let maxPos = 1;
+  horses.forEach(h=> h.tr.forEach(t=>{ if(t[3]!==null && t[3]>maxPos) maxPos = t[3]; }));
+
+  const padL = 26, padR = 12, padT = 10, padB = 10;
+  const plotW = width - padL - padR, plotH = height - padT - padB;
+  const xStep = maxLen>1 ? plotW/(maxLen-1) : 0;
+  const yScale = pos => padT + ((pos-1)/Math.max(maxPos-1,1))*plotH;
+
+  function pathFor(h){
+    let d = '';
+    h.tr.forEach((t,i)=>{
+      const pos = t[3];
+      if(pos===null || pos===undefined){ return; }
+      const x = padL + i*xStep, y = yScale(pos);
+      d += (d===''?'M':'L') + x.toFixed(1) + ',' + y.toFixed(1) + ' ';
+    });
+    return d.trim();
+  }
+
+  // gridlines (position 1, mid, max)
+  let gridSvg = '';
+  const gridPositions = maxPos<=6 ? Array.from({length:maxPos},(_,i)=>i+1) : [1, Math.round(maxPos/2), maxPos];
+  gridPositions.forEach(p=>{
+    const y = yScale(p);
+    gridSvg += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${width-padR}" y2="${y.toFixed(1)}" stroke="#ddd6c4" stroke-width="1" stroke-dasharray="2,3"/>`;
+    gridSvg += `<text x="2" y="${(y+3).toFixed(1)}" font-family="JetBrains Mono, monospace" font-size="9" fill="#6b6357">${p}</text>`;
+  });
+
+  let pathsSvg = '';
+  let legend = '';
+  horses.forEach((h, idx)=>{
+    const isHighlight = highlightName && h.nom===highlightName;
+    let color, opacity, sw;
+    if(mode==='single'){
+      color = isHighlight ? '#2f6e4a' : '#c9c2ab';
+      opacity = isHighlight ? 1 : 0.55;
+      sw = isHighlight ? 2.6 : 1.2;    } else {
+      color = CHART_PALETTE[idx % CHART_PALETTE.length];
+      if(highlightName){
+        opacity = isHighlight ? 1 : 0.12;
+        sw = isHighlight ? 3 : 1.1;
+      } else {
+        opacity = 0.88;
+        sw = 1.6;
+      }
+    }
+    const d = pathFor(h);
+    if(!d) return;
+    pathsSvg += `<path d="${d}" fill="none" stroke="${color}" stroke-width="${sw}" opacity="${opacity}" stroke-linecap="round" stroke-linejoin="round" data-horse="${encodeURIComponent(h.nom)}" style="cursor:pointer;"><title>${h.nom}</title></path>`;
+    if(mode!=='single'){
+      legend += `<span class="poschart-legend-item${isHighlight?' active':''}" data-horse="${encodeURIComponent(h.nom)}"><i style="background:${color}"></i>${numBadge(h.npart)}${h.nom}</span>`;
+    }
+  });
+
+  const svg = `<svg class="poschart-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
+    ${gridSvg}
+    ${pathsSvg}
+  </svg>`;
+
+  return { svg, legend };
+}
+
+function wirePositionChartClicks(container, onPick){
+  container.querySelectorAll('[data-horse]').forEach(el=>{
+    el.addEventListener('click', (ev)=>{
+      ev.stopPropagation();
+      onPick(decodeURIComponent(el.dataset.horse));
+    });
+  });
+}
+
+/* Graphique de vitesse (km/h) par tronçon — même structure que buildPositionChart
+   Y-axis : vitesse élevée = haut (direction naturelle, inverse de la position) */
+function buildSpeedChart(race, opts){
+  opts = opts || {};
+  const mode = opts.mode || 'multi';
+  const highlightName = opts.highlightName || null;
+  const width = opts.width || 760;
+  const height = opts.height || 160;
+
+  const horses = race.horses.filter(h=>h.tr && h.tr.length>=2);
+  if(!horses.length) return { svg:'', legend:'' };
+
+  const maxLen = Math.max(...horses.map(h=>h.tr.length));
+  let allSpeeds = [];
+  horses.forEach(h=> h.tr.forEach(t=>{ if(t[2]!==null) allSpeeds.push(t[2]); }));
+  if(!allSpeeds.length) return { svg:'', legend:'' };
+  const minSpd = Math.min(...allSpeeds), maxSpd = Math.max(...allSpeeds);
+  const range = (maxSpd - minSpd) || 1;
+
+  const padL = 36, padR = 12, padT = 10, padB = 10;
+  const plotW = width - padL - padR, plotH = height - padT - padB;
+  const xStep = maxLen>1 ? plotW/(maxLen-1) : 0;
+  // vitesse élevée = haut (y petit)
+  const yScale = spd => padT + ((maxSpd - spd) / range) * plotH;
+
+  // gridlines (min, mid, max speed)
+  let gridSvg = '';
+  [minSpd, (minSpd+maxSpd)/2, maxSpd].forEach(spd=>{
+    const y = yScale(spd);
+    gridSvg += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${width-padR}" y2="${y.toFixed(1)}" stroke="#ddd6c4" stroke-width="1" stroke-dasharray="2,3"/>`;
+    gridSvg += `<text x="2" y="${(y+3).toFixed(1)}" font-family="JetBrains Mono, monospace" font-size="8" fill="#6b6357">${spd.toFixed(0)}</text>`;
+  });
+
+  function pathFor(h){
+    let d = '';
+    h.tr.forEach((t,i)=>{
+      const spd = t[2];
+      if(spd===null||spd===undefined) return;
+      const x = padL + i*xStep, y = yScale(spd);
+      d += (d===''?'M':'L') + x.toFixed(1) + ',' + y.toFixed(1) + ' ';
+    });
+    return d.trim();
+  }
+
+  let pathsSvg = '';
+  horses.forEach((h, idx)=>{
+    const isHighlight = highlightName && h.nom===highlightName;
+    let color, opacity, sw;
+    if(mode==='single'){
+      color = isHighlight ? '#b05c10' : '#c9c2ab';      opacity = isHighlight ? 1 : 0.45;
+      sw = isHighlight ? 2.4 : 1.1;
+    } else {
+      color = CHART_PALETTE[idx % CHART_PALETTE.length];
+      if(highlightName){
+        opacity = isHighlight ? 1 : 0.1;
+        sw = isHighlight ? 2.8 : 1;
+      } else {
+        opacity = 0.8;
+        sw = 1.5;
+      }
+    }
+    const d = pathFor(h);
+    if(!d) return;
+    pathsSvg += `<path d="${d}" fill="none" stroke="${color}" stroke-width="${sw}" opacity="${opacity}" stroke-linecap="round" stroke-linejoin="round" data-horse="${encodeURIComponent(h.nom)}" style="cursor:pointer;"><title>${h.nom}</title></path>`;
+  });
+
+  const svg = `<svg class="poschart-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
+    ${gridSvg}${pathsSvg}
+  </svg>`;
+  return { svg };
+}
+
+/* =========================================================
+   STATE
+   ========================================================= */
+const state = {
+  filters:{ search:'', hippo:[], cat:[], terrain:[], distMin:null, distMax:null, dateMin:null, dateMax:null },
+  sort:{ col:'date', dir:'desc' },
+  chevauxSearch:'', chevauxSort:{col:'nb_courses', dir:'desc'},
+  currentRaceId:null, currentHorseName:null,
+  raceNavList: [],   // liste ordonnée des race IDs pour prev/next course
+  horseNavList: [],  // liste ordonnée des race IDs pour prev/next sortie cheval
+  raceChartHighlight:null,
+  todayMetricsSort: { col: null, dir: 'asc' },
+  todayFilterSuspect: false,
+  refTerrains: [], refDistMin: null, refDistMax: null,
+  raceBenchDist:false, raceBenchTerrain:false,
+  horseHistDist:false, horseHistTerrain:false,
+  horseHistTerrains:[], horseHistDistMin:null, horseHistDistMax:null, horseHistSuspect:false,
+};
+
+/* =========================================================
+   INIT
+   ========================================================= */
+function initApp(){
+  const hippos = [...new Set(RACES.map(r=>r.hippo))].sort();
+  const cats = [...new Set(RACES.map(r=>r.cat).filter(Boolean))].sort();
+  const terrains = [...new Set(RACES.map(r=>r.terrain).filter(Boolean))].sort();
+
+  fillSelect('f-hippo', hippos, h=>h);
+  fillSelect('f-cat', cats, catLabel);
+  fillSelect('f-terrain', terrains, t=>t);
+
+  const dates = RACES.map(r=>r.date);
+  const minDate = Math.min(...dates), maxDate = Math.max(...dates);
+  const nbChevaux = HORSE_INDEX.length;
+
+  document.getElementById('kpis').innerHTML = `
+    <div class="kpi"><div class="label">Courses trackees</div><div class="val">${RACES.length.toLocaleString('fr-FR')}</div></div>
+    <div class="kpi"><div class="label">Chevaux uniques</div><div class="val">${nbChevaux.toLocaleString('fr-FR')}</div></div>
+    <div class="kpi"><div class="label">Hippodromes</div><div class="val">${hippos.length}</div></div>
+    <div class="kpi"><div class="label">Periode</div><div class="val" style="font-size:15px;">${fmtDate(minDate)} - ${fmtDate(maxDate)}</div></div>
+  `;
+
+  bindEvents();
+  renderList();
+  renderChevaux();
+  renderToday();
+  renderMethodologie();
+  renderBacktest();
+  renderVerifParis();
+  // Populate today metrics terrain filter with unique terrains from historical data
+  // Chips terrain — même liste pour les 3 zones
+  const allTerrains = [...new Set(RACES.filter(r=>!r.today).map(r=>r.terrain).filter(Boolean))].sort();
+
+  function fillTerrainChips(containerId, getSelected, onToggle){
+    const el = document.getElementById(containerId);
+    if(!el) return;
+    el.innerHTML = allTerrains.map(t=>`<span class="chip${getSelected().includes(t)?' active':''}" data-val="${t}">${t}</span>`).join('');
+    el.querySelectorAll('.chip').forEach(chip=>{
+      chip.addEventListener('click', ()=>{
+        const val = chip.dataset.val;
+        const sel = getSelected();
+        const idx = sel.indexOf(val);
+        if(idx>=0) sel.splice(idx,1); else sel.push(val);
+        onToggle(sel);
+        chip.classList.toggle('active', sel.includes(val));
+      });
+    });
+  }
+
+  function refreshChips(containerId, selected){
+    const el = document.getElementById(containerId);
+    if(!el) return;
+    el.querySelectorAll('.chip').forEach(c=> c.classList.toggle('active', selected.includes(c.dataset.val)));
+  }
+
+  fillTerrainChips('f-ref-terrain', ()=>state.refTerrains, sel=>{
+    state.refTerrains = sel;
+    refreshChips('f-sim-terrain', sel);
+    renderRaceMetrics();
+  });
+  fillTerrainChips('f-sim-terrain', ()=>state.refTerrains, sel=>{
+    state.refTerrains = sel;
+    refreshChips('f-ref-terrain', sel);
+    renderSimulation(); renderRaceMetrics();
+  });
+  fillTerrainChips('f-h-terrain', ()=>state.horseHistTerrains, sel=>{
+    state.horseHistTerrains = sel;
+    renderHorseHistory();
+  });
+}
+
+function fillSelect(id, values, labelFn){
+  const sel = document.getElementById(id);
+  sel.innerHTML = values.map(v=>`<option value="${v}">${labelFn(v)}</option>`).join('');
+}
+
+function bindEvents(){
+  document.querySelectorAll('.tab').forEach(b=>{
+    b.addEventListener('click', ()=> goToTab(b.dataset.tab));
+  });
+  document.querySelectorAll('[data-nav]').forEach(b=>{
+    b.addEventListener('click', ()=> goToTab(b.dataset.nav==='courses'?'courses':b.dataset.nav));
+  });
+
+  document.getElementById('f-search').addEventListener('input', debounce(e=>{
+    state.filters.search = e.target.value.trim().toUpperCase();
+    renderList();
+  },200));
+  document.getElementById('f-hippo').addEventListener('change', e=>{
+    state.filters.hippo = [...e.target.selectedOptions].map(o=>o.value);
+    renderList();
+  });
+  document.getElementById('f-cat').addEventListener('change', e=>{
+    state.filters.cat = [...e.target.selectedOptions].map(o=>o.value);
+    renderList();
+  });
+  document.getElementById('f-terrain').addEventListener('change', e=>{
+    state.filters.terrain = [...e.target.selectedOptions].map(o=>o.value);
+    renderList();
+  });
+  document.getElementById('f-dist-min').addEventListener('input', e=>{
+    state.filters.distMin = e.target.value ? parseInt(e.target.value) : null;
+    renderList();
+  });
+  document.getElementById('f-dist-max').addEventListener('input', e=>{
+    state.filters.distMax = e.target.value ? parseInt(e.target.value) : null;
+    renderList();
+  });
+  document.getElementById('f-date-min').addEventListener('change', e=>{
+    state.filters.dateMin = dateInputToInt(e.target.value);
+    renderList();
+  });
+  document.getElementById('f-date-max').addEventListener('change', e=>{
+    state.filters.dateMax = dateInputToInt(e.target.value);
+    renderList();
+  });
+  document.getElementById('f-reset').addEventListener('click', ()=>{
+    state.filters = { search:'', hippo:[], cat:[], terrain:[], distMin:null, distMax:null, dateMin:null, dateMax:null };
+    document.getElementById('f-search').value='';
+    document.getElementById('f-hippo').selectedIndex=-1;
+    document.getElementById('f-cat').selectedIndex=-1;
+    document.getElementById('f-terrain').selectedIndex=-1;
+    document.getElementById('f-dist-min').value='';
+    document.getElementById('f-dist-max').value='';
+    document.getElementById('f-date-min').value='';
+    document.getElementById('f-date-max').value='';
+    renderList();
+  });
+
+  document.querySelectorAll('#view-courses thead th[data-sort]').forEach(th=>{
+    th.addEventListener('click', ()=>{
+      const col = th.dataset.sort;
+      if(state.sort.col===col){ state.sort.dir = state.sort.dir==='asc'?'desc':'asc'; }
+      else { state.sort.col = col; state.sort.dir = 'asc'; }
+      renderList();
+    });
+  });
+
+  document.getElementById('f-search-cheval').addEventListener('input', debounce(e=>{
+    state.chevauxSearch = e.target.value.trim().toUpperCase();
+    renderChevaux();
+  },200));
+  document.querySelectorAll('#view-chevaux thead th[data-sort]').forEach(th=>{
+    th.addEventListener('click', ()=>{
+      const col = th.dataset.sort;
+      if(state.chevauxSort.col===col){ state.chevauxSort.dir = state.chevauxSort.dir==='asc'?'desc':'asc'; }
+      else { state.chevauxSort.col = col; state.chevauxSort.dir = 'desc'; }
+      renderChevaux();
+    });
+  });
+
+  document.querySelectorAll('.subtab').forEach(b=>{
+    b.addEventListener('click', ()=> goToSubTab(b.dataset.sub));
+  });
+
+  document.getElementById('btn-race-chart-reset').addEventListener('click', ()=>{
+    state.raceChartHighlight = null;
+    renderRaceChart();
+  });
+
+  document.getElementById('btn-dist-sim').addEventListener('click', ()=>{
+    state.raceBenchDist = !state.raceBenchDist;
+    document.getElementById('btn-dist-sim').classList.toggle('primary', state.raceBenchDist);
+    document.getElementById('btn-sim-dist').classList.toggle('primary', state.raceBenchDist);
+    renderRaceMetrics();
+  });
+  document.getElementById('btn-terrain-sim').addEventListener('click', ()=>{
+    state.raceBenchTerrain = !state.raceBenchTerrain;
+    document.getElementById('btn-terrain-sim').classList.toggle('primary', state.raceBenchTerrain);
+    document.getElementById('btn-sim-terrain').classList.toggle('primary', state.raceBenchTerrain);
+    renderRaceMetrics();
+  });
+  document.getElementById('btn-filter-suspect').addEventListener('click', ()=>{
+    state.todayFilterSuspect = !state.todayFilterSuspect;
+    document.getElementById('btn-filter-suspect').classList.toggle('primary', state.todayFilterSuspect);
+    document.getElementById('btn-sim-suspect').classList.toggle('primary', state.todayFilterSuspect);
+    renderRaceMetrics();
+  });
+
+
+  // Handlers filtres Simulation — état partagé avec Métriques
+  document.getElementById('btn-sim-dist').addEventListener('click', ()=>{
+    state.raceBenchDist = !state.raceBenchDist;
+    document.getElementById('btn-sim-dist').classList.toggle('primary', state.raceBenchDist);
+    document.getElementById('btn-dist-sim').classList.toggle('primary', state.raceBenchDist);
+    renderSimulation(); renderRaceMetrics();
+  });
+  document.getElementById('btn-sim-terrain').addEventListener('click', ()=>{
+    state.raceBenchTerrain = !state.raceBenchTerrain;
+    document.getElementById('btn-sim-terrain').classList.toggle('primary', state.raceBenchTerrain);
+    document.getElementById('btn-terrain-sim').classList.toggle('primary', state.raceBenchTerrain);
+    renderSimulation(); renderRaceMetrics();
+  });
+  document.getElementById('btn-sim-suspect').addEventListener('click', ()=>{
+    state.todayFilterSuspect = !state.todayFilterSuspect;
+    document.getElementById('btn-sim-suspect').classList.toggle('primary', state.todayFilterSuspect);
+    document.getElementById('btn-filter-suspect').classList.toggle('primary', state.todayFilterSuspect);
+    renderSimulation(); renderRaceMetrics();
+  });
+  // f-sim-terrain géré via fillTerrainChips dans initApp
+  document.getElementById('f-sim-dist-min').addEventListener('input', e=>{
+    state.refDistMin = e.target.value ? parseInt(e.target.value) : null;
+    const el2 = document.getElementById('f-ref-dist-min'); if(el2) el2.value = e.target.value;
+    renderSimulation(); renderRaceMetrics();
+  });
+  document.getElementById('f-sim-dist-max').addEventListener('input', e=>{
+    state.refDistMax = e.target.value ? parseInt(e.target.value) : null;
+    const el2 = document.getElementById('f-ref-dist-max'); if(el2) el2.value = e.target.value;
+    renderSimulation(); renderRaceMetrics();
+  });
+  document.getElementById('f-sim-reset').addEventListener('click', ()=>{
+    state.refTerrains=[]; state.refDistMin=null; state.refDistMax=null;
+    state.raceBenchDist=false; state.raceBenchTerrain=false; state.todayFilterSuspect=false;
+    ['btn-sim-dist','btn-dist-sim','btn-sim-terrain','btn-terrain-sim','btn-sim-suspect','btn-filter-suspect']
+      .forEach(id=>{ const b=document.getElementById(id); if(b) b.classList.remove('primary'); });
+    state.refTerrains=[]; refreshChips('f-sim-terrain',[]); refreshChips('f-ref-terrain',[]);
+    ['f-sim-dist-min','f-ref-dist-min','f-sim-dist-max','f-ref-dist-max'].forEach(id=>{ const s=document.getElementById(id); if(s) s.value=''; });
+    renderSimulation(); renderRaceMetrics();
+  });
+
+  // Filtres terrain + distance pour les references historiques (aujourd'hui)
+  // f-ref-terrain géré via fillTerrainChips dans initApp
+  const refDistMin = document.getElementById('f-ref-dist-min');
+  if(refDistMin) refDistMin.addEventListener('input', e=>{
+    state.refDistMin = e.target.value ? parseInt(e.target.value) : null;
+    const sDMn = document.getElementById('f-sim-dist-min'); if(sDMn) sDMn.value = e.target.value;
+    renderRaceMetrics();
+  });
+  const refDistMax = document.getElementById('f-ref-dist-max');
+  if(refDistMax) refDistMax.addEventListener('input', e=>{
+    state.refDistMax = e.target.value ? parseInt(e.target.value) : null;
+    const sDMx = document.getElementById('f-ref-dist-max'); if(sDMx) sDMx.value = e.target.value;
+    renderRaceMetrics();
+  });
+  const refReset = document.getElementById('f-ref-reset');
+  if(refReset) refReset.addEventListener('click', ()=>{
+    state.refTerrains = []; state.refDistMin = null; state.refDistMax = null;
+    state.raceBenchDist = false; state.raceBenchTerrain = false; state.todayFilterSuspect = false;
+    if(refTerSel) refTerSel.selectedIndex = -1;
+    if(refDistMin) refDistMin.value = '';
+    if(refDistMax) refDistMax.value = '';
+    document.getElementById('btn-dist-sim').classList.remove('primary');
+    document.getElementById('btn-terrain-sim').classList.remove('primary');
+    document.getElementById('btn-filter-suspect').classList.remove('primary');
+  document.getElementById('btn-sim-dist').classList.remove('primary');
+  document.getElementById('btn-sim-terrain').classList.remove('primary');
+  document.getElementById('btn-sim-suspect').classList.remove('primary');
+    state.refTerrains=[]; refreshChips('f-sim-terrain',[]); refreshChips('f-ref-terrain',[]);
+    ['f-sim-dist-min','f-ref-dist-min','f-sim-dist-max','f-ref-dist-max'].forEach(id=>{ const s=document.getElementById(id); if(s) s.value=''; });
+    renderSimulation();
+    renderRaceMetrics();
+  });
+  document.getElementById('btn-h-dist-sim').addEventListener('click', ()=>{
+    state.horseHistDist = !state.horseHistDist;
+    document.getElementById('btn-h-dist-sim').classList.toggle('primary', state.horseHistDist);
+    renderHorseHistory();
+  });
+  document.getElementById('btn-h-terrain-sim').addEventListener('click', ()=>{
+    state.horseHistTerrain = !state.horseHistTerrain;
+    document.getElementById('btn-h-terrain-sim').classList.toggle('primary', state.horseHistTerrain);
+    renderHorseHistory();
+  });
+  document.getElementById('btn-h-suspect').addEventListener('click', ()=>{
+    state.horseHistSuspect = !state.horseHistSuspect;
+    document.getElementById('btn-h-suspect').classList.toggle('primary', state.horseHistSuspect);
+    renderHorseHistory();
+  });
+  // f-h-terrain géré via fillTerrainChips dans initApp
+  document.getElementById('f-h-dist-min').addEventListener('input', e=>{
+    state.horseHistDistMin = e.target.value ? parseInt(e.target.value) : null;
+    renderHorseHistory();
+  });
+  document.getElementById('f-h-dist-max').addEventListener('input', e=>{
+    state.horseHistDistMax = e.target.value ? parseInt(e.target.value) : null;
+    renderHorseHistory();
+  });
+  document.getElementById('btn-h-reset').addEventListener('click', ()=>{
+    state.horseHistDist=false; state.horseHistTerrain=false;
+    state.horseHistTerrains=[]; state.horseHistDistMin=null; state.horseHistDistMax=null;
+    state.horseHistSuspect=false;
+    ['btn-h-dist-sim','btn-h-terrain-sim','btn-h-suspect'].forEach(id=>{
+      const b=document.getElementById(id); if(b) b.classList.remove('primary');
+    });
+    refreshChips('f-h-terrain',[]);
+    const dmin=document.getElementById('f-h-dist-min'); if(dmin) dmin.value='';
+    const dmax=document.getElementById('f-h-dist-max'); if(dmax) dmax.value='';
+    renderHorseHistory();
+  });
+}
+
+function debounce(fn, ms){
+  let t;
+  return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), ms); };
+}
+
+function goToTab(tab){
+  document.querySelectorAll('.view').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+  document.getElementById('view-'+tab).classList.add('active');
+  const tabBtn = document.querySelector(`.tab[data-tab="${tab}"]`);
+  if(tabBtn) tabBtn.classList.add('active');
+}
+function goToSubTab(name){
+  if(name==='paris') renderParis();
+  if(name==='modele') renderModele();
+  document.querySelectorAll('.subtab').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.subview').forEach(v=>v.classList.remove('active'));
+  document.querySelector(`.subtab[data-sub="${name}"]`).classList.add('active');
+  document.getElementById('sub-'+name).classList.add('active');
+  if(name==='metrics') renderRaceMetrics();
+  if(name==='duel') renderDuel();
+  if(name==='simulation') renderSimulation();
+}
+
+/* =========================================================
+   VUE COURSES
+   ========================================================= */
+function getFilteredRaces(){
+  const f = state.filters;
+  let res = RACES.filter(r=>{
+    if(f.hippo.length && !f.hippo.includes(r.hippo)) return false;
+    if(f.cat.length && !f.cat.includes(r.cat)) return false;
+    if(f.terrain.length && !f.terrain.includes(r.terrain)) return false;
+    if(f.distMin && (r.dist===null || r.dist<f.distMin)) return false;
+    if(f.distMax && (r.dist===null || r.dist>f.distMax)) return false;
+    if(f.dateMin && r.date<f.dateMin) return false;
+    if(f.dateMax && r.date>f.dateMax) return false;
+    if(f.search){
+      const found = r.horses.some(h=>h.nom.toUpperCase().includes(f.search));
+      if(!found) return false;
+    }
+    return true;
+  });
+  const col = state.sort.col, dir = state.sort.dir==='asc'?1:-1;
+  res.sort((a,b)=>{
+    let va, vb;
+    if(col==='nbh'){ va=a.horses.length; vb=b.horses.length; }
+    else if(col==='winner'){
+      va = (a.horses.find(h=>h.pa==='1')||{}).nom || '';
+      vb = (b.horses.find(h=>h.pa==='1')||{}).nom || '';
+    } else { va=a[col]; vb=b[col]; }
+    if(va===null||va===undefined) va = (typeof vb==='number')?-Infinity:'';
+    if(vb===null||vb===undefined) vb = (typeof va==='number')?-Infinity:'';
+    if(va<vb) return -1*dir;
+    if(va>vb) return 1*dir;
+    return 0;
+  });
+  return res;
+}
+
+function renderList(){
+  const filtered = getFilteredRaces();
+  document.getElementById('listCount').textContent = `${filtered.length.toLocaleString('fr-FR')} course(s) trouvee(s)`;
+
+  document.querySelectorAll('#view-courses thead th[data-sort] .arrow').forEach(a=>a.textContent='');
+  const activeTh = document.querySelector(`#view-courses thead th[data-sort="${state.sort.col}"] .arrow`);
+  if(activeTh) activeTh.textContent = state.sort.dir==='asc' ? '^' : 'v';
+
+  const body = document.getElementById('listBody');
+  if(filtered.length===0){
+    body.innerHTML = `<tr><td colspan="9"><div class="empty">Aucune course ne correspond a ces filtres.</div></td></tr>`;
+    return;
+  }
+  const MAX_ROWS = 600;
+  const rows = filtered.slice(0, MAX_ROWS);
+  body.innerHTML = rows.map(r=>{
+    const winner = r.horses.find(h=>h.pa==='1');
+    return `<tr data-id="${r.id}">
+      <td class="mono">${fmtDate(r.date)}</td>
+      <td><span class="tag">${r.hippo}</span></td>
+      <td class="mono">C${r.num}</td>
+      <td class="mono">${r.dist ?? '—'} m</td>
+      <td>${r.terrain ?? '—'}</td>
+      <td><span class="tag ${catTagClass(r.cat)}">${catLabel(r.cat)}</span></td>
+      <td class="mono">${fmtAlloc(r.alloc)}</td>
+      <td class="mono">${r.horses.length}</td>
+      <td class="name-cell">${winner ? winner.nom : '—'}</td>
+    </tr>`;
+  }).join('');
+  if(filtered.length>MAX_ROWS){
+    body.innerHTML += `<tr><td colspan="9"><div class="empty">... et ${filtered.length-MAX_ROWS} courses de plus. Affine les filtres pour reduire la liste.</div></td></tr>`;
+  }
+  body.querySelectorAll('tr[data-id]').forEach(tr=>{
+    tr.addEventListener('click', ()=> openRace(tr.dataset.id, filtered.map(r=>r.id)));
+  });
+}
+function renderToday(){
+  const todayRaces = RACES.filter(r=>r.today);
+  const el = document.getElementById('todayCount');
+  const list = document.getElementById('todayList');
+
+  if(!todayRaces.length){
+    el.textContent = '';
+    list.innerHTML = `<div class="empty" style="padding:48px;">Aucune course de plat française trouvée pour aujourd'hui — l'API PMU était peut-être inaccessible au moment de la generation du dashboard. Relance le notebook pour rafraichir.</div>`;
+    return;
+  }
+
+  // Grouper par hippodrome + numéro de réunion (évite la collision quand 2 réunions
+  // se tiennent au même hippodrome le même jour)
+  const byGroup = {};
+  todayRaces.forEach(r=>{
+    const key = `${r.hippo}_R${r.rnum ?? 0}`;
+    if(!byGroup[key]) byGroup[key] = { hippo: r.hippo, rnum: r.rnum, races: [] };
+    byGroup[key].races.push(r);
+  });
+
+  const todayDate = todayRaces[0].date;
+  el.textContent = `${todayRaces.length} course(s) de plat française(s) — ${fmtDate(todayDate)}`;
+
+  list.innerHTML = Object.entries(byGroup).map(([key, group])=>{
+    const races = group.races;
+    const hippo = group.hippo;
+    const rnum  = group.rnum;
+    const racesHtml = races.sort((a,b)=>a.num-b.num).map(r=>`
+      <tr data-id="${r.id}" style="cursor:pointer;">
+        <td class="mono">${r.rnum ? "R"+r.rnum+" " : ""}C${r.num}</td>
+        <td class="mono">${r.dist ?? '—'} m</td>
+        <td>${r.terrain ?? '—'}${r.penetro ? ' ('+r.penetro+')' : ''}</td>
+        <td><span class="tag ${catTagClass(r.cat)}">${catLabel(r.cat)}</span></td>
+        <td class="mono">${fmtAlloc(r.alloc)}</td>
+        <td class="mono">${r.horses.length} partants</td>
+        <td class="mono" style="color:var(--ink-soft);">${r.horses.filter(h=>{
+          return RACES.some(hr=>!hr.today && hr.horses.some(hh=>hh.nom===h.nom));
+        }).length} dans la base</td>
+      </tr>
+    `).join('');
+
+    return `<div class="today-card">
+      <div class="today-card-head" data-key="${key}">
+        <h3>${hippo}${rnum ? ' — R'+rnum : ''} <span class="badge-today">Aujourd&#39;hui</span></h3>
+        <span class="mono" style="font-size:12px;color:var(--ink-soft);">${races.length} course(s) de plat</span>
+      </div>
+      <div class="today-card-body" id="todayBody-${key}">
+        <table>
+          <thead><tr>
+            <th>N.</th><th>Distance</th><th>Terrain</th><th>Categorie</th>
+            <th>Allocation</th><th>Partants</th><th>Profiles dispo</th>
+          </tr></thead>
+          <tbody>${racesHtml}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }).join('');
+
+  // toggle réunion card
+  list.querySelectorAll('.today-card-head').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const body = document.getElementById('todayBody-'+el.dataset.key);
+      body.style.display = body.style.display==='block' ? 'none' : 'block';
+    });
+    const body = document.getElementById('todayBody-'+el.dataset.key);
+    if(body) body.style.display = 'block';
+  });
+
+  // click on race row
+  list.querySelectorAll('tr[data-id]').forEach(tr=>{
+    const todayIds = todayRaces.map(r=>r.id);
+    tr.addEventListener('click', ()=> openRace(tr.dataset.id, todayIds));
+  });
+}
+
+
+function renderChevaux(){
+  let list = HORSE_INDEX;
+  if(state.chevauxSearch){
+    list = list.filter(h=>h.nom.toUpperCase().includes(state.chevauxSearch));
+  }
+  const col = state.chevauxSort.col, dir = state.chevauxSort.dir==='asc'?1:-1;
+  list = [...list].sort((a,b)=>{
+    let va=a[col], vb=b[col];
+    if(va===null||va===undefined) va = -Infinity;
+    if(vb===null||vb===undefined) vb = -Infinity;
+    if(va<vb) return -1*dir;
+    if(va>vb) return 1*dir;
+    return 0;
+  });
+
+  document.getElementById('chevauxCount').textContent = `${list.length.toLocaleString('fr-FR')} cheval(aux) trouve(s)`;
+  document.querySelectorAll('#view-chevaux thead th[data-sort] .arrow').forEach(a=>a.textContent='');
+  const activeTh = document.querySelector(`#view-chevaux thead th[data-sort="${col}"] .arrow`);
+  if(activeTh) activeTh.textContent = dir===1 ? '^' : 'v';
+
+  const MAX_ROWS = 600;
+  const rows = list.slice(0, MAX_ROWS);
+  const body = document.getElementById('chevauxBody');
+  if(rows.length===0){
+    body.innerHTML = `<tr><td colspan="6"><div class="empty">Aucun cheval trouve.</div></td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map(h=>`
+    <tr data-nom="${encodeURIComponent(h.nom)}">
+      <td class="name-cell">${h.nom}</td>
+      <td class="mono">${h.nb_courses}</td>
+      <td class="mono">${h.nb_victoires}</td>
+      <td class="mono">${fmtNum(h.vy_moy,1,' km/h')}</td>
+      <td class="mono">${fmtNum(h.vm_max,1,' km/h')}</td>
+      <td class="mono">${fmtDate(h.derniere_date)}</td>
+    </tr>
+  `).join('');
+  if(list.length>MAX_ROWS){
+    body.innerHTML += `<tr><td colspan="6"><div class="empty">... et ${list.length-MAX_ROWS} chevaux de plus. Affine la recherche.</div></td></tr>`;
+  }
+  body.querySelectorAll('tr[data-nom]').forEach(tr=>{
+    tr.addEventListener('click', ()=>{
+      const nom = decodeURIComponent(tr.dataset.nom);
+      // find the most recent race for that horse, open horse profile from there
+      let best = null;
+      RACES.forEach(r=>{
+        const h = r.horses.find(x=>x.nom===nom);
+        if(h && (!best || r.date > best.race.date)) best = {race:r, horse:h};
+      });
+      if(best) openHorse(nom, best.race.id, 'chevaux')
+    });
+  });
+}
+
+/* ── Methodologie du modele predictif ────────────────────────────────────
+   Contenu quasi-statique, injecte par le notebook Python (CELLULE 6c) dans
+   MODEL_META lorsque le modele a pu etre applique a la generation du
+   dashboard. Ne depend d'aucune course selectionnee. */
+/* ── Resultats des tests (backtest de validation) ────────────────────────────
+   Donnees precalculees par galoptrack_train_model.ipynb sur le jeu de
+   VALIDATION temporel (courses jamais vues a l'entrainement). Rien n'est
+   recalcule ici : lecture seule d'un fichier JSON produit une fois par
+   l'entrainement -- donc aucun risque de fuite lie a la generation du
+   dashboard au quotidien.
+
+   Les KPI et la distribution affiches se recalculent en direct cote client
+   selon les filtres actifs (recherche + plage de partants) : ce ne sont PAS
+   les chiffres globaux figes du fichier JSON, mais bien ceux du sous-ensemble
+   filtre courant -- pour repondre a "comment le modele performe-t-il sur les
+   grands/petits champs, par ex.".
+   ───────────────────────────────────────────────────────────────────────── */
+let _backtestFilterText = '';
+let _backtestMinPartants = null;
+let _backtestMaxPartants = null;
+let _backtestActiveBets = new Set(); // ids de BET_TYPES actifs (colonnes affichees)
+let _backtestMinCoteP1P2 = null; // seuil de cote minimum pour P1 et P2 (null = pas de filtre)
+let _backtestQuinteFilter = 'all'; // 'all' | 'only' (Quinte+ seulement) | 'exclude' (hors Quinte+)
+
+// Ces 4 helpers restent compatibles avec les deux formats possibles de
+// backtest_v7.json : pred_top10/real_top5 en simples tableaux de noms
+// (string[]) -- ancien format -- ou en tableaux d'objets {nom, npart}
+// (format actuel depuis galoptrack_train_model V3+, qui sauvegarde
+// desormais les 10 premiers chevaux predits -- et non plus 5 -- pour
+// alimenter le tableau detaille et les stats "top 5 reel retrouve dans
+// le top 6/7/8/9/10 predit"). Idem pour rnum/num de course, absents du
+// JSON actuel : tant qu'ils n'y sont pas, les colonnes Reunion/Course
+// affichent "—".
+function bhName(h){ return (h && typeof h === 'object') ? (h.nom || '') : (h || ''); }
+function bhNum(h){ return (h && typeof h === 'object') ? (h.npart ?? h.num ?? null) : null; }
+function bhLabel(h){ const num = bhNum(h); const name = bhName(h); return num != null ? `${num}. ${name}` : name; }
+function bhCote(h){ return (h && typeof h==='object' && h.cote!=null) ? h.cote : null; }
+function raceReunion(r){ return (r.rnum ?? r.reunion ?? r.num_reunion ?? r.num_reunion_identifie); }
+// Course support du Quinte+ : flag pose par la cellule d'enrichissement 6d a
+// partir de la presence de rapports 'QUINTE_PLUS' dans rapports_combines_data.csv.
+// Absent du JSON tant que l'enrichissement n'a pas tourne -> traite comme non-quinte.
+function isQuinte(r){ return r.is_quinte === true; }
+// Rapport(s) Quinte+ desordre, en EUR pour 1 EUR joue (source :
+// rapports_combines_data.csv, colonne 'dividende_pour_un_euro' / 100).
+// Liste, car un dead-heat a la 5e place produit 2 combinaisons gagnantes.
+function quinteDesordre(r){ return Array.isArray(r.quinte_desordre) ? r.quinte_desordre : []; }
+// Formatage sans signe (fmtEUR prefixe un '+', inadapte pour un rapport).
+function fmtRapport(v){
+  if(v===null||v===undefined||isNaN(v)) return '—';
+  return v.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
+}
+function raceCourseNum(r){ return (r.num ?? r.num_course ?? r.course_num ?? r.num_course_identifie); }
+function fmtRC(v){ return (v === undefined || v === null || v === '') ? '—' : v; }
+
+// --- KPI registry : chaque bar (distribution + performance par rang) est
+// definie une seule fois ici, avec son predicat. Les fonctions de rendu et
+// les boutons "Filtrer" partagent cette meme definition, donc pas de risque
+// de divergence entre le chiffre affiche sur la barre et ce que montre le
+// tableau quand on clique dessus.
+function top3Set(r){ return new Set(r.real_top5.slice(0,3).map(bhName)); }
+// Le top 5 "predit" au sens historique (paris, KPIs) reste les 5 premiers
+// chevaux de pred_top10 -- on ne fait que puiser dans une liste plus longue.
+function predTop5(r){ return (r.pred_top10 || []).slice(0,5); }
+function isPredHit(r, idx){ const h = predTop5(r)[idx]; return h !== undefined && top3Set(r).has(bhName(h)); }
+function countPredHits(r){ const s = top3Set(r); return predTop5(r).filter(h=>s.has(bhName(h))).length; }
+function hasOtherHit(r, excludeIdx){ const s = top3Set(r); return predTop5(r).some((h,idx)=> idx!==excludeIdx && s.has(bhName(h))); }
+// Nouvelles stats "top 5 reel retrouve dans le top N predit" (N=6..10) :
+// combien des N premiers chevaux de pred_top10 se retrouvent dans le vrai
+// top 5 a l'arrivee (real_top5), independamment de leur ordre respectif.
+function realTop5Set(r){ return new Set(r.real_top5.map(bhName)); }
+function countPredTopNInRealTop5(r, n){
+  const s = realTop5Set(r);
+  return (r.pred_top10 || []).slice(0, n).filter(h=>s.has(bhName(h))).length;
+}
+// Variante par plage (indices 0-based, borne haute exclue) : sert par ex. a
+// compter combien de chevaux classes 4e a 8e par le modele (indices 3..7)
+// se retrouvent dans le vrai top 5 a l'arrivee.
+function countPredRangeInRealTop5(r, startIdx, endIdxExcl){
+  const s = realTop5Set(r);
+  return (r.pred_top10 || []).slice(startIdx, endIdxExcl).filter(h=>s.has(bhName(h))).length;
+}
+// Top 3 predit (les 3 chevaux les mieux classes par le modele) tous les
+// trois retrouves dans le vrai top 5 a l'arrivee.
+function predTop3AllInRealTop5(r){
+  const s = realTop5Set(r);
+  return predTop5(r).slice(0,3).every(h=>s.has(bhName(h)));
+}
+
+/* =========================================================
+   PARIS SIMULES SUR LE BACKTEST — couples places, top5 predit
+   ========================================================= */
+// Chaque "bet" est defini par une liste de couples d'INDICES (0-based) dans
+// predTop5(race). Index 0 = cheval 1 predit par l'algo, index 1 = cheval 2, etc.
+// Mise fixe de 1 EUR par couple ("en base"), conformement a la demande.
+const BET_TYPES = [
+  { id:'betP1P2', short:'P1 × P2 (couple)', label:'Cheval 1 et cheval 2 predits, couple place (1 couple)',
+    pairs:[[0,1]] },
+  { id:'betA', short:'P1 × Top5', label:'Cheval 1 predit × chacun du top 5 (couple place)',
+    pairs:[[0,1],[0,2],[0,3],[0,4]] },
+  { id:'betB', short:'P2 × Top5', label:'Cheval 2 predit × chacun du top 5 (couple place)',
+    pairs:[[1,0],[1,2],[1,3],[1,4]] },
+  { id:'betC', short:'P1+P2 × Top5', label:'P1×Top5 + P2×Top5 (sans doublon du couple P1-P2)',
+    pairs:[[0,1],[0,2],[0,3],[0,4],[1,2],[1,3],[1,4]] },
+  { id:'betD', short:'Toutes paires Top5', label:'Toutes les paires possibles entre les 5 chevaux du top 5',
+    pairs:[[0,1],[0,2],[0,3],[0,4],[1,2],[1,3],[1,4],[2,3],[2,4],[3,4]] },
+];
+const BET_BY_ID = Object.fromEntries(BET_TYPES.map(b=>[b.id,b]));
+const MISE_PAR_COUPLE = 1; // EUR, "mise en base" couple place
+
+function pairKey(a,b){ return a<b ? `${a}-${b}` : `${b}-${a}`; }
+
+// Calcule mise / gain / net pour un type de pari donne, sur une course du
+// backtest. Ne fait AUCUNE hypothese si les donnees de rapport sont
+// absentes pour cette course : hasData=false signale de l'exclure des
+// agregations plutot que de compter un gain nul comme une perte averee.
+function computeBet(race, betDef){
+  const top5 = predTop5(race);
+  const cmap = race.couples_place || null;
+  let mise = 0, gain = 0, nCouples = 0, nSansNumero = 0;
+  const detail = [];
+  betDef.pairs.forEach(([i,j])=>{
+    const hi = top5[i], hj = top5[j];
+    if(hi===undefined || hj===undefined) return;
+    const ni = bhNum(hi), nj = bhNum(hj);
+    nCouples++;
+    mise += MISE_PAR_COUPLE;
+    if(ni==null || nj==null){ nSansNumero++; detail.push({i,j,ni,nj,key:null,dividende:null,gagne:false}); return; }
+    const key = pairKey(ni, nj);
+    const div = cmap ? cmap[key] : undefined;
+    const g = (div!==undefined) ? MISE_PAR_COUPLE*div : 0;
+    gain += g;
+    detail.push({i,j,ni,nj,key,dividende:div!==undefined?div:null,gagne:div!==undefined});
+  });
+  return { mise, gain, net:gain-mise, nCouples, nSansNumero, hasData: !!cmap, detail };
+}
+
+// Statut d'une course vis-a-vis du filtre "cote P1/P2 trop basse" :
+// 'none' = pas de filtre actif, 'ok' = P1 et P2 passent le seuil,
+// 'excluded' = P1 ou P2 sous le seuil (favori trop court, tu ne le jouerais pas),
+// 'unknown' = cote non retrouvee pour P1 et/ou P2 (on exclut par prudence des agregats
+// des que le filtre est actif, cf renderBacktestBetsSummary).
+function coteFilterStatus(r){
+  if(_backtestMinCoteP1P2 == null) return 'none';
+  const top5 = predTop5(r);
+  const c1 = bhCote(top5[0]), c2 = bhCote(top5[1]);
+  if(c1 == null || c2 == null) return 'unknown';
+  return (c1 < _backtestMinCoteP1P2 || c2 < _backtestMinCoteP1P2) ? 'excluded' : 'ok';
+}
+
+
+const BACKTEST_KPIS = {
+  k0: { label: '0/5 dans top3', predicate: r => countPredHits(r) === 0 },
+  k1: { label: '1/5 dans top3', predicate: r => countPredHits(r) === 1 },
+  k2: { label: '2/5 dans top3', predicate: r => countPredHits(r) === 2 },
+  k3: { label: '3/5 dans top3', predicate: r => countPredHits(r) === 3 },
+  k4: { label: '4/5 dans top3', predicate: r => countPredHits(r) === 4 },
+  k5: { label: '5/5 dans top3', predicate: r => countPredHits(r) === 5 },
+  top1: { label: 'Top 1 prédit réellement dans le top 3', predicate: r => isPredHit(r,0) },
+  top2: { label: 'Top 2 prédit réellement dans le top 3', predicate: r => isPredHit(r,1) },
+  top3: { label: 'Top 3 prédit réellement dans le top 3', predicate: r => isPredHit(r,2) },
+  top1et2: { label: 'Top 1 ET Top 2 tous les deux dans le top 3', predicate: r => isPredHit(r,0) && isPredHit(r,1) },
+  top123: { label: 'Top 1, Top 2 ET Top 3 tous les trois dans le top 3', predicate: r => isPredHit(r,0) && isPredHit(r,1) && isPredHit(r,2) },
+  top1plus: { label: 'Top 1 dans le top 3 + au moins un autre cheval du top 5 dans le top 3', predicate: r => isPredHit(r,0) && hasOtherHit(r,0) },
+  top2plus: { label: 'Top 2 dans le top 3 + au moins un autre cheval du top 5 dans le top 3', predicate: r => isPredHit(r,1) && hasOtherHit(r,1) },
+  top5in6:  { label: 'Vrai top 5 retrouvé dans le Top 6 prédit (au moins 5 des 6 chevaux)',   predicate: r => countPredTopNInRealTop5(r,6)  >= 5 },
+  top5in7:  { label: 'Vrai top 5 retrouvé dans le Top 7 prédit (au moins 5 des 7 chevaux)',   predicate: r => countPredTopNInRealTop5(r,7)  >= 5 },
+  top5in8:  { label: 'Vrai top 5 retrouvé dans le Top 8 prédit (au moins 5 des 8 chevaux)',   predicate: r => countPredTopNInRealTop5(r,8)  >= 5 },
+  top5in9:  { label: 'Vrai top 5 retrouvé dans le Top 9 prédit (au moins 5 des 9 chevaux)',   predicate: r => countPredTopNInRealTop5(r,9)  >= 5 },
+  top5in10: { label: 'Vrai top 5 retrouvé dans le Top 10 prédit (au moins 5 des 10 chevaux)', predicate: r => countPredTopNInRealTop5(r,10) >= 5 },
+  top3in5plus2of4to8: { label: 'Top 3 prédit dans le vrai top 5 ET au moins 2 des chevaux 4 à 8 prédits complètent le vrai top 5', predicate: r => predTop3AllInRealTop5(r) && countPredRangeInRealTop5(r,3,8) >= 2 },
+};
+
+let _backtestActiveKpiId = null;
+
+function toggleBacktestKpi(id){
+  _backtestActiveKpiId = (_backtestActiveKpiId === id) ? null : id;
+  updateBacktestView();
+}
+
+function kpiBarButton(id){
+  const active = _backtestActiveKpiId === id;
+  const bg = active ? 'var(--green)' : '#fff';
+  const fg = active ? 'var(--paper)' : 'var(--green)';
+  const label = active ? 'Filtré ✕' : 'Filtrer';
+  return `<button onclick="toggleBacktestKpi('${id}')" style="font-size:11px;padding:3px 9px;border:1px solid var(--green);border-radius:4px;background:${bg};color:${fg};cursor:pointer;white-space:nowrap;">${label}</button>`;
+}
+
+function renderBacktest(){
+  const el = document.getElementById('backtestContainer');
+  if(!el) return;
+
+  if(!BACKTEST_DATA){
+    el.innerHTML = `
+      <div class="empty">
+        Aucun backtest disponible dans ce dashboard.<br>
+        Ça arrive quand le fichier <code>backtest_v7.json</code> était absent du dossier
+        <code>GalopTrack/model/</code> au moment de la génération — relance
+        <code>galoptrack_train_model.ipynb</code> (cellule 8) pour le produire, puis dépose-le
+        dans ce dossier avant de régénérer le dashboard.
+      </div>`;
+    return;
+  }
+
+  const s = BACKTEST_DATA.races;
+  const partantsMin = Math.min(...s.map(r=>r.n_partants));
+  const partantsMax = Math.max(...s.map(r=>r.n_partants));
+
+  el.innerHTML = `
+    <div class="hero" style="margin-bottom:20px;">
+      <div>
+        <h2>Résultats des tests — jeu de validation</h2>
+        <p style="font-size:13px;color:var(--ink-soft);">
+          ${BACKTEST_DATA.summary.n_courses.toLocaleString('fr-FR')} courses au total, du ${fmtDate(BACKTEST_DATA.summary.date_min)} au ${fmtDate(BACKTEST_DATA.summary.date_max)} —
+          courses jamais vues par le modèle pendant l'entraînement (split temporel strict, aucune fuite).
+        </p>
+      </div>
+    </div>
+
+    <div class="kpis" id="backtestKpis" style="margin-bottom:20px;"></div>
+
+    <div style="background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:20px 22px;margin-bottom:22px;">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.3px;margin-bottom:6px;">
+        Paris simulés — couplé placé sur le top 5 prédit
+        <span style="font-size:11px;color:var(--ink-soft);text-transform:none;font-weight:400;letter-spacing:0;"> (mise en base 1€/couple, dividendes réels des rapports définitifs PMU)</span>
+      </div>
+      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:14px;">
+        Clique sur un ou plusieurs types de pari pour ajouter la colonne correspondante au tableau et l'inclure dans le résumé ci-dessous.
+        Détail course par course dans l'onglet <b>Vérification paris</b>.
+      </div>
+      <div id="backtestBetButtons" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;"></div>
+      <div style="font-size:11px;color:var(--ink-soft);margin-bottom:6px;">Exclure les courses où le cheval 1 ou le cheval 2 prédit a une cote trop basse (favori que tu ne jouerais pas) :</div>
+      <div id="backtestCoteButtons" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;"></div>
+      <div id="backtestBetsSummary"></div>
+    </div>
+
+    <div style="background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:20px 22px;margin-bottom:22px;">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.3px;margin-bottom:14px;">
+        Distribution — nombre de chevaux du top 5 prédit réellement dans le top 3 à l'arrivée
+        <span style="font-size:11px;color:var(--ink-soft);text-transform:none;font-weight:400;letter-spacing:0;"> (selon les filtres actifs)</span>
+      </div>
+      <div id="backtestDist"></div>
+    </div>
+
+    <div style="background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:20px 22px;margin-bottom:22px;">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.3px;margin-bottom:14px;">
+        Performance par rang prédit
+        <span style="font-size:11px;color:var(--ink-soft);text-transform:none;font-weight:400;letter-spacing:0;"> (selon les filtres actifs — barres et % calculés sur le même total de courses)</span>
+      </div>
+      <div id="backtestRankStats"></div>
+    </div>
+
+    <div style="margin-bottom:10px;">
+      <div style="font-size:11px;color:var(--ink-soft);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Type de course</div>
+      <div id="backtestQuinteButtons" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+    </div>
+
+    <div class="controls" style="margin-bottom:10px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
+      <input type="text" id="backtestSearch" placeholder="Filtrer par hippodrome, cheval..." style="min-width:240px;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:4px;background:#fff;">
+      <label style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);display:flex;flex-direction:column;gap:4px;">
+        Partants min
+        <input type="number" id="backtestPartantsMin" placeholder="${partantsMin}" min="${partantsMin}" max="${partantsMax}" style="width:90px;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:#fff;">
+      </label>
+      <label style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);display:flex;flex-direction:column;gap:4px;">
+        Partants max
+        <input type="number" id="backtestPartantsMax" placeholder="${partantsMax}" min="${partantsMin}" max="${partantsMax}" style="width:90px;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:#fff;">
+      </label>
+      <button class="btn" id="backtestResetFilters">Reset filtres</button>
+    </div>
+    <p class="count" id="backtestCount"></p>
+    <div id="backtestKpiChip"></div>
+    <table style="width:100%;border-collapse:collapse;background:var(--paper);border:1px solid var(--line);border-radius:6px;overflow:hidden;">
+      <thead>
+        <tr id="backtestTheadRow" style="text-align:left;border-bottom:2px solid var(--green);background:var(--green);">
+          <th style="padding:8px 10px;font-size:12px;color:var(--paper);">Date</th>
+          <th style="padding:8px 10px;font-size:12px;color:var(--paper);">Hippo</th>
+          <th style="padding:8px 10px;font-size:12px;color:var(--paper);text-align:center;">Réunion</th>
+          <th style="padding:8px 10px;font-size:12px;color:var(--paper);text-align:center;">Course</th>
+          <th style="padding:8px 10px;font-size:12px;color:var(--paper);text-align:center;">Partants</th>
+          <th style="padding:8px 10px;font-size:12px;color:var(--paper);">Top 10 prédit (ordre)</th>
+          <th style="padding:8px 10px;font-size:12px;color:var(--paper);">Top 5 réel (arrivée)</th>
+          <th style="padding:8px 10px;font-size:12px;color:var(--paper);text-align:center;">Top5 prédit ∩ top3 réel</th>
+          <th style="padding:8px 10px;font-size:12px;color:var(--paper);text-align:right;">Quinté+ désordre<br><span style="font-weight:400;font-size:10px;">(rapport pour 1 €)</span></th>
+        </tr>
+      </thead>
+      <tbody id="backtestBody"></tbody>
+    </table>
+  `;
+
+  document.getElementById('backtestSearch').addEventListener('input', (e)=>{
+    _backtestFilterText = e.target.value.trim().toLowerCase();
+    updateBacktestView();
+  });
+  document.getElementById('backtestPartantsMin').addEventListener('input', (e)=>{
+    _backtestMinPartants = e.target.value ? parseInt(e.target.value, 10) : null;
+    updateBacktestView();
+  });
+  document.getElementById('backtestPartantsMax').addEventListener('input', (e)=>{
+    _backtestMaxPartants = e.target.value ? parseInt(e.target.value, 10) : null;
+    updateBacktestView();
+  });
+  document.getElementById('backtestResetFilters').addEventListener('click', ()=>{
+    _backtestFilterText = ''; _backtestMinPartants = null; _backtestMaxPartants = null; _backtestActiveKpiId = null;
+    _backtestQuinteFilter = 'all';
+    document.querySelectorAll('.quinte-mode-btn').forEach(b2=>
+      b2.classList.toggle('primary', b2.dataset.mode === 'all'));
+    document.getElementById('backtestSearch').value = '';
+    document.getElementById('backtestPartantsMin').value = '';
+    document.getElementById('backtestPartantsMax').value = '';
+    updateBacktestView();
+  });
+
+  const betBtnEl = document.getElementById('backtestBetButtons');
+  betBtnEl.innerHTML = BET_TYPES.map(b => `
+    <button class="btn bet-toggle-btn" data-bet="${b.id}" title="${b.label}"
+      style="font-size:12.5px;">${b.short}</button>
+  `).join('');
+  betBtnEl.querySelectorAll('.bet-toggle-btn').forEach(btn=>{
+    btn.classList.toggle('primary', _backtestActiveBets.has(btn.dataset.bet));
+    btn.addEventListener('click', ()=>{
+      const id = btn.dataset.bet;
+      if(_backtestActiveBets.has(id)) _backtestActiveBets.delete(id); else _backtestActiveBets.add(id);
+      btn.classList.toggle('primary', _backtestActiveBets.has(id));
+      renderBacktestThead();
+      updateBacktestView();
+    });
+  });
+  renderBacktestThead();
+
+  const QUINTE_MODES = [
+    { id:'all',     label:'Toutes les courses' },
+    { id:'only',    label:'Quinté+ uniquement' },
+    { id:'exclude', label:'Hors Quinté+' },
+  ];
+  const quinteBtnEl = document.getElementById('backtestQuinteButtons');
+  if(quinteBtnEl){
+    const nQuinte = BACKTEST_DATA.races.filter(isQuinte).length;
+    quinteBtnEl.innerHTML = QUINTE_MODES.map(m => `
+      <button class="btn quinte-mode-btn" data-mode="${m.id}" style="font-size:12.5px;">${m.label}</button>
+    `).join('') + (nQuinte === 0 ? `<span style="font-size:11px;color:#a8402c;font-style:italic;align-self:center;">
+      Aucune course Quinté+ identifiée — relance la cellule d'enrichissement 6d du générateur.
+    </span>` : `<span style="font-size:11px;color:var(--ink-soft);align-self:center;">
+      ${nQuinte.toLocaleString('fr-FR')} course(s) Quinté+ dans le jeu de validation
+    </span>`);
+    quinteBtnEl.querySelectorAll('.quinte-mode-btn').forEach(btn=>{
+      btn.classList.toggle('primary', _backtestQuinteFilter === btn.dataset.mode);
+      btn.addEventListener('click', ()=>{
+        _backtestQuinteFilter = btn.dataset.mode;
+        quinteBtnEl.querySelectorAll('.quinte-mode-btn').forEach(b2=>
+          b2.classList.toggle('primary', b2.dataset.mode === _backtestQuinteFilter));
+        updateBacktestView();
+      });
+    });
+  }
+
+  const COTE_THRESHOLDS = [
+    { id:'none', label:'Aucun filtre', value:null },
+    { id:'c2', label:'Exclure cote < 2', value:2 },
+    { id:'c3', label:'Exclure cote < 3', value:3 },
+    { id:'c5', label:'Exclure cote < 5', value:5 },
+    { id:'c8', label:'Exclure cote < 8', value:8 },
+  ];
+  const coteBtnEl = document.getElementById('backtestCoteButtons');
+  coteBtnEl.innerHTML = COTE_THRESHOLDS.map(t => `
+    <button class="btn cote-threshold-btn" data-value="${t.value ?? ''}" style="font-size:12.5px;">${t.label}</button>
+  `).join('');
+  coteBtnEl.querySelectorAll('.cote-threshold-btn').forEach(btn=>{
+    const val = btn.dataset.value === '' ? null : Number(btn.dataset.value);
+    btn.classList.toggle('primary', _backtestMinCoteP1P2 === val);
+    btn.addEventListener('click', ()=>{
+      _backtestMinCoteP1P2 = val;
+      coteBtnEl.querySelectorAll('.cote-threshold-btn').forEach(b2=>{
+        const v2 = b2.dataset.value === '' ? null : Number(b2.dataset.value);
+        b2.classList.toggle('primary', v2 === _backtestMinCoteP1P2);
+      });
+      updateBacktestView();
+    });
+  });
+
+  updateBacktestView();
+}
+
+function renderBacktestThead(){
+  const row = document.getElementById('backtestTheadRow');
+  if(!row) return;
+  const baseCols = [
+    'Date','Hippo','Réunion','Course','Partants','Top 10 prédit (ordre)','Top 5 réel (arrivée)','Top5 prédit ∩ top3 réel',
+    'Quinté+ désordre<br><span style="font-weight:400;font-size:10px;">(rapport pour 1 €)</span>'
+  ];
+  const baseHtml = baseCols.map((c,i)=>
+    `<th style="padding:8px 10px;font-size:12px;color:var(--paper);${[2,3,4,7].includes(i)?'text-align:center;':''}${i===8?'text-align:right;':''}">${c}</th>`
+  ).join('');
+  const betHtml = BET_TYPES.filter(b=>_backtestActiveBets.has(b.id)).map(b =>
+    `<th style="padding:8px 10px;font-size:12px;color:var(--paper);text-align:right;" title="${b.label}">${b.short}<br><span style="font-weight:400;font-size:10px;">(net €)</span></th>`
+  ).join('');
+  row.innerHTML = baseHtml + betHtml;
+}
+
+function getFilteredBacktestRaces(){
+  let races = BACKTEST_DATA.races;
+  if(_backtestFilterText){
+    races = races.filter(r =>
+      r.hippo.toLowerCase().includes(_backtestFilterText) ||
+      String(fmtRC(raceReunion(r))).toLowerCase().includes(_backtestFilterText) ||
+      String(fmtRC(raceCourseNum(r))).toLowerCase().includes(_backtestFilterText) ||
+      (r.pred_top10 || []).some(h=>bhName(h).toLowerCase().includes(_backtestFilterText)) ||
+      r.real_top5.some(h=>bhName(h).toLowerCase().includes(_backtestFilterText))
+    );
+  }
+  if(_backtestMinPartants!==null) races = races.filter(r => r.n_partants >= _backtestMinPartants);
+  if(_backtestMaxPartants!==null) races = races.filter(r => r.n_partants <= _backtestMaxPartants);
+  if(_backtestQuinteFilter === 'only')    races = races.filter(r => isQuinte(r));
+  else if(_backtestQuinteFilter === 'exclude') races = races.filter(r => !isQuinte(r));
+
+  races = races.slice().sort((a, b) => {
+    if (b.date !== a.date) return b.date - a.date; // plus recent d'abord
+    const ra = raceReunion(a) ?? 0, rb = raceReunion(b) ?? 0;
+    if (ra !== rb) return ra - rb;
+    const ca = raceCourseNum(a) ?? 0, cb = raceCourseNum(b) ?? 0;
+    return ca - cb;
+  });
+
+  return races;
+}
+
+// Applique en plus le filtre KPI (clic sur une barre) -- utilise uniquement
+// pour le tableau du bas, pas pour les barres elles-memes, afin que les
+// barres continuent de montrer la distribution complete sur laquelle on
+// peut cliquer/decliquer.
+function getKpiFilteredRaces(races){
+  const kpi = BACKTEST_KPIS[_backtestActiveKpiId];
+  return kpi ? races.filter(kpi.predicate) : races;
+}
+
+function updateBacktestView(){
+  const races = getFilteredBacktestRaces();
+  const tableRaces = getKpiFilteredRaces(races);
+  renderBacktestKpis(races);
+  renderBacktestBetsSummary(tableRaces);
+  renderBacktestDist(races);
+  renderBacktestRankStats(races);
+  renderActiveKpiChip(races, tableRaces);
+  renderBacktestRows(tableRaces);
+}
+
+// Resume agrege des paris simules actifs, calcule sur les courses actuellement
+// affichees dans le tableau (filtres + KPI cliquable inclus), pas sur
+// l'ensemble du backtest -- coherent avec le reste de l'onglet.
+function renderBacktestBetsSummary(tableRaces){
+  const el = document.getElementById('backtestBetsSummary');
+  if(!el) return;
+  if(!_backtestActiveBets.size){
+    el.innerHTML = `<div style="font-size:12px;color:var(--ink-soft);font-style:italic;">Aucun pari sélectionné.</div>`;
+    return;
+  }
+  const withData = tableRaces.filter(r => r.couples_place);
+  const nSansDonnee = tableRaces.length - withData.length;
+
+  const filterActive = _backtestMinCoteP1P2 != null;
+  const eligible = withData.filter(r => coteFilterStatus(r) !== 'excluded' && coteFilterStatus(r) !== 'unknown');
+  const nExcluCote = withData.filter(r => coteFilterStatus(r) === 'excluded').length;
+  const nCoteInconnue = withData.filter(r => coteFilterStatus(r) === 'unknown').length;
+
+  const rowsHtml = BET_TYPES.filter(b=>_backtestActiveBets.has(b.id)).map(b=>{
+    let mise=0, gain=0, nCoursesGagnantes=0;
+    eligible.forEach(r=>{
+      const res = computeBet(r, b);
+      mise += res.mise; gain += res.gain;
+      if(res.net > 0) nCoursesGagnantes++;
+    });
+    const net = gain - mise;
+    const roi = mise>0 ? (net/mise*100) : 0;
+    const netColor = net>=0 ? 'var(--green)' : '#a8402c';
+    return `<div style="display:flex;align-items:center;gap:14px;padding:8px 0;border-bottom:1px solid var(--line);font-size:12.5px;">
+      <span style="min-width:150px;font-weight:600;">${b.short}</span>
+      <span style="color:var(--ink-soft);">Mise ${mise.toFixed(2)} €</span>
+      <span style="color:var(--ink-soft);">Gain ${gain.toFixed(2)} €</span>
+      <span style="font-weight:700;color:${netColor};">Net ${fmtEUR(net)}</span>
+      <span style="color:var(--ink-soft);">ROI ${roi>=0?'+':''}${roi.toFixed(1)}%</span>
+      <span style="color:var(--ink-soft);">${nCoursesGagnantes}/${eligible.length} course(s) gagnante(s)</span>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    ${rowsHtml}
+    ${nSansDonnee>0 ? `<div style="font-size:11px;color:var(--ink-soft);margin-top:8px;font-style:italic;">
+      ${nSansDonnee} course(s) sur ${tableRaces.length} sans rapport couplé-placé retrouvé (exclues de ce résumé) — voir l'onglet Vérification paris.
+    </div>` : ''}
+    ${filterActive ? `<div style="font-size:11px;color:var(--ink-soft);margin-top:4px;font-style:italic;">
+      Filtre cote actif (< ${_backtestMinCoteP1P2}) : ${nExcluCote} course(s) exclue(s) car P1 ou P2 trop favori,
+      ${nCoteInconnue} course(s) exclue(s) par prudence (cote P1/P2 non retrouvée).
+    </div>` : ''}
+  `;
+}
+
+function renderActiveKpiChip(races, tableRaces){
+  const chipEl = document.getElementById('backtestKpiChip');
+  if(!chipEl) return;
+  const kpi = BACKTEST_KPIS[_backtestActiveKpiId];
+  if(!kpi){ chipEl.innerHTML = ''; return; }
+  chipEl.innerHTML = `<div style="display:inline-flex;align-items:center;gap:8px;font-size:12px;background:var(--green);color:var(--paper);padding:6px 12px;border-radius:4px;margin-bottom:10px;">
+    Filtre actif : ${kpi.label} — ${tableRaces.length.toLocaleString('fr-FR')} / ${races.length.toLocaleString('fr-FR')} courses
+    <button onclick="toggleBacktestKpi('${_backtestActiveKpiId}')" style="background:none;border:none;color:var(--paper);cursor:pointer;font-size:13px;font-weight:700;padding:0;">✕</button>
+  </div>`;
+}
+
+function renderBacktestKpis(races){
+  const kpiEl = document.getElementById('backtestKpis');
+  if(!kpiEl) return;
+  if(!races.length){
+    kpiEl.innerHTML = `<div class="empty">Aucune course pour ces filtres.</div>`;
+    return;
+  }
+  const n = races.length;
+  const hitTop1 = races.filter(r => bhName(predTop5(r)[0]) === bhName(r.real_top5[0])).length / n;
+  const moyTop3 = races.reduce((s,r)=>s+r.nb_pred_top5_in_real_top3,0) / n;
+  const pctAu2 = races.filter(r=>r.nb_pred_top5_in_real_top3>=2).length / n;
+  const pctAu3 = races.filter(r=>r.nb_pred_top5_in_real_top3>=3).length / n;
+
+  kpiEl.innerHTML = `
+    <div class="kpi"><div class="label">Courses (filtre actif)</div><div class="val">${n.toLocaleString('fr-FR')}</div></div>
+    <div class="kpi"><div class="label">Hit-rate top-1 (vainqueur)</div><div class="val">${(hitTop1*100).toFixed(1)}%</div></div>
+    <div class="kpi"><div class="label">Moy. top5 prédit dans le vrai top3</div><div class="val">${moyTop3.toFixed(2)} / 5</div></div>
+    <div class="kpi"><div class="label">Au moins 2/5 dans le top3</div><div class="val">${(pctAu2*100).toFixed(1)}%</div></div>
+    <div class="kpi"><div class="label">Au moins 3/5 dans le top3</div><div class="val">${(pctAu3*100).toFixed(1)}%</div></div>
+  `;
+}
+
+function renderBacktestDist(races){
+  const distEl = document.getElementById('backtestDist');
+  if(!distEl) return;
+  if(!races.length){
+    distEl.innerHTML = `<div class="empty">Aucune course pour ces filtres.</div>`;
+    return;
+  }
+  const n = races.length;
+  const counts = [0,0,0,0,0,0];
+  races.forEach(r => counts[r.nb_pred_top5_in_real_top3]++);
+
+  // Important : la largeur de chaque barre est calculee sur le TOTAL de
+  // courses (n), pas sur le plus gros groupe (maxCount). Avec l'ancienne
+  // version, le groupe le plus frequent affichait une barre a 100% de large
+  // (car il servait de reference) alors que son etiquette indiquait par ex.
+  // "37%" -- d'ou l'incoherence visuelle. Desormais largeur = %, partout.
+  distEl.innerHTML = [0,1,2,3,4,5].map(k=>{
+    const id = 'k' + k;
+    const count = counts[k];
+    const share = (count/n*100).toFixed(1);
+    const active = _backtestActiveKpiId === id;
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;${active?'background:#eef3ea;border-radius:4px;padding:2px 4px;':''}">
+      <span style="width:90px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-soft);">${k}/5 dans top3</span>
+      <div style="flex:1;background:#ece6d4;border-radius:3px;height:14px;">
+        <div style="background:var(--green);height:14px;border-radius:3px;width:${share}%;"></div>
+      </div>
+      <span style="width:110px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-soft);text-align:right;">${count} (${share}%)</span>
+      ${kpiBarButton(id)}
+    </div>`;
+  }).join('');
+}
+
+function renderBacktestRankStats(races){
+  const el = document.getElementById('backtestRankStats');
+  if(!el) return;
+  if(!races.length){
+    el.innerHTML = `<div class="empty">Aucune course pour ces filtres.</div>`;
+    return;
+  }
+  const n = races.length;
+  const rowIds = ['top1','top2','top3','top1et2','top123','top1plus','top2plus','top5in6','top5in7','top5in8','top5in9','top5in10','top3in5plus2of4to8'];
+  const rows = rowIds.map(id => ({
+    id,
+    label: BACKTEST_KPIS[id].label,
+    count: races.filter(BACKTEST_KPIS[id].predicate).length,
+  }));
+
+  el.innerHTML = rows.map(row=>{
+    const share = (row.count/n*100).toFixed(1);
+    const active = _backtestActiveKpiId === row.id;
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;${active?'background:#eef3ea;border-radius:4px;padding:2px 4px;':''}">
+      <span style="width:340px;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--ink-soft);">${row.label}</span>
+      <div style="flex:1;background:#ece6d4;border-radius:3px;height:14px;">
+        <div style="background:var(--green);height:14px;border-radius:3px;width:${share}%;"></div>
+      </div>
+      <span style="width:110px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-soft);text-align:right;">${row.count} (${share}%)</span>
+      ${kpiBarButton(row.id)}
+    </div>`;
+  }).join('');
+}
+
+function renderBacktestRows(races){
+  const body = document.getElementById('backtestBody');
+  const countEl = document.getElementById('backtestCount');
+  if(!body || !BACKTEST_DATA) return;
+
+  countEl.textContent = `${races.length.toLocaleString('fr-FR')} course(s)`;
+
+  const activeBets = BET_TYPES.filter(b=>_backtestActiveBets.has(b.id));
+  const colspan = 9 + activeBets.length;
+
+  if(!races.length){
+    body.innerHTML = `<tr><td colspan="${colspan}"><div class="empty">Aucune course ne correspond à ces filtres.</div></td></tr>`;
+    return;
+  }
+
+  const MAX_ROWS = 500;
+  const rows = races.slice(0, MAX_ROWS);
+  const realTop3Sets = rows.map(r => new Set(r.real_top5.slice(0,3).map(bhName)));
+
+  body.innerHTML = rows.map((r,i)=>{
+    const top3set = realTop3Sets[i];
+    const predHtml = (r.pred_top10 || []).map(h => `<span style="${top3set.has(bhName(h))?'color:var(--green);font-weight:700;':'color:var(--ink-soft);'}">${bhLabel(h)}</span>`).join(', ');
+    const realHtml = r.real_top5.map((h,j)=> `${j+1}. ${bhLabel(h)}`).join(', ');
+    const nb = r.nb_pred_top5_in_real_top3;
+    const nbColor = nb>=2 ? 'var(--green)' : (nb>=1 ? 'var(--ink-soft)' : '#a8402c');
+    const courseInferee = (r.num===undefined && r.num_course===undefined && r.course_num===undefined && r.num_course_identifie!==undefined);
+    // Colonne Quinte+ desordre : vide pour une course non-quinte, "n/d" si la
+    // course est bien un quinte mais que le rapport desordre n'a pas ete
+    // retrouve a la jointure (a investiguer dans l'onglet Verification).
+    const dList = quinteDesordre(r);
+    let desordreHtml;
+    if(!isQuinte(r)){
+      desordreHtml = `<td style="padding:6px 10px;text-align:right;color:var(--ink-soft);">—</td>`;
+    } else if(!dList.length){
+      desordreHtml = `<td style="padding:6px 10px;text-align:right;font-size:11px;color:var(--ink-soft);font-style:italic;" title="Course Quinté+ mais rapport désordre non retrouvé dans rapports_combines_data.csv">n/d</td>`;
+    } else {
+      const txt = dList.map(d=>fmtRapport(d.div)).join(' / ');
+      const tip = dList.map(d=>`${d.combi} : ${fmtRapport(d.div)}`).join(' | ')
+        + (dList.length>1 ? ' (dead-heat : plusieurs combinaisons gagnantes)' : '');
+      desordreHtml = `<td style="padding:6px 10px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--green);" title="${tip}">${txt}</td>`;
+    }
+    const betsHtml = activeBets.map(b=>{
+      if(!r.couples_place){
+        return `<td style="padding:6px 10px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-soft);" title="Rapport couplé-placé non retrouvé pour cette course">—</td>`;
+      }
+      const status = coteFilterStatus(r);
+      if(status === 'excluded'){
+        const c1 = bhCote(predTop5(r)[0]), c2 = bhCote(predTop5(r)[1]);
+        return `<td style="padding:6px 10px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-soft);font-style:italic;" title="Exclu : cote P1=${c1} / cote P2=${c2}, sous le seuil de ${_backtestMinCoteP1P2}">excl.</td>`;
+      }
+      if(status === 'unknown'){
+        return `<td style="padding:6px 10px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-soft);font-style:italic;" title="Cote P1 et/ou P2 non retrouvée — exclu par prudence tant que le filtre est actif">cote ?</td>`;
+      }
+      const res = computeBet(r, b);
+      const color = res.net>=0 ? 'var(--green)' : '#a8402c';
+      return `<td style="padding:6px 10px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:${color};" title="Mise ${res.mise.toFixed(2)}€ / Gain ${res.gain.toFixed(2)}€">${fmtEUR(res.net)}</td>`;
+    }).join('');
+    return `<tr style="border-bottom:1px solid var(--line);">
+      <td style="padding:6px 10px;font-family:'JetBrains Mono',monospace;font-size:12.5px;">${fmtDate(r.date)}</td>
+      <td style="padding:6px 10px;"><span class="tag">${r.hippo}</span>${isQuinte(r)?' <span class="tag" style="background:var(--green);color:var(--paper);" title="Course support du Quinté+">Q+</span>':''}</td>
+      <td style="padding:6px 10px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:12.5px;">${fmtRC(raceReunion(r))}</td>
+      <td style="padding:6px 10px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:12.5px;${courseInferee?'font-style:italic;':''}" ${courseInferee?'title="Numéro de course déduit par jointure avec les rapports PMU (non fourni par le backtest lui-même)"':''}>${fmtRC(raceCourseNum(r))}</td>
+      <td style="padding:6px 10px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:12.5px;">${r.n_partants}</td>
+      <td style="padding:6px 10px;font-size:12.5px;">${predHtml}</td>
+      <td style="padding:6px 10px;font-size:12.5px;color:var(--ink-soft);">${realHtml}</td>
+      <td style="padding:6px 10px;text-align:center;font-weight:700;color:${nbColor};">${nb} / 5</td>
+      ${desordreHtml}
+      ${betsHtml}
+    </tr>`;
+  }).join('');
+
+  if(races.length > MAX_ROWS){
+    body.innerHTML += `<tr><td colspan="${colspan}"><div class="empty">... et ${(races.length-MAX_ROWS).toLocaleString('fr-FR')} courses de plus. Affine le filtre pour réduire la liste.</div></td></tr>`;
+  }
+}
+
+/* =========================================================
+   VUE VERIFICATION PARIS — detail course par course des calculs
+   ========================================================= */
+let _verifCurrentRaceKey = null;
+
+function _raceKeyOf(r, i){ return `${r.date}_${r.hippo}_${i}`; }
+
+function renderVerifParis(){
+  const el = document.getElementById('verifParisContainer');
+  if(!el) return;
+
+  if(!BACKTEST_DATA){
+    el.innerHTML = `<div class="empty">Aucun backtest disponible — voir l'onglet "Résultats des tests".</div>`;
+    return;
+  }
+
+  const races = BACKTEST_DATA.races;
+  const withData = races.filter(r=>r.couples_place);
+  const warnings = (BACKTEST_DATA.enrich_warnings || []);
+
+  el.innerHTML = `
+    <div class="hero" style="margin-bottom:20px;">
+      <div>
+        <h2>Vérification paris — couplé placé</h2>
+        <p style="font-size:13px;color:var(--ink-soft);">
+          Détail course par course des dividendes récupérés dans les rapports définitifs PMU et des calculs
+          de mise / gain / net pour chaque type de pari. Sert à contrôler manuellement les chiffres
+          affichés dans l'onglet "Résultats des tests" (comme la validation faite en son temps sur cotes_data.csv).
+        </p>
+      </div>
+    </div>
+
+    <div class="kpis" style="margin-bottom:20px;">
+      <div class="kpi"><div class="label">Courses de validation</div><div class="val">${races.length.toLocaleString('fr-FR')}</div></div>
+      <div class="kpi"><div class="label">Avec rapport couplé-placé retrouvé</div><div class="val">${withData.length.toLocaleString('fr-FR')}</div></div>
+      <div class="kpi"><div class="label">Sans rapport retrouvé</div><div class="val">${(races.length-withData.length).toLocaleString('fr-FR')}</div></div>
+      <div class="kpi"><div class="label">Avertissements de jointure</div><div class="val">${warnings.length}</div></div>
+    </div>
+
+    ${warnings.length ? `
+    <div style="background:var(--paper);border:1px solid #e8a090;border-radius:6px;padding:16px 18px;margin-bottom:20px;">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:15px;font-weight:700;color:#a8402c;text-transform:uppercase;letter-spacing:.3px;margin-bottom:10px;">
+        Avertissements de jointure (${warnings.length})
+      </div>
+      <ul style="padding-left:20px;font-size:12.5px;line-height:1.6;color:var(--ink-soft);max-height:200px;overflow:auto;">
+        ${warnings.map(w=>`<li>${w}</li>`).join('')}
+      </ul>
+    </div>` : ''}
+
+    <div class="controls" style="margin-bottom:14px;">
+      <label style="min-width:280px;">Choisir une course (hippo, cheval...)
+        <input type="text" id="verifSearch" placeholder="Filtrer...">
+      </label>
+    </div>
+    <div style="display:flex;gap:16px;align-items:flex-start;">
+      <div style="flex:0 0 320px;max-height:640px;overflow:auto;background:var(--paper);border:1px solid var(--line);border-radius:6px;">
+        <div id="verifRaceList"></div>
+      </div>
+      <div style="flex:1;" id="verifDetail">
+        <div class="empty">Sélectionne une course dans la liste à gauche.</div>
+      </div>
+    </div>
+  `;
+
+  const listEl = document.getElementById('verifRaceList');
+  let filterText = '';
+
+  function renderList(){
+    const filtered = races
+      .map((r,i)=>({r,i}))
+      .filter(({r}) => !filterText ||
+        r.hippo.toLowerCase().includes(filterText) ||
+        (r.pred_top10 || []).some(h=>bhName(h).toLowerCase().includes(filterText)) ||
+        r.real_top5.some(h=>bhName(h).toLowerCase().includes(filterText))
+      )
+      .sort((a, b) => {
+        if (b.r.date !== a.r.date) return b.r.date - a.r.date; // plus recent d'abord
+        const ra = raceReunion(a.r) ?? 0, rb = raceReunion(b.r) ?? 0;
+        if (ra !== rb) return ra - rb;
+        const ca = raceCourseNum(a.r) ?? 0, cb = raceCourseNum(b.r) ?? 0;
+        return ca - cb;
+      });
+    listEl.innerHTML = filtered.map(({r,i})=>{
+      const key = _raceKeyOf(r,i);
+      const active = key === _verifCurrentRaceKey;
+      const hasData = !!r.couples_place;
+      return `<div class="verif-race-item" data-key="${key}" data-idx="${i}"
+        style="padding:8px 12px;border-bottom:1px solid var(--line);cursor:pointer;font-size:12px;${active?'background:#eef3ea;':''}">
+        <div style="font-family:'JetBrains Mono',monospace;">${fmtDate(r.date)} — ${r.hippo}${fmtRC(raceCourseNum(r))!=='—' ? ' C'+fmtRC(raceCourseNum(r)) : ''}</div>
+        <div style="color:${hasData?'var(--green)':'#a8402c'};font-size:11px;">${hasData ? 'Rapport trouvé' : 'Rapport non trouvé'}</div>
+      </div>`;
+    }).join('') || `<div class="empty" style="padding:16px;">Aucune course ne correspond à ce filtre.</div>`;
+
+    listEl.querySelectorAll('.verif-race-item').forEach(item=>{
+      item.addEventListener('click', ()=>{
+        _verifCurrentRaceKey = item.dataset.key;
+        renderVerifDetail(races[parseInt(item.dataset.idx,10)]);
+        renderList();
+      });
+    });
+  }
+
+  document.getElementById('verifSearch').addEventListener('input', (e)=>{
+    filterText = e.target.value.trim().toLowerCase();
+    renderList();
+  });
+
+  renderList();
+}
+
+function renderVerifDetail(r){
+  const el = document.getElementById('verifDetail');
+  if(!el) return;
+
+  const top5 = predTop5(r);
+  const top5Html = top5.map((h,i)=>{
+    const cote = bhCote(h);
+    return `<span class="tag" style="margin-right:4px;" title="${bhNum(h)==null ? 'Numéro PMU non retrouvé : ce cheval ne figure pas parmi les rapports définitifs disponibles pour cette course (voir note ci-dessous).' : ''}">
+    P${i+1} — ${bhLabel(h)}${cote!=null ? ` (cote ${cote})` : ''}${bhNum(h)==null ? ' <em style="color:#a8402c;">(numéro PMU introuvable)</em>' : ''}
+  </span>`;
+  }).join('');
+  const anyMissing = top5.some(h=>bhNum(h)==null);
+
+  if(!r.couples_place){
+    el.innerHTML = `
+      <div style="background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:18px 20px;">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;color:var(--green);margin-bottom:10px;">
+          ${r.hippo} — ${fmtDate(r.date)}
+        </div>
+        <div style="margin-bottom:14px;">${top5Html}</div>
+        ${anyMissing ? `<div style="font-size:11.5px;color:#a8402c;margin-bottom:10px;">"Numéro PMU introuvable" : ce cheval n'a pas de numéro retrouvé pour cette course dans les sources jointes — voir <b>${'cotes_data.csv'}</b> (couverture tous partants) plutôt que <code>rapports_data.csv</code> (qui ne référence que les chevaux gagnant/placé). Un cheval non placé peut donc légitimement en être dépourvu.</div>` : ''}
+        <div class="empty">Aucun rapport couplé-placé retrouvé pour cette course — vérifie que
+        <code>rapports_combines_data.csv</code> contient bien une ligne <code>COUPLE_PLACE</code> pour
+        cette date/hippodrome/course dans <code>galoptrack_rapports.ipynb</code>.</div>
+      </div>`;
+    return;
+  }
+
+  const mise_base = r.couple_mise_base;
+  const miseBaseWarn = (mise_base !== undefined && Math.abs(mise_base - 1) > 0.01);
+
+  const rawCouplesHtml = Object.entries(r.couples_place).map(([k,v])=>
+    `<span class="tag" style="margin-right:4px;margin-bottom:4px;">${k} → ${v.toFixed(2)} €</span>`
+  ).join('');
+
+  const betsHtml = BET_TYPES.map(b=>{
+    const res = computeBet(r, b);
+    const detailRows = res.detail.map(d=>{
+      const nomI = bhName(top5[d.i]), nomJ = bhName(top5[d.j]);
+      const gagneColor = d.gagne ? 'var(--green)' : '#a8402c';
+      const gagneTxt = d.ni==null||d.nj==null ? 'numéro manquant' : (d.gagne ? `gagné (${d.dividende.toFixed(2)} €)` : 'perdu (0 €)');
+      return `<tr style="border-bottom:1px solid var(--line);">
+        <td style="padding:4px 8px;font-size:12px;">P${d.i+1} × P${d.j+1}</td>
+        <td style="padding:4px 8px;font-size:12px;color:var(--ink-soft);">${nomI} × ${nomJ}</td>
+        <td style="padding:4px 8px;font-size:12px;font-family:'JetBrains Mono',monospace;">${d.key ?? '—'}</td>
+        <td style="padding:4px 8px;font-size:12px;color:${gagneColor};font-weight:600;">${gagneTxt}</td>
+      </tr>`;
+    }).join('');
+
+    return `
+      <div style="background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:16px 18px;margin-bottom:16px;">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;color:var(--green);margin-bottom:8px;">
+          ${b.short} <span style="font-size:11px;color:var(--ink-soft);font-weight:400;">— ${b.label}</span>
+        </div>
+        <table style="width:100%;border-collapse:collapse;margin-bottom:10px;">
+          <thead><tr style="border-bottom:2px solid var(--line);">
+            <th style="padding:4px 8px;font-size:11px;text-align:left;">Rangs</th>
+            <th style="padding:4px 8px;font-size:11px;text-align:left;">Chevaux</th>
+            <th style="padding:4px 8px;font-size:11px;text-align:left;">Combinaison</th>
+            <th style="padding:4px 8px;font-size:11px;text-align:left;">Résultat</th>
+          </tr></thead>
+          <tbody>${detailRows}</tbody>
+        </table>
+        <div style="display:flex;gap:16px;font-size:12.5px;">
+          <span>Mise : <b>${res.mise.toFixed(2)} €</b></span>
+          <span>Gain : <b>${res.gain.toFixed(2)} €</b></span>
+          <span style="color:${res.net>=0?'var(--green)':'#a8402c'};">Net (gain − mise) : <b>${fmtEUR(res.net)}</b></span>
+        </div>
+      </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div style="background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:18px 20px;margin-bottom:16px;">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;color:var(--green);margin-bottom:10px;">
+        ${r.hippo}${fmtRC(raceCourseNum(r))!=='—' ? ' — C'+fmtRC(raceCourseNum(r)) : ''} — ${fmtDate(r.date)}
+      </div>
+      <div style="margin-bottom:12px;">${top5Html}</div>
+      ${anyMissing ? `<div style="font-size:11.5px;color:#a8402c;margin-bottom:10px;">"Numéro PMU introuvable" pour un ou plusieurs chevaux ci-dessus : couverture incomplète de la source utilisée pour la jointure des numéros (voir note dans l'onglet — ce cheval n'a probablement pas figuré parmi les places de cette course dans les données jointes).</div>` : ''}
+      <div style="font-size:11px;color:var(--ink-soft);margin-bottom:6px;">Rapports couplé-placé bruts récupérés (numéro-numéro → dividende pour 1€, déjà divisé par 100 depuis les centimes API) :</div>
+      <div style="margin-bottom:8px;">${rawCouplesHtml || '<em>aucun</em>'}</div>
+      <div style="font-size:11px;color:${miseBaseWarn?'#a8402c':'var(--ink-soft)'};">
+        Mise de base lue dans le rapport PMU : ${mise_base!==undefined ? mise_base.toFixed(2)+' €' : '—'}
+        ${miseBaseWarn ? ' — différente de 1€, à vérifier (les calculs ci-dessous utilisent quand même 1€/couple, conformément à la mise "en base" demandée).' : ''}
+      </div>
+    </div>
+    ${betsHtml}
+  `;
+}
+
+
+
+function renderMethodologie(){
+
+  const el = document.getElementById('methoContainer');
+  if(!el) return;
+
+  if(!MODEL_META){
+    el.innerHTML = `
+      <div class="empty">
+        Aucune information de modèle disponible dans ce dashboard.<br>
+        Cela arrive quand les fichiers modèle (race_model.txt / iso_calib.pkl) étaient absents
+        du dossier <code>GalopTrack/model/</code> au moment de la génération, ou qu'il n'y avait
+        aucune course du jour à scorer.
+      </div>`;
+    return;
+  }
+
+  const groupsHtml = MODEL_META.feature_groups.map(g => `
+    <div style="margin-bottom:16px;">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.3px;margin-bottom:6px;">${g.group}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        ${g.features.map(f=>`<span class="tag" title="${f.key}">${f.label}</span>`).join('')}
+      </div>
+    </div>
+  `).join('');
+
+  const methodoHtml = MODEL_META.methodology.map(m=>`<li style="margin-bottom:8px;">${m}</li>`).join('');
+  const excludedHtml = MODEL_META.excluded.map(m=>`<li style="margin-bottom:8px;">${m}</li>`).join('');
+
+  el.innerHTML = `
+    <div class="hero" style="margin-bottom:20px;">
+      <div>
+        <h2>Méthodologie du modèle prédictif</h2>
+        <p style="font-size:13px;color:var(--ink-soft);">Version ${MODEL_META.version} — ${MODEL_META.n_features} features — entraîné hors-ligne, appliqué uniquement aux courses du jour</p>
+      </div>
+    </div>
+
+    <div style="background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:20px 22px;margin-bottom:20px;">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.3px;margin-bottom:12px;">Comment ça marche</div>
+      <ul style="padding-left:20px;font-size:13.5px;line-height:1.5;">${methodoHtml}</ul>
+    </div>
+
+    <div style="background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:20px 22px;margin-bottom:20px;">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.3px;margin-bottom:14px;">
+        Features utilisées (${MODEL_META.n_features})
+      </div>
+      ${groupsHtml}
+    </div>
+
+    <div style="background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:20px 22px;">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;color:#a8402c;text-transform:uppercase;letter-spacing:.3px;margin-bottom:12px;">Ce qui n'est volontairement PAS utilisé (ou plus utilisé)</div>
+      <ul style="padding-left:20px;font-size:13.5px;line-height:1.5;">${excludedHtml}</ul>
+    </div>
+  `;
+}
+
+/* =========================================================
+   VUE COURSE (detail)
+   ========================================================= */
+/* =========================================================
+   NAVIGATION PREV / NEXT
+   ========================================================= */
+function updateRaceNavButtons(){
+  const idx = state.raceNavList.indexOf(state.currentRaceId);
+  const prev = document.getElementById('racePrev');
+  const next = document.getElementById('raceNext');
+  if(prev) prev.disabled = (idx <= 0);
+  if(next) next.disabled = (idx < 0 || idx >= state.raceNavList.length - 1);
+}
+function raceNav(dir){
+  const idx = state.raceNavList.indexOf(state.currentRaceId);
+  if(idx < 0) return;
+  const newIdx = idx + dir;
+  if(newIdx < 0 || newIdx >= state.raceNavList.length) return;
+  openRace(state.raceNavList[newIdx]);
+}
+
+function buildHorseNavList(){
+  // Trie les sorties précédentes du cheval par date décroissante (même logique que renderHorseHistory)
+  const nom = state.currentHorseName;
+  const r = RACE_BY_ID[state.currentRaceId];
+  let hist = [];
+  RACES.forEach(race=>{
+    if(race.today) return;
+    const h = race.horses.find(x=>x.nom===nom);
+    if(h) hist.push(race.id);
+  });
+  // Ajoute aussi la course actuelle si non-today
+  if(r && !r.today && !hist.includes(r.id)) hist.push(r.id);
+  hist.sort((a,b)=>RACE_BY_ID[b].date - RACE_BY_ID[a].date);
+  state.horseNavList = hist;
+}
+function updateHorseNavButtons(){
+  const idx = state.horseNavList.indexOf(state.currentRaceId);
+  const prev = document.getElementById('horsePrev');
+  const next = document.getElementById('horseNext');
+  if(prev) prev.disabled = (idx <= 0);
+  if(next) next.disabled = (idx < 0 || idx >= state.horseNavList.length - 1);
+}
+function horseNav(dir){
+  const idx = state.horseNavList.indexOf(state.currentRaceId);
+  if(idx < 0) return;
+  const newIdx = idx + dir;
+  if(newIdx < 0 || newIdx >= state.horseNavList.length) return;
+  const targetRaceId = state.horseNavList[newIdx];
+  openHorse(state.currentHorseName, targetRaceId, 'race');
+}
+
+function openRace(raceId, navList){
+  state.currentRaceId = raceId;
+  // navList fourni quand on vient de la liste ; on le conserve pour la navigation prev/next
+  if(navList) state.raceNavList = navList;
+  updateRaceNavButtons();
+  const r = RACE_BY_ID[raceId];
+
+  document.getElementById('raceHero').innerHTML = `
+    <div>
+      <h2>${r.hippo} — ${r.rnum ? "R"+r.rnum+" " : ""}C${r.num} — ${fmtDate(r.date)}${r.today ? ' <span class="badge-today">Aujourd&#39;hui</span>' : ''}</h2>
+      <div class="meta">
+        <span class="tag">${r.dist ?? '—'} m</span>
+        <span class="tag">${r.terrain ?? '—'}${r.penetro ? ' ('+r.penetro+')' : ''}</span>
+        <span class="tag">${r.piste ?? '—'}</span>
+        <span class="tag ${catTagClass(r.cat)}">${catLabel(r.cat)}</span>
+        <span class="tag">${fmtAlloc(r.alloc)}</span>
+        <span class="tag">${r.horses.length} partants</span>
+      </div>
+    </div>
+  `;
+
+  const body = document.getElementById('raceTroncBody');
+  // Pour les courses du jour : trier par numPmu (cd) = numéro officiel du programme PMU
+  const horsesToShow = r.today
+    ? [...r.horses].sort((a,b)=> (a.npart ?? 999) - (b.npart ?? 999))
+    : r.horses;
+  body.innerHTML = horsesToShow.map(h=>{
+    const hasTr = h.tr && h.tr.length > 0;
+    const coteHtml = h.cote
+      ? `<span class="tag" style="background:#fdf7e8;border-color:var(--gold);color:#4d3a08;">${h.cote.toFixed(1)}</span>${h.cote_ref ? '<span style="color:var(--ink-soft);font-size:10px;margin-left:4px;">ref '+h.cote_ref.toFixed(1)+'</span>' : ''}`
+      : '—';
+    return `<tr data-horse="${encodeURIComponent(h.nom)}">
+      <td><span class="badge ${posBadgeClass(h.pa)}">${h.pa ?? '—'}</span></td>
+      <td class="name-cell">${numBadge(h.npart)}${h.nom} ${profileTag(h)}</td>
+      <td>${h.jk ?? '—'}</td>
+      <td class="mono">${h.cd ?? '—'}</td>
+      <td class="mono">${h.pd ?? '—'} kg</td>
+      <td class="mono">${hasTr && h.to ? h.to.toFixed(2)+'s' : '—'}</td>
+      <td class="mono">${hasTr && h.vy ? h.vy+' km/h' : '—'}</td>
+      <td class="mono">${hasTr && h.vm ? h.vm+' km/h' : '—'}</td>
+      <td>${r.today ? coteHtml : (hasTr ? sparkline(h.tr) : '<span style="color:var(--line);font-size:11px;">non courue</span>')}</td>
+    </tr>`;
+  }).join('');
+  body.querySelectorAll('tr[data-horse]').forEach(tr=>{
+    tr.addEventListener('click', ()=> openHorse(decodeURIComponent(tr.dataset.horse), raceId, 'race'));
+  });
+
+  // Adapter le libelle de la derniere colonne du tableau
+  const colHead = document.getElementById('colLastHead');
+  if(colHead) colHead.textContent = r.today ? 'Cote PMU' : 'Profil vitesse';
+  const hasAnyTroncons = r.horses.some(h=>h.tr && h.tr.length>0);
+  const chartContainer = document.getElementById('raceChartContainer');
+  if(r.today || !hasAnyTroncons){
+    chartContainer.innerHTML = `<div class="not-run-block"><div class="nr-title">Course non courue</div><div>Les donnees de tracking seront disponibles apres la course.</div></div>`;
+  } else {
+    state.raceChartHighlight = null;
+    renderRaceChart();
+  }
+
+  goToTab('race');
+  goToSubTab('troncons');
+  state.raceBenchDist = false;
+  state.raceBenchTerrain = false;
+  state.todayFilterSuspect = false;
+  document.getElementById('btn-dist-sim').classList.remove('primary');
+  document.getElementById('btn-terrain-sim').classList.remove('primary');
+  document.getElementById('btn-filter-suspect').classList.remove('primary');
+}
+
+function renderRaceChart(){
+  const r = RACE_BY_ID[state.currentRaceId];
+  if(!r) return;
+  const { svg: posSvg, legend } = buildPositionChart(r, { mode:'multi', highlightName: state.raceChartHighlight });
+  const { svg: spdSvg } = buildSpeedChart(r, { mode:'multi', highlightName: state.raceChartHighlight });
+  const container = document.getElementById('raceChartContainer');
+  container.innerHTML =
+    `<div style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;color:#2f6e4a;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Position dans le peloton</div>` +
+    posSvg +
+    (spdSvg ? `<div style="margin-top:10px;"><div style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;color:#b05c10;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Profil de vitesse (km/h)</div>${spdSvg}</div>` : '') +
+    `<div class="poschart-legend">${legend}</div>`;
+  wirePositionChartClicks(container, (nom)=>{
+    state.raceChartHighlight = (state.raceChartHighlight===nom) ? null : nom;
+    renderRaceChart();
+  });
+}
+
+function renderRaceMetrics(){
+  const r = RACE_BY_ID[state.currentRaceId];
+  if(!r) return;
+
+  // Pour les courses du jour : affichage des metriques historiques par cheval
+  if(r.today){
+    renderTodayMetrics(r);
+    return;
+  }
+
+  // ── Cours historiques : benchmark moyen ──────────────────────────────────
+  let benchRaces = null;
+  if(state.raceBenchDist || state.raceBenchTerrain){
+    benchRaces = RACES.filter(o=>{
+      if(o.id===r.id || o.today) return false;
+      if(state.raceBenchDist){
+        if(!r.dist || !o.dist) return false;
+        if(Math.abs(o.dist - r.dist)/r.dist > 0.10) return false;
+      }
+      if(state.raceBenchTerrain){
+        if(terrainGroup(o.terrain) !== terrainGroup(r.terrain)) return false;
+      }
+      return true;
+    });
+  }
+
+  let benchStats = null;
+  if(benchRaces){
+    const allHorses = benchRaces.flatMap(o=>o.horses);
+    benchStats = computeAvgMetrics(allHorses);
+    document.getElementById('benchInfo').textContent =
+      `Comparaison active : ${benchRaces.length.toLocaleString('fr-FR')} course(s) similaire(s), ${allHorses.length.toLocaleString('fr-FR')} performances.`;
+  } else {
+    document.getElementById('benchInfo').textContent = 'Active un bouton ci-dessus pour comparer cette course a un echantillon similaire.';
+  }
+
+  const body = document.getElementById('raceMetricsBody');
+  // Restore standard header (may have been replaced by today version)
+  document.getElementById('raceMetricsHead').innerHTML = `
+    <tr><th>Pos</th><th>Cheval</th><th>Depart (1er troncon)</th><th>400m depart</th><th>600m final</th><th>200m final</th>
+    <th>V. moyenne</th><th>V. max</th><th>Ratio fin/debut</th><th>Regularite</th><th>Delta position</th></tr>`;
+  body.innerHTML = r.horses.map(h=>{
+    const v1er  = h.tr && h.tr.length > 0 && h.tr[0][2] !== null ? h.tr[0][2] : null;
+    const v600 = h.t6 ? speedFromTime(600,h.t6) : null;
+    const v200 = h.t2f ? speedFromTime(200,h.t2f) : null;
+    return `<tr data-horse="${encodeURIComponent(h.nom)}">
+      <td><span class="badge ${posBadgeClass(h.pa)}">${h.pa ?? '—'}</span></td>
+      <td class="name-cell">${numBadge(h.npart)}${h.nom}</td>
+      <td class="mono">${h.t2p ? h.t2p.toFixed(2)+'s'+(v1er ? ' ('+fmtNum(v1er,1,' km/h)') : '') : '—'}</td>
+      <td class="mono">${fmtNum(h.v4p,1,' km/h')}</td>
+      <td class="mono">${h.t6 ? h.t6.toFixed(2)+'s ('+fmtNum(v600,1,' km/h)') : '—'}</td>
+      <td class="mono">${h.t2f ? h.t2f.toFixed(2)+'s ('+fmtNum(v200,1,' km/h)') : '—'}</td>
+      <td class="mono">${fmtNum(h.vy,1,' km/h')}</td>
+      <td class="mono">${fmtNum(h.vm,1,' km/h')}</td>
+      <td class="mono">${fmtNum(h.rel,2)}</td>
+      <td class="mono">${fmtNum(h.rg,2)}</td>
+      <td class="mono">${h.dp ?? '—'}</td>
+    </tr>`;
+  }).join('');
+  body.querySelectorAll('tr[data-horse]').forEach(tr=>{
+    tr.addEventListener('click', ()=> openHorse(decodeURIComponent(tr.dataset.horse), r.id, 'race'));
+  });
+
+  renderMetricCards(r, benchStats);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   METRIQUES AUJOURD'HUI : course de reference historique par cheval
+   ────────────────────────────────────────────────────────────────────────── */
+/* ──────────────────────────────────────────────────────────────────────────
+   DETECTION DE COURSES SUSPECTES
+   Règles : vy < 38 km/h (cheval arrêté / tracking cassé)
+            OU t2p > 30s sur 200m de départ (départ anormalement lent)
+   ────────────────────────────────────────────────────────────────────────── */
+function isSuspectPerf(h){
+  if(!h) return false;
+  if(h.vy !== null && h.vy < 38) return true;
+  if(h.t2p !== null && h.t2p > 30) return true;
+  // Premier troncon trop court (< 9s) : soit tracking corrompu, soit troncon non-standard
+  // (< 200m), ce qui rend la course non comparable avec les autres references
+  if(h.t2p !== null && h.t2p > 0 && h.t2p < 9) return true;
+  // Vitesse aberrante sur le premier troncon selon France Galop (> 85 km/h)
+  if(h.tr && h.tr.length > 0 && h.tr[0][2] !== null && h.tr[0][2] > 85) return true;
+  return false;
+}
+
+function findHistoricalRef(horseName, todayRace){
+  let candidates = RACES.filter(race=>{
+    if(race.today) return false;
+    return race.horses.some(h=>h.nom===horseName);
+  });
+
+  if(state.raceBenchDist && todayRace.dist){
+    candidates = candidates.filter(race=>
+      race.dist && Math.abs(race.dist - todayRace.dist)/todayRace.dist <= 0.10
+    );
+  }
+  if(state.raceBenchTerrain && todayRace.terrain){
+    candidates = candidates.filter(race=>
+      terrainGroup(race.terrain) === terrainGroup(todayRace.terrain)
+    );
+  }
+  // Filtres explicites terrain et distance
+  if(state.refTerrains.length){
+    candidates = candidates.filter(race=> state.refTerrains.includes(race.terrain));
+  }
+  if(state.refDistMin !== null){
+    candidates = candidates.filter(race=> race.dist && race.dist >= state.refDistMin);
+  }
+  if(state.refDistMax !== null){
+    candidates = candidates.filter(race=> race.dist && race.dist <= state.refDistMax);
+  }
+
+  if(!candidates.length) return null;
+
+  // Tri par date décroissante
+  candidates.sort((a,b)=>b.date - a.date);
+
+  if(state.todayFilterSuspect){
+    // Passe les candidates en ordre et prend la première non-suspecte
+    for(const race of candidates){
+      const horse = race.horses.find(h=>h.nom===horseName);
+      if(!isSuspectPerf(horse)) return { race, horse };
+    }
+    return null; // toutes les courses sont suspectes
+  }
+
+  // Sans filtre : prend la plus récente et indique si elle est suspecte
+  const race = candidates[0];
+  const horse = race.horses.find(h=>h.nom===horseName);
+  return { race, horse, suspect: isSuspectPerf(horse) };
+}
+
+function renderTodayMetrics(r){
+  // Infos de contexte dynamique dans la zone bench
+  const filters = [];
+  if(state.raceBenchDist) filters.push('distance similaire +/-10%');
+  if(state.raceBenchTerrain) filters.push('meme terrain (groupe)');
+  if(state.refTerrains.length) filters.push('terrain : '+state.refTerrains.join(', '));
+  if(state.refDistMin !== null) filters.push('dist >= '+state.refDistMin+'m');
+  if(state.refDistMax !== null) filters.push('dist <= '+state.refDistMax+'m');
+  if(state.todayFilterSuspect) filters.push('courses suspectes masquees (vy < 38 km/h, 200m depart > 30s, 1er troncon < 9s, ou vitesse 1er troncon > 85 km/h)');
+  const filterStr = filters.length
+    ? `Filtre actif : ${filters.join(' + ')} — course de reference la plus recente par cheval.`
+    : 'Reference : course trackee la plus recente par cheval (active un filtre pour restreindre).';
+  document.getElementById('benchInfo').textContent = filterStr;
+
+  // Tri des colonnes + header dynamique
+  const sortArrow = (col)=>{
+    if(state.todayMetricsSort.col!==col) return '<span style="opacity:.3;font-size:9px;">&#8597;</span>';
+    return state.todayMetricsSort.dir==='asc' ? '<span style="font-size:9px;">&#9650;</span>' : '<span style="font-size:9px;">&#9660;</span>';
+  };
+  const thStyle = 'cursor:pointer;user-select:none;';
+  const cols = [
+    {k:'cd',    label:'N.'},
+    {k:'nom',   label:'Cheval'},
+    {k:'cote',  label:'Cote PMU'},
+    {k:'ref',   label:'Course de reference'},
+    {k:'t2p',   label:'Depart (1er troncon)'},
+    {k:'v4p',   label:'400m depart'},
+    {k:'t6',    label:'600m final'},
+    {k:'t2f',   label:'200m final'},
+    {k:'vy',    label:'V. moyenne'},
+    {k:'vm',    label:'V. max'},
+    {k:'rel',   label:'Ratio fin/debut'},
+    {k:'rg',    label:'Regularite'},
+    {k:'dp',    label:'Delta pos.'},
+    {k:'profil_pos', label:'Profil position', nosort:true},
+    {k:'profil_spd', label:'Profil vitesse',  nosort:true},
+  ];
+  document.getElementById('raceMetricsHead').innerHTML =
+    '<tr>' + cols.map(c=>
+      c.nosort
+        ? `<th>${c.label}</th>`
+        : `<th style="${thStyle}" data-tcol="${c.k}">${c.label} ${sortArrow(c.k)}</th>`
+    ).join('') + '</tr>';
+  document.getElementById('raceMetricsHead').querySelectorAll('th[data-tcol]').forEach(th=>{
+    th.addEventListener('click', ()=>{
+      const col = th.dataset.tcol;
+      if(state.todayMetricsSort.col===col){
+        state.todayMetricsSort.dir = state.todayMetricsSort.dir==='asc'?'desc':'asc';
+      } else {
+        state.todayMetricsSort.col = col;
+        state.todayMetricsSort.dir = 'asc';
+      }
+      renderTodayMetrics(r);
+    });
+  });
+
+  // Construction des lignes avec donnees de reference
+  let rows = r.horses.map(h=>{
+    const ref = findHistoricalRef(h.nom, r);
+    return { h, rh: ref ? ref.horse : null, rr: ref ? ref.race : null, suspect: ref ? !!ref.suspect : false };
+  });
+
+  // Tri des lignes
+  const sc = state.todayMetricsSort.col;
+  const sd = state.todayMetricsSort.dir === 'asc' ? 1 : -1;
+  if(sc){
+    rows.sort((a,b)=>{
+      let va, vb;
+      if(sc==='cd')   { va=a.h.cd;  vb=b.h.cd; }
+      else if(sc==='nom')  { va=a.h.nom; vb=b.h.nom; }
+      else if(sc==='cote') { va=a.h.cote; vb=b.h.cote; }
+      else if(sc==='ref')  { va=a.rr ? a.rr.date : -1; vb=b.rr ? b.rr.date : -1; }
+      else { va=a.rh?a.rh[sc]:null; vb=b.rh?b.rh[sc]:null; }
+      if(va===null||va===undefined) return 1;
+      if(vb===null||vb===undefined) return -1;
+      return va<vb ? -1*sd : va>vb ? 1*sd : 0;
+    });
+  }
+
+  const body = document.getElementById('raceMetricsBody');
+  body.innerHTML = rows.map(({h, rh, rr, suspect})=>{
+    const v1er  = rh && rh.tr && rh.tr.length > 0 && rh.tr[0][2] !== null ? rh.tr[0][2] : null;
+    const v600  = rh && rh.t6  ? speedFromTime(600,rh.t6)  : null;
+    const v200  = rh && rh.t2f ? speedFromTime(200,rh.t2f) : null;
+
+    const suspectBadge = suspect
+      ? `<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#fdf0ec;border:1px solid #e8a090;color:#a8402c;margin-left:4px;">Suspecte</span>`
+      : '';
+
+    const refLabel = rr
+      ? `<span class="tag" style="font-size:10px;${suspect?'border-color:#e8a090;color:#a8402c;':''}">${rr.hippo} ${rr.rnum ? "R"+rr.rnum+" " : ""}C${rr.num}</span> <span style="color:var(--ink-soft);font-size:10.5px;">${fmtDate(rr.date)}</span>${suspectBadge}<br><span style="color:var(--ink-soft);font-size:10px;">${rr.dist ?? '—'}m · ${rr.terrain ?? '—'}${rr.alloc ? ' · '+fmtAlloc(rr.alloc) : ''}</span><br><a href="${pdfUrl(rr.date,rr.hippo,rr.num)}" target="_blank" onclick="event.stopPropagation()" style="font-size:10px;color:var(--green);font-family:'JetBrains Mono',monospace;">PDF tracking</a>`
+      : '<span style="color:var(--line);font-size:11px;">aucun historique</span>';
+
+    const rowStyle = suspect ? 'background:#fdf8f6;' : '';
+
+    const coteHtml = h.cote
+      ? `<span class="tag" style="background:#fdf7e8;border-color:var(--gold);color:#4d3a08;font-size:12px;">${h.cote.toFixed(1)}</span>${h.cote_ref ? '<br><span style="color:var(--ink-soft);font-size:10px;">ref '+h.cote_ref.toFixed(1)+'</span>' : ''}`
+      : '—';
+
+    return `<tr data-horse="${encodeURIComponent(h.nom)}" data-ref="${rr ? encodeURIComponent(rr.id) : ''}" style="${rowStyle}">
+      <td class="mono">${h.cd ?? '—'}</td>
+      <td class="name-cell">${numBadge(h.npart)}${h.nom}</td>
+      <td>${coteHtml}</td>
+      <td style="min-width:160px;line-height:1.6;">${refLabel}</td>
+      <td class="mono">${rh && rh.t2p ? rh.t2p.toFixed(2)+'s'+(v1er ? ' ('+fmtNum(v1er,1,' km/h)') : '') : '—'}</td>
+      <td class="mono">${rh ? fmtNum(rh.v4p,1,' km/h') : '—'}</td>
+      <td class="mono">${rh && rh.t6  ? rh.t6.toFixed(2) +'s ('+fmtNum(v600,1,' km/h)') : '—'}</td>
+      <td class="mono">${rh && rh.t2f ? rh.t2f.toFixed(2)+'s ('+fmtNum(v200,1,' km/h)') : '—'}</td>
+      <td class="mono">${rh ? fmtNum(rh.vy,1,' km/h') : '—'}</td>
+      <td class="mono">${rh ? fmtNum(rh.vm,1,' km/h') : '—'}</td>
+      <td class="mono">${rh ? fmtNum(rh.rel,2) : '—'}</td>
+      <td class="mono">${rh ? fmtNum(rh.rg,2) : '—'}</td>
+      <td class="mono">${rh && rh.dp!==null ? rh.dp : '—'}</td>
+      <td>${rh && rh.tr && rh.tr.length>=2 ? posSparkline(rh.tr,100,22) : '<span style="color:var(--line);font-size:10px;">—</span>'}</td>
+      <td>${rh && rh.tr && rh.tr.length>=2 ? sparkline(rh.tr,100,22) : '<span style="color:var(--line);font-size:10px;">—</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  body.querySelectorAll('tr[data-horse]').forEach(tr=>{
+    tr.addEventListener('click', ()=>{
+      const nom = decodeURIComponent(tr.dataset.horse);
+      // On passe toujours la course du JOUR comme fromRaceId pour que le breadcrumb
+      // affiche bien "LYO C8 — Aujourd'hui" et non la course de référence historique.
+      // La section historique du profil affichera quand même les données de référence
+      // via findHistoricalRef / renderHorseHistory.
+      openHorse(nom, r.id, 'race');
+    });
+  });
+
+  const grid = document.getElementById('metricsGrid');
+  if(grid) grid.innerHTML = '';
+}
+
+/* =========================================================
+   SIMULATION TACTIQUE
+   Pour chaque cheval de la course, agrège ses positions
+   tronçon par tronçon sur ses courses historiques similaires.
+   ========================================================= */
+
+function numBadgeDuel(npartCurrent, npartPast){
+  // Badge principal (course actuelle) — vert foncé
+  const b1 = npartCurrent !== null && npartCurrent !== undefined
+    ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--green);color:var(--paper);font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;flex-shrink:0;vertical-align:middle;margin-right:3px;">${npartCurrent}</span>`
+    : '';
+  // Badge secondaire (course passée) — grisé
+  const b2 = npartPast !== null && npartPast !== undefined
+    ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:#c9c2ab;color:#6b6357;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;flex-shrink:0;vertical-align:middle;margin-right:5px;">${npartPast}</span>`
+    : '';
+  return b1 + b2;
+}
+
+function renderDuel(){
+  const r = RACE_BY_ID[state.currentRaceId];
+  if(!r){ document.getElementById('duelContainer').innerHTML=''; return; }
+
+  // Index npart de la course actuelle par nom de cheval
+  const npartActuel = {};
+  r.horses.forEach(h=>{ npartActuel[h.nom] = h.npart; });
+  const nomsActuels = new Set(r.horses.map(h=>h.nom));
+
+  // Chercher toutes les courses historiques où >= 2 de ces chevaux étaient présents
+  // Inclut les courses sans tracking (NT)
+  const confrontations = [];
+  RACES.forEach(race=>{
+    if(race.id === r.id || race.today) return;
+    const presents = race.horses.filter(h=> nomsActuels.has(h.nom));
+    if(presents.length >= 2){
+      confrontations.push({ race, horses: presents, nt: race.tracked === false });
+    }
+  });
+
+  confrontations.sort((a,b)=> b.race.date - a.race.date);
+
+  const el = document.getElementById('duelContainer');
+
+  if(!confrontations.length){
+    el.innerHTML = `<div class="empty">Aucune confrontation directe trouvée entre les partants de cette course.</div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <p class="count">${confrontations.length} confrontation(s) directe(s) trouvée(s)</p>
+    ${confrontations.map((cf)=>{
+      const race = cf.race;
+      const horses = cf.horses.slice().sort((a,b)=>{
+        const pa = parseInt(a.pa)||999, pb = parseInt(b.pa)||999;
+        return pa - pb;
+      });
+
+      const isNT = cf.nt === true;
+      const rows = horses.map(h=>{
+        const v1 = h.tr && h.tr.length > 0 ? h.tr[0][2] : null;
+        const nCurrent = npartActuel[h.nom];
+        const nPast    = h.npart;
+        if(isNT){
+          return `<tr>
+            <td><span class="badge ${posBadgeClass(h.pa)}">${h.pa ?? '—'}</span></td>
+            <td class="name-cell">${numBadgeDuel(nCurrent, nPast)}${h.nom}</td>
+            <td class="mono" colspan="5" style="color:var(--ink-soft);font-size:11px;">${h.ec ? 'Écart : '+h.ec : '—'}</td>
+          </tr>`;
+        }
+        return `<tr>
+          <td><span class="badge ${posBadgeClass(h.pa)}">${h.pa ?? '—'}</span></td>
+          <td class="name-cell">${numBadgeDuel(nCurrent, nPast)}${h.nom}</td>
+          <td class="mono">${h.t2p ? h.t2p.toFixed(2)+'s'+(v1 ? ' ('+v1.toFixed(1)+' km/h)' : '') : '—'}</td>
+          <td class="mono">${h.v4p ? h.v4p.toFixed(1)+' km/h' : '—'}</td>
+          <td class="mono">${h.t6 ? h.t6.toFixed(2)+'s' : '—'}</td>
+          <td class="mono">${h.t2f ? h.t2f.toFixed(2)+'s' : '—'}</td>
+          <td class="mono">${h.vy ? h.vy.toFixed(1)+' km/h' : '—'}</td>
+        </tr>`;
+      }).join('');
+
+      const rnum = race.rnum ? `R${race.rnum} ` : '';
+      return `<div class="hist-card${isNT ? ' hist-card-nt' : ''}" style="margin-bottom:10px;">
+        <div class="hist-head" style="cursor:default;">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            <strong>${race.hippo} ${rnum}C${race.num}</strong>
+            <span class="tag">${fmtDate(race.date)}</span>
+            <span class="tag">${race.dist ?? '—'}m</span>
+            <span class="tag">${race.terrain ?? '—'}</span>
+            <span class="tag ${catTagClass(race.cat)}">${catLabel(race.cat)}</span>
+            ${race.alloc ? `<span class="tag">${fmtAlloc(race.alloc)}</span>` : ''}
+            <a href="${pdfUrl(race.date,race.hippo,race.num)}" target="_blank"
+               onclick="event.stopPropagation();"
+               style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--green);border:1px solid var(--green);padding:2px 7px;border-radius:4px;text-decoration:none;">PDF</a>
+          </div>
+          <div class="mono" style="font-size:11px;color:var(--ink-soft);">
+            ${cf.horses.length} partant(s) de la course actuelle présent(s)
+            &nbsp;·&nbsp; <span style="background:var(--green);color:var(--paper);padding:1px 6px;border-radius:10px;font-size:10px;">N° course actuelle</span>
+            <span style="background:#c9c2ab;color:#6b6357;padding:1px 6px;border-radius:10px;font-size:10px;">N° course passée</span>
+          </div>
+        </div>
+        <table style="margin-top:0;border-radius:0 0 6px 6px;">
+          <thead><tr>
+            <th>Pos</th><th>Cheval</th><th>200m départ</th><th>400m départ</th>
+            <th>600m final</th><th>200m final</th><th>V. moyenne</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+    }).join('')}
+  `;
+}
+
+function renderSimulation(){
+  const r = RACE_BY_ID[state.currentRaceId];
+  if(!r) return;
+  const el = document.getElementById('simulationContainer');
+
+  const useDist     = state.raceBenchDist;
+  const useTerrain  = state.raceBenchTerrain;
+  const useTerrains = state.refTerrains;
+  const useDistMin  = state.refDistMin;
+  const useDistMax  = state.refDistMax;
+  const suspectOff  = state.todayFilterSuspect;
+
+  const profiles = r.horses.map(h=>{
+    let hist = RACES.filter(race=>{
+      if(race.today || race.id===r.id) return false;
+      const hh = race.horses.find(x=>x.nom===h.nom);
+      if(!hh || !hh.tr || hh.tr.length < 2) return false;
+      if(useDist && r.dist && race.dist && Math.abs(race.dist-r.dist)/r.dist > 0.10) return false;
+      if(useTerrain && r.terrain && terrainGroup(race.terrain)!==terrainGroup(r.terrain)) return false;
+      if(useTerrains.length && !useTerrains.includes(race.terrain)) return false;
+      if(useDistMin!==null && (!race.dist || race.dist<useDistMin)) return false;
+      if(useDistMax!==null && (!race.dist || race.dist>useDistMax)) return false;
+      if(suspectOff && isSuspectPerf(hh)) return false;
+      return true;
+    }).map(race=> race.horses.find(x=>x.nom===h.nom));
+
+    if(!hist.length) return { nom:h.nom, npart:h.npart, cd:h.cd, jk:h.jk, cote:h.cote, n:0, avgPos:[], stdPos:[], profile:'—', firstPos:null, lastPos:null, delta:null, vyMoy:null };
+
+    const lenCounts = {};
+    hist.forEach(hh=>{ const l=hh.tr.length; lenCounts[l]=(lenCounts[l]||0)+1; });
+    const modalLen = parseInt(Object.entries(lenCounts).sort((a,b)=>b[1]-a[1])[0][0]);
+    hist = hist.filter(hh=>hh.tr.length===modalLen);
+
+    const avgPos=[], stdPos=[];
+    for(let i=0;i<modalLen;i++){
+      const vals = hist.map(hh=>hh.tr[i][3]).filter(v=>v!==null&&v!==undefined);
+      if(!vals.length){ avgPos.push(null); stdPos.push(null); continue; }
+      const mean = vals.reduce((a,b)=>a+b,0)/vals.length;
+      const std  = Math.sqrt(vals.map(v=>(v-mean)**2).reduce((a,b)=>a+b,0)/vals.length);
+      avgPos.push(parseFloat(mean.toFixed(1)));
+      stdPos.push(parseFloat(std.toFixed(1)));
+    }
+
+    const firstPos = avgPos[0], lastPos = avgPos[avgPos.length-1];
+    const delta = firstPos!==null && lastPos!==null ? firstPos - lastPos : null;
+    let profile = '—';
+    if(firstPos!==null && lastPos!==null){
+      if(firstPos<=2.5 && delta>=-1)         profile = 'Leader';
+      else if(delta >= 2)                     profile = 'Finisseur';
+      else if(delta <= -2)                    profile = 'Crameur';
+      else if(firstPos<=4 && Math.abs(delta)<=1.5) profile = 'Place regulier';
+      else                                    profile = 'Suiveur';
+    }
+    const vyArr = hist.map(hh=>hh.vy).filter(v=>v!==null);
+    const vyMoy = vyArr.length ? parseFloat((vyArr.reduce((a,b)=>a+b,0)/vyArr.length).toFixed(1)) : null;
+    return { nom:h.nom, npart:h.npart, cd:h.cd, jk:h.jk, cote:h.cote, n:hist.length, avgPos, stdPos, profile, firstPos, lastPos, delta, vyMoy };
+  });
+
+  const hasData = profiles.some(p=>p.n>0);
+
+  const activeFilters = [];
+  if(useDist) activeFilters.push('distance ±10%');
+  if(useTerrain) activeFilters.push('même terrain');
+  if(useTerrains.length) activeFilters.push('terrain : '+useTerrains.join(', '));
+  if(useDistMin!==null) activeFilters.push('dist ≥ '+useDistMin+'m');
+  if(useDistMax!==null) activeFilters.push('dist ≤ '+useDistMax+'m');
+  if(suspectOff) activeFilters.push('sans suspectes');
+
+  const profileColor = {
+    'Leader':'#2f6e4a', 'Finisseur':'#2e6b8a', 'Place regulier':'#b8841f',
+    'Crameur':'#a8402c', 'Suiveur':'#6b6357', '—':'#c9c2ab'
+  };
+
+  if(!hasData){
+    el.innerHTML = `
+      <div style="padding:14px 16px;background:var(--paper);border:1px solid var(--line);border-radius:6px;margin-bottom:12px;">
+        <span style="font-size:12px;color:var(--ink-soft);">
+          Aucune donnée historique disponible pour les partants de cette course.
+          La simulation sera disponible après que des courses avec tracking aient été enregistrées pour ces chevaux.
+        </span>
+      </div>
+      <table>
+        <thead><tr><th>Cheval</th><th>Jockey</th><th style="text-align:center;">Cote PMU</th><th style="text-align:center;">Courses trackées</th><th>Profil</th></tr></thead>
+        <tbody>${r.horses.map(h=>`<tr>
+          <td class="name-cell">${numBadge(h.npart)}${h.nom}</td>
+          <td style="font-size:12px;">${h.jk ?? '—'}</td>
+          <td class="mono" style="text-align:center;">${h.cote ? h.cote.toFixed(1) : '—'}</td>
+          <td class="mono" style="text-align:center;color:var(--ink-soft);">0</td>
+          <td style="color:var(--ink-soft);font-size:12px;">—</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    `;
+    return;
+  }
+
+  const rowsHtml = profiles.map((p,idx)=>{
+    const pcolor = profileColor[p.profile] || '#6b6357';
+    const profileBadge = p.n
+      ? `<span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700;background:${pcolor}22;color:${pcolor};border:1px solid ${pcolor}55;">${p.profile}</span>`
+      : '<span style="color:var(--line);">—</span>';
+    // Mini sparkline des positions moyennes (vert)
+    let sparkSvg = '';
+    if(p.avgPos.length >= 2){
+      const W=80,H=22,maxP=Math.max(...p.avgPos.filter(v=>v!==null),8);
+      const xS=(W-2)/(p.avgPos.length-1);
+      const yS=v=>1+(v-1)/(maxP-1)*(H-2);
+      let d='';
+      p.avgPos.forEach((v,i)=>{ if(v!==null) d+=(d===''?'M':'L')+(1+i*xS).toFixed(1)+','+yS(v).toFixed(1)+' '; });
+      sparkSvg=`<svg viewBox="0 0 ${W} ${H}" style="width:80px;height:22px;vertical-align:middle;"><path d="${d.trim()}" fill="none" stroke="#2f6e4a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    }
+    const posStr = p.avgPos.length
+      ? p.avgPos.map((v,i)=>{ if(v===null) return '—'; const std=p.stdPos[i]!==null?`<span style="opacity:.45;font-size:9px;"> ±${p.stdPos[i]}</span>`:''; return `<b>${v}</b>${std}`; }).join(' → ')
+      : '—';
+    if(!p.n) return `<tr style="opacity:.4;">
+      <td class="name-cell">${numBadge(p.cd)}${p.nom}</td>
+      <td style="font-size:12px;">${p.jk??'—'}</td>
+      <td class="mono" style="text-align:center;">${p.cote?p.cote.toFixed(1):'—'}</td>
+      <td class="mono" style="text-align:center;">0</td>
+      <td colspan="6" style="color:var(--line);font-size:11px;">Pas de données historiques</td>
+    </tr>`;
+    return `<tr>
+      <td class="name-cell">${numBadge(p.cd)}${p.nom}</td>
+      <td style="font-size:12px;">${p.jk??'—'}</td>
+      <td class="mono" style="text-align:center;">${p.cote?p.cote.toFixed(1):'—'}</td>
+      <td class="mono" style="text-align:center;">${p.n}</td>
+      <td>${profileBadge}</td>
+      <td class="mono" style="text-align:center;">${p.firstPos??'—'}</td>
+      <td class="mono" style="text-align:center;">${p.lastPos??'—'}</td>
+      <td class="mono" style="text-align:center;color:${(p.delta??0)>0?'var(--good)':'var(--red)'};">${p.delta!==null?(p.delta>0?'+':'')+p.delta.toFixed(1):'—'}</td>
+      <td>${sparkSvg}</td>
+      <td style="font-size:10.5px;line-height:1.8;">${posStr}</td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div style="margin-bottom:12px;padding:8px 14px;background:var(--paper);border:1px solid var(--line);border-radius:6px;">
+      <span style="font-size:12px;color:var(--ink-soft);">
+        Profil tactique moyen — positions par tronçon sur courses similaires
+        ${activeFilters.length ? '&nbsp;·&nbsp;Filtres actifs : '+activeFilters.join(', ') : '&nbsp;·&nbsp;aucun filtre'}
+      </span>
+    </div>
+    <div style="overflow-x:auto;">
+    <table>
+      <thead><tr>
+        <th>Cheval</th>
+        <th>Jockey</th>
+        <th style="text-align:center;">Cote PMU</th>
+        <th style="text-align:center;">Courses</th>
+        <th>Profil tactique</th>
+        <th style="text-align:center;">Pos. départ</th>
+        <th style="text-align:center;">Pos. arrivée</th>
+        <th style="text-align:center;">Delta</th>
+        <th>Courbe moy.</th>
+        <th>Tronçon par tronçon (moy. ± std)</th>
+      </tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+    </div>
+  `;
+}
+
+function computeAvgMetrics(horses){
+  const avg = (arr)=>{
+    const v = arr.filter(x=>x!==null && x!==undefined && !isNaN(x));
+    if(!v.length) return null;
+    return v.reduce((a,b)=>a+b,0)/v.length;
+  };
+  return {
+    v4p: avg(horses.map(h=>h.v4p)),
+    v600: avg(horses.map(h=>h.t6?speedFromTime(600,h.t6):null)),
+    v200: avg(horses.map(h=>h.t2f?speedFromTime(200,h.t2f):null)),
+    vy: avg(horses.map(h=>h.vy)),
+    vm: avg(horses.map(h=>h.vm)),
+    rel: avg(horses.map(h=>h.rel)),
+  };
+}
+
+function deltaHtml(curr, base){
+  if(curr===null||base===null||base===0) return '';
+  const d = curr-base;
+  const pct = (d/base*100);
+  const cls = d>=0 ? 'pos':'neg';
+  const sign = d>=0?'+':'';
+  return `<div class="delta ${cls}">${sign}${pct.toFixed(1)}% vs echantillon</div>`;
+}
+
+function renderMetricCards(r, benchStats){
+  const cur = computeAvgMetrics(r.horses);
+  let grid = document.getElementById('metricsGrid');
+  if(!grid){
+    grid = document.createElement('div');
+    grid.className = 'metric-grid';
+    grid.id = 'metricsGrid';
+    document.getElementById('sub-metrics').insertBefore(grid, document.getElementById('benchInfo').nextSibling);
+  }
+  const cards = [
+    {lbl:'V. moy. 400m depart', val:cur.v4p, base:benchStats?benchStats.v4p:null},
+    {lbl:'V. moy. 600m final', val:cur.v600, base:benchStats?benchStats.v600:null},
+    {lbl:'V. moy. 200m final', val:cur.v200, base:benchStats?benchStats.v200:null},
+    {lbl:'Vitesse moyenne course', val:cur.vy, base:benchStats?benchStats.vy:null},
+    {lbl:'Vitesse max course', val:cur.vm, base:benchStats?benchStats.vm:null},
+    {lbl:'Ratio fin/debut (accel.)', val:cur.rel, base:benchStats?benchStats.rel:null, dec:2, suffix:''},
+  ];
+  grid.innerHTML = cards.map(c=>`
+    <div class="metric-card">
+      <div class="lbl">${c.lbl}</div>
+      <div class="val">${fmtNum(c.val, c.dec ?? 1, c.suffix ?? ' km/h')}</div>
+      ${c.base!==undefined && c.base!==null ? `<div class="sub">Echantillon : ${fmtNum(c.base, c.dec ?? 1, c.suffix ?? ' km/h')}</div>${deltaHtml(c.val,c.base)}` : ''}
+    </div>
+  `).join('');
+}
+
+/* =========================================================
+   VUE CHEVAL (profil)
+   ========================================================= */
+function openHorse(nomCheval, fromRaceId, ctx){
+  // ctx = 'race' (arrive depuis une course specifique) | 'chevaux' (arrive depuis la liste agregee)
+  // quand ctx='chevaux', fromRaceId pointe sur la course la plus recente du cheval
+  const fromChevaux = (ctx === 'chevaux');
+  state.currentHorseName = nomCheval;
+  state.currentRaceId = fromRaceId;
+
+  document.getElementById('bcHorseName').textContent = nomCheval;
+
+  const r = RACE_BY_ID[fromRaceId];
+  const h = r.horses.find(x=>x.nom===nomCheval);
+
+  // Stats de carriere : on prend toujours la course la plus recente disponible
+  // (musique, nb_courses, gains, handicap_valeur evoluent a chaque sortie)
+  // Infos de course : jockey, corde, poids, oeilleres sont propres a la course en contexte
+  let hLatest = h;
+  let latestDate = r.date;
+  RACES.forEach(race=>{
+    if(race.date > latestDate){
+      const candidate = race.horses.find(x=>x.nom===nomCheval);
+      if(candidate){ hLatest = candidate; latestDate = race.date; }
+    }
+  });
+
+  const isToday = !!(r.today);
+  const courseLblCard = fromChevaux ? 'Derniere course trackee' : (isToday ? 'Course du jour' : 'Course en contexte');
+  const sectionTitle  = fromChevaux
+    ? `Derniere course — ${r.hippo} C${r.num} — ${fmtDate(r.date)}`
+    : (isToday
+        ? `Course du jour — ${r.hippo} C${r.num}`
+        : `Course en contexte — ${r.hippo} C${r.num} — ${fmtDate(r.date)}`);
+
+  const latestDiffNote = (hLatest !== h)
+    ? `<span class="tag" style="border-color:var(--gold);color:var(--gold);">Stats carriere au ${fmtDate(latestDate)}</span>`
+    : '';
+
+  document.getElementById('horseHero').innerHTML = `
+    <h2 style="display:flex;align-items:center;gap:14px;">${h.npart ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:50%;background:var(--green);color:var(--paper);font-size:22px;font-weight:800;flex-shrink:0;">${h.npart}</span>` : ''} ${hLatest.nom} ${profileTag(hLatest)}</h2>
+    <div class="meta" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px;">
+      <span class="tag">${hLatest.ag ?? '—'} ans</span>
+      <span class="tag">${hLatest.sx ?? '—'}</span>
+      <span class="tag">Jockey : ${h.jk ?? '—'}</span>
+      <span class="tag">Entr. : ${hLatest.en ?? '—'}</span>
+      ${latestDiffNote}
+    </div>
+    <div class="info-grid">
+      <div class="item"><div class="lbl">Musique</div><div class="val">${hLatest.mu ?? '—'}</div></div>
+      <div class="item"><div class="lbl">Carriere</div><div class="val">${hLatest.nc ?? '—'} cse / ${hLatest.nv ?? '—'} vict.</div></div>
+      <div class="item"><div class="lbl">Gains carriere</div><div class="val">${hLatest.gc ? Math.round(hLatest.gc/1000)+'k EUR' : '—'}</div></div>
+      <div class="item"><div class="lbl">Valeur handicap</div><div class="val">${hLatest.hv ?? '—'}</div></div>
+      <div class="item"><div class="lbl">Poids porte</div><div class="val">${h.pd ?? '—'} kg</div></div>
+      <div class="item"><div class="lbl">Corde</div><div class="val">${h.cd ?? '—'}</div></div>
+      <div class="item"><div class="lbl">Oeilleres</div><div class="val">${h.oe ?? '—'}</div></div>
+      <div class="item"><div class="lbl">${courseLblCard}</div><div class="val">${r.hippo} C${r.num} — ${fmtDate(r.date)}</div></div>
+    </div>
+  `;
+
+  document.getElementById('horseSectionTitle').textContent = sectionTitle;
+
+  if(isToday){
+    document.getElementById('horseNotRun').style.display = 'block';
+    document.getElementById('horseChartBlock').style.display = 'none';
+    document.getElementById('horseCurrentTroncons').innerHTML = '';
+  } else {
+    document.getElementById('horseNotRun').style.display = 'none';
+    document.getElementById('horseChartBlock').style.display = 'block';
+    document.getElementById('horseCurrentTroncons').innerHTML = troncTable(h.tr);
+    const { svg: curSvg } = buildPositionChart(r, { mode:'single', highlightName: nomCheval });
+    const { svg: curSpdSvg } = buildSpeedChart(r, { mode:'single', highlightName: nomCheval, height:120 });
+    document.getElementById('horseChartBlock').innerHTML = `
+      <div class="poschart-head"><span class="poschart-title">Positions dans le peloton — ${r.hippo} C${r.num}</span></div>
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;color:#2f6e4a;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Position dans le peloton</div>
+      ${curSvg}
+      ${curSpdSvg ? `<div style="margin-top:10px;"><div style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;color:#b05c10;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Profil de vitesse (km/h)</div>${curSpdSvg}</div>` : ''}
+    `;
+  }
+
+  // Correction breadcrumb : pour une course du jour, afficher le nom de la course du jour
+  // et non celui de la course historique de référence
+  const bcRaceEl = document.getElementById('bcRace');
+  if(bcRaceEl){
+    if(r.today){
+      bcRaceEl.textContent = `${r.hippo} C${r.num} — Aujourd'hui`;
+    } else {
+      bcRaceEl.textContent = RACE_BY_ID[fromRaceId]
+        ? `${RACE_BY_ID[fromRaceId].hippo} C${RACE_BY_ID[fromRaceId].num}`
+        : 'Course';
+    }
+    bcRaceEl.dataset.nav = 'race';
+  }
+
+  goToTab('horse');
+  state.horseHistDist = false;
+  state.horseHistTerrain = false;
+  document.getElementById('btn-h-dist-sim').classList.remove('primary');
+  document.getElementById('btn-h-terrain-sim').classList.remove('primary');
+  buildHorseNavList();
+  updateHorseNavButtons();
+  renderHorseHistory();
+}
+
+function troncTable(tr){
+  if(!tr || !tr.length) return `<div class="empty">Pas de detail troncon disponible pour cette performance.</div>`;
+  const rows = tr.map((t,i)=>{
+    const [time, cum, v, pos, foul, lblIdx] = t;
+    const lbl = LABELS[lblIdx] ?? '—';
+    return `<tr>
+      <td class="mono">${i+1}</td>
+      <td class="name-cell">${lbl}</td>
+      <td class="mono">${time!==null?time.toFixed(2)+'s':'—'}</td>
+      <td class="mono">${cum!==null?cum.toFixed(2)+'s':'—'}</td>
+      <td class="mono">${v!==null?v.toFixed(1)+' km/h':'—'}</td>
+      <td><span class="badge ${posBadgeClass(String(pos))}">${pos ?? '—'}</span></td>
+      <td class="mono">${foul ?? '—'}</td>
+    </tr>`;
+  }).join('');
+  return `<table>
+    <thead><tr><th>#</th><th>Troncon</th><th>Temps</th><th>Cumule</th><th>Vitesse</th><th>Position</th><th>Foulees</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function renderHorseHistory(){
+  const nom = state.currentHorseName;
+  const r = RACE_BY_ID[state.currentRaceId];
+  if(!nom || !r) return;
+
+  let hist = [];
+  RACES.forEach(race=>{
+    if(race.id===r.id) return;
+    const h = race.horses.find(x=>x.nom===nom);
+    if(h) hist.push({race, horse:h});
+  });
+  // Ajouter les courses sans tracking (NT) pour ce cheval
+  RACES.forEach(race=>{
+    if(race.tracked===false && !race.today){
+      const h = race.horses.find(x=>x.nom===nom);
+      if(h) hist.push({race, horse:h, nt:true});
+    }
+  });
+
+  if(state.horseHistDist && r.dist){
+    hist = hist.filter(e=> e.race.dist && Math.abs(e.race.dist - r.dist)/r.dist <= 0.10);
+  }
+  if(state.horseHistTerrain && r.terrain){
+    hist = hist.filter(e=> terrainGroup(e.race.terrain) === terrainGroup(r.terrain));
+  }
+  if(state.horseHistTerrains.length){
+    hist = hist.filter(e=> state.horseHistTerrains.includes(e.race.terrain));
+  }
+  if(state.horseHistDistMin!==null){
+    hist = hist.filter(e=> e.race.dist && e.race.dist >= state.horseHistDistMin);
+  }
+  if(state.horseHistDistMax!==null){
+    hist = hist.filter(e=> e.race.dist && e.race.dist <= state.horseHistDistMax);
+  }
+  if(state.horseHistSuspect){
+    hist = hist.filter(e=> !isSuspectPerf(e.horse));
+  }
+  hist.sort((a,b)=> b.race.date - a.race.date);
+
+  document.getElementById('histCount').textContent = `${hist.length} performance(s) precedente(s) trouvee(s) pour ${nom}`;
+
+  const listEl = document.getElementById('histList');
+  if(hist.length===0){
+    listEl.innerHTML = `<div class="empty">Aucune course precedente${state.horseHistDist||state.horseHistTerrain?' avec ces filtres':''}.</div>`;
+    return;
+  }
+  listEl.innerHTML = hist.map((e,idx)=>{
+    const h = e.horse, race = e.race;
+    const isNT = e.nt === true;
+
+    // ── Carte SANS TRACKING ──────────────────────────────────────────────────
+    if(isNT){
+      return `<div class="hist-card hist-card-nt">
+        <div class="hist-head" style="cursor:default;">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            <span class="badge ${posBadgeClass(h.pa)}">${h.pa ?? '—'}</span>
+            <strong>${race.hippo} ${race.rnum ? "R"+race.rnum+" " : ""}C${race.num}</strong>
+            <span class="tag">${fmtDate(race.date)}</span>
+            <span class="tag">${race.dist ?? '—'}m</span>
+            <span class="tag">${race.terrain ?? '—'}</span>
+            <span class="tag ${catTagClass(race.cat)}">${catLabel(race.cat)}</span>
+            ${race.alloc ? `<span class="tag" style="color:var(--ink-soft);">${fmtAlloc(race.alloc)}</span>` : ''}
+            <span class="badge-nt">Sans tracking</span>
+          </div>
+          <div class="mono" style="font-size:12px;color:var(--ink-soft);display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;">
+            ${h.ec ? `<span>Écart : ${h.ec}</span>` : ''}
+            ${h.jk ? `<span>J : ${h.jk}</span>` : ''}
+            ${h.pd ? `<span>Poids : ${h.pd} kg</span>` : ''}
+          </div>
+        </div>
+      </div>`;
+    }
+
+    // ── Carte AVEC TRACKING (inchangée) ─────────────────────────────────────
+    const { svg: histSvg } = buildPositionChart(race, { mode:'single', highlightName: nom, height:160 });
+    return `<div class="hist-card">
+      <div class="hist-head" data-toggle="${idx}">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <span class="badge ${posBadgeClass(h.pa)}">${h.pa ?? '—'}</span>
+          <strong>${numBadge(h.npart)}${race.hippo} ${race.rnum ? "R"+race.rnum+" " : ""}C${race.num}</strong>
+          <span class="tag">${fmtDate(race.date)}</span>
+          <span class="tag">${race.dist ?? '—'}m</span>
+          <span class="tag">${race.terrain ?? '—'}</span>
+          <span class="tag ${catTagClass(race.cat)}">${catLabel(race.cat)}</span>
+          ${race.alloc ? `<span class="tag" style="color:var(--ink-soft);">${fmtAlloc(race.alloc)}</span>` : ''}
+          <a href="${pdfUrl(race.date,race.hippo,race.num)}" target="_blank" onclick="event.stopPropagation();" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--green);border:1px solid var(--green);padding:2px 7px;border-radius:4px;text-decoration:none;">PDF</a>
+        </div>
+        <div class="mono" style="font-size:12px;color:var(--ink-soft);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          V.moy ${h.vy ?? '—'} km/h - V.max ${h.vm ?? '—'} km/h
+          ${posSparkline(h.tr,80,22)}
+          ${sparkline(h.tr,80,22)}
+        </div>
+      </div>
+      <div class="mono" style="font-size:11px;color:var(--ink-soft);padding:0 16px 11px;display:flex;gap:14px;flex-wrap:wrap;background:#ece6d4;">
+        <span>Depart : ${h.t2p ? h.t2p.toFixed(2)+'s'+(h.tr && h.tr.length > 0 && h.tr[0][2] ? ' ('+h.tr[0][2].toFixed(1)+' km/h)' : '') : '—'}</span>
+        <span>600m final : ${h.t6 ? h.t6.toFixed(2)+'s' : '—'}</span>
+        <span>200m final : ${h.t2f ? h.t2f.toFixed(2)+'s' : '—'}</span>
+      </div>
+      <div class="hist-detail" id="histDetail-${idx}">
+        <div class="poschart-mini" style="padding:14px 16px 0;">
+          <div style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;color:#2f6e4a;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">Position dans le peloton</div>
+          ${histSvg}
+        </div>
+        ${(()=>{ const {svg:spdSvg} = buildSpeedChart(race, {mode:'single', highlightName:nom, height:100}); return spdSvg ? `<div style="padding:8px 16px 0;"><div style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;color:#b05c10;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">Profil de vitesse</div>${spdSvg}</div>` : ''; })()}
+        ${troncTable(h.tr)}
+      </div>
+    </div>`;
+  }).join('');
+
+  listEl.querySelectorAll('[data-toggle]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const target = document.getElementById('histDetail-'+el.dataset.toggle);
+      target.style.display = target.style.display==='block' ? 'none' : 'block';
+    });
+  });
+}
+
+
+/* ── Paris Simulation ──────────────────────────────────────────────────────
+   Couplé placé : Montant = C(n_sel,2)×mise | Gain = Σ(cote_i×cote_j×mise/5.2)
+   ───────────────────────────────────────────────────────────────────────── */
+function renderParis(){
+  const r = RACE_BY_ID[state.currentRaceId];
+  if(!r || !r.today) return;
+  const body = document.getElementById('paris-body');
+  if(!body) return;
+  const horses = [...r.horses].sort((a,b)=>(a.npart||999)-(b.npart||999));
+  body.innerHTML = horses.map((h,i)=>{
+    const cote = h.cote ? h.cote.toFixed(1) : '—';
+    return `<tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:7px 10px;font-weight:700;font-size:13px;">${h.npart ?? i+1}</td>
+      <td style="padding:7px 10px;font-size:13px;">${h.nom}</td>
+      <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;">${cote}</td>
+      <td style="padding:7px 10px;text-align:center;">
+        <input type="checkbox" class="paris-sel" data-idx="${i}" data-cote="${h.cote||0}" data-nom="${h.nom}"
+          style="width:16px;height:16px;cursor:pointer;">
+      </td>
+      <td style="padding:7px 10px;text-align:center;">
+        <input type="checkbox" class="paris-place" data-idx="${i}" data-cote="${h.cote||0}" data-nom="${h.nom}"
+          style="width:16px;height:16px;cursor:pointer;" disabled>
+      </td>
+    </tr>`;
+  }).join('');
+  body.querySelectorAll('.paris-sel').forEach(cb=>{
+    cb.addEventListener('change', ()=>{
+      const pl = body.querySelector(`.paris-place[data-idx="${cb.dataset.idx}"]`);
+      if(pl){ pl.disabled = !cb.checked; if(!cb.checked) pl.checked=false; }
+      updateParis();
+    });
+  });
+  body.querySelectorAll('.paris-place').forEach(cb=>cb.addEventListener('change', updateParis));
+  const miseEl = document.getElementById('paris-mise');
+  if(miseEl) miseEl.oninput = updateParis;
+  updateParis();
+}
+
+function updateParis(){
+  const mise = parseFloat(document.getElementById('paris-mise')?.value||1);
+  const sel   = [...document.querySelectorAll('.paris-sel:checked')];
+  const place = [...document.querySelectorAll('.paris-place:checked')];
+  const n = sel.length;
+  const couples = n>=2 ? n*(n-1)/2 : 0;
+  document.getElementById('paris-couples').textContent = couples;
+  document.getElementById('paris-montant').textContent = (couples*mise).toFixed(2)+' €';
+  const ph = place.map(cb=>({nom:cb.dataset.nom, cote:parseFloat(cb.dataset.cote)||0}));
+  let gain=0, details=[];
+  for(let i=0;i<ph.length;i++) for(let j=i+1;j<ph.length;j++){
+    const g=(ph[i].cote*ph[j].cote*mise)/5.2;
+    gain+=g;
+    details.push(`${ph[i].nom} × ${ph[j].nom} = ${g.toFixed(2)} €`);
+  }
+  document.getElementById('paris-gain-detail').innerHTML = details.length
+    ? details.map(d=>`<div>${d}</div>`).join('')
+    : '<span style="font-style:italic;">Cochez des chevaux placés</span>';
+  document.getElementById('paris-gain').textContent = gain.toFixed(2)+' €';
+  const gainNet = gain - (couples * mise);
+  const gainNetEl = document.getElementById('paris-gain-net');
+  if(gainNetEl){
+    gainNetEl.textContent = (gainNet>=0?'+':'')+gainNet.toFixed(2)+' €';
+    gainNetEl.style.color = gainNet>=0 ? 'var(--green)' : '#c0392b';
+  }
+}
+
+/* ── Modele predictif (LightGBM + SHAP) — courses du jour uniquement ────────
+   Les champs model_prob / market_prob / shap_base / shap_top sont injectes
+   par le notebook Python en amont (voir CELLULE 6c), a partir d'un modele
+   entraine hors-ligne. Rien n'est calcule cote client : on affiche ici les
+   nombres deja calcules, cheval par cheval.
+   ───────────────────────────────────────────────────────────────────────── */
+function renderModele(){
+  const r = RACE_BY_ID[state.currentRaceId];
+  const container = document.getElementById('modeleContainer');
+  if(!container) return;
+
+  if(!r || !r.today){
+    container.innerHTML = '<div class="empty">Le modèle prédictif ne tourne que sur les courses du jour (non encore courues). Choisis une course depuis l\'onglet "Aujourd\'hui".</div>';
+    return;
+  }
+
+  const horses = r.horses.filter(h => h.model_prob !== undefined && h.model_prob !== null);
+  if(!horses.length){
+    container.innerHTML = '<div class="empty">Pas de prédiction disponible pour cette course — le modèle n\'a pas pu être appliqué lors de la génération du dashboard (fichiers modèle absents ou données insuffisantes).</div>';
+    return;
+  }
+
+  const sorted = [...horses].sort((a,b)=> b.model_prob - a.model_prob);
+  const maxProb = Math.max(...sorted.map(h => Math.max(h.model_prob, h.market_prob||0)), 1);
+
+  const rowsHtml = sorted.map((h, i)=>{
+    const hasMarket = h.market_prob !== undefined && h.market_prob !== null;
+    const edge = hasMarket ? (h.model_prob - h.market_prob) : null;
+    const edgeColor = edge===null ? 'var(--ink-soft)' : (edge>=0 ? 'var(--green)' : '#a8402c');
+    const edgeTxt = edge===null ? '—' : (edge>=0?'+':'')+edge.toFixed(1)+' pts';
+    const wModel = (h.model_prob/maxProb*100).toFixed(1);
+    const wMarket = hasMarket ? (h.market_prob/maxProb*100).toFixed(1) : 0;
+    return `<tr class="modele-row" data-horse="${encodeURIComponent(h.nom)}" style="cursor:pointer;border-bottom:1px solid var(--line);">
+      <td style="padding:7px 10px;font-weight:700;font-size:13px;">${i+1}</td>
+      <td style="padding:7px 10px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--ink-soft);">${h.npart ?? '—'}</td>
+      <td style="padding:7px 10px;font-size:13px;font-weight:600;">${h.nom}</td>
+      <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;">${h.cote ? h.cote.toFixed(1) : '—'}</td>
+      <td style="padding:7px 10px;min-width:170px;">
+        <div style="background:#ece6d4;border-radius:3px;height:13px;margin-bottom:2px;">
+          <div style="background:var(--green);height:13px;border-radius:3px;width:${wModel}%;"></div>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-soft);">${h.model_prob.toFixed(1)}%</span>
+      </td>
+      <td style="padding:7px 10px;min-width:170px;">
+        <div style="background:#ece6d4;border-radius:3px;height:13px;margin-bottom:2px;">
+          <div style="background:var(--gold);height:13px;border-radius:3px;width:${wMarket}%;"></div>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-soft);">${hasMarket ? h.market_prob.toFixed(1)+'%' : '—'}</span>
+      </td>
+      <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:${edgeColor};">${edgeTxt}</td>
+    </tr>`;
+  }).join('');
+
+  // Panneau SHAP pour CHAQUE cheval de la course (pas seulement un a la fois) :
+  // replie par defaut sauf le favori du modele, pour rester lisible sur un
+  // champ de 14-16 partants tout en gardant l'acces immediat a tous.
+  const shapPanels = sorted.map((h, i)=>{
+    const hasShap = h.shap_top && h.shap_top.length;
+    const openAttr = i===0 ? 'block' : 'none';
+    const arrowChar = i===0 ? '▾' : '▸';
+    return `<div class="shap-panel" style="border:1px solid var(--line);border-radius:6px;margin-bottom:8px;background:var(--paper);overflow:hidden;">
+      <div class="shap-panel-head" data-toggle-shap="${i}" style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;">
+        <span class="shap-arrow" data-arrow="${i}" style="font-size:11px;color:var(--ink-soft);width:12px;">${arrowChar}</span>
+        <span style="font-weight:700;font-size:13px;min-width:26px;">${i+1}</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--ink-soft);min-width:22px;">N°${h.npart ?? '—'}</span>
+        <span style="font-weight:600;font-size:13.5px;flex:1;">${h.nom}</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-soft);">cote ${h.cote?h.cote.toFixed(1):'—'}</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--green);">modèle ${h.model_prob.toFixed(1)}%</span>
+      </div>
+      <div class="shap-panel-body" id="shapBody-${i}" style="display:${openAttr};padding:4px 14px 16px;border-top:1px solid var(--line);">
+        ${hasShap ? `<p class="count" style="margin:10px 0;">Contribution de chaque donnée au score du modèle (vert = pousse vers la victoire, rouge = pénalise). Base de référence : ${h.shap_base!==undefined ? h.shap_base.toFixed(3) : '—'}.</p>${buildShapSVG(h)}` : '<div class="empty">Pas de détail SHAP pour ce cheval.</div>'}
+      </div>
+    </div>`;
+  }).join('');
+
+  container.innerHTML = `
+    <p class="count">Probabilités calibrées du modèle vs probabilité implicite du marché (1/cote).</p>
+    <table style="width:100%;border-collapse:collapse;background:var(--paper);border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-bottom:26px;">
+      <thead>
+        <tr style="text-align:left;border-bottom:2px solid var(--green);background:var(--green);">
+          <th style="padding:8px 10px;font-size:12px;color:var(--paper);">#</th>
+          <th style="padding:8px 10px;font-size:12px;color:var(--paper);text-align:center;">N°</th>
+          <th style="padding:8px 10px;font-size:12px;color:var(--paper);">Cheval</th>
+          <th style="padding:8px 10px;font-size:12px;color:var(--paper);text-align:right;">Cote</th>
+          <th style="padding:8px 10px;font-size:12px;color:var(--paper);">Proba modèle</th>
+          <th style="padding:8px 10px;font-size:12px;color:var(--paper);">Proba marché</th>
+          <th style="padding:8px 10px;font-size:12px;color:var(--paper);text-align:right;">Écart</th>
+        </tr>
+      </thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+    <div style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;color:var(--green);margin-bottom:10px;text-transform:uppercase;letter-spacing:.3px;">
+      Détail SHAP — pourquoi le modèle note chaque cheval ainsi
+    </div>
+    <div id="shapDetail">${shapPanels}</div>
+  `;
+
+  container.querySelectorAll('.modele-row').forEach(row=>{
+    row.addEventListener('click', ()=>{
+      const idx = sorted.findIndex(h=>h.nom===decodeURIComponent(row.dataset.horse));
+      if(idx>=0) toggleShapPanel(idx);
+    });
+  });
+  container.querySelectorAll('[data-toggle-shap]').forEach(el=>{
+    el.addEventListener('click', ()=> toggleShapPanel(parseInt(el.dataset.toggleShap,10)));
+  });
+}
+
+function toggleShapPanel(idx){
+  const body = document.getElementById('shapBody-'+idx);
+  const arrow = document.querySelector(`[data-arrow="${idx}"]`);
+  if(!body) return;
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  if(arrow) arrow.textContent = isOpen ? '▸' : '▾';
+}
+
+function buildShapSVG(h){
+  const items = [...h.shap_top].sort((a,b)=> a.v - b.v);
+  const width = 760, rowH = 27;
+  const padL = 240, padR = 70, padT = 10, padB = 10;
+  const height = items.length*rowH + padT + padB;
+  const maxAbs = Math.max(...items.map(x=>Math.abs(x.v)), 0.0001);
+  const plotW = width - padL - padR;
+  const zeroX = padL + plotW/2;
+  const scale = v => (v/maxAbs) * (plotW/2);
+
+  let bars = '';
+  items.forEach((it, i)=>{
+    const y = padT + i*rowH;
+    const barW = Math.abs(scale(it.v));
+    const x = it.v>=0 ? zeroX : zeroX-barW;
+    const color = it.v>=0 ? '#1f3d2e' : '#a8402c';
+    const labelX = it.v>=0 ? x+barW+6 : x-6;
+    const anchor = it.v>=0 ? 'start' : 'end';
+    bars += `<rect x="${x.toFixed(1)}" y="${(y+5).toFixed(1)}" width="${barW.toFixed(1)}" height="${(rowH-11).toFixed(1)}" fill="${color}" rx="2"/>`;
+    bars += `<text x="${(padL-8).toFixed(1)}" y="${(y+rowH/2+4).toFixed(1)}" font-family="Inter, sans-serif" font-size="11.5" fill="#221f1a" text-anchor="end">${it.f}</text>`;
+    bars += `<text x="${labelX.toFixed(1)}" y="${(y+rowH/2+4).toFixed(1)}" font-family="JetBrains Mono, monospace" font-size="11" fill="#6b6357" text-anchor="${anchor}">${it.v>=0?'+':''}${it.v.toFixed(3)}</text>`;
+  });
+
+  return `<svg viewBox="0 0 ${width} ${height}" width="100%" style="max-width:${width}px;display:block;">
+    <line x1="${zeroX.toFixed(1)}" y1="${padT}" x2="${zeroX.toFixed(1)}" y2="${height-padB}" stroke="#ddd6c4" stroke-width="1"/>
+    ${bars}
+  </svg>`;
+}
+
+/* =========================================================
+   START
+   ========================================================= */
+window.addEventListener('load', boot);
+</script>
+</body>
+</html>

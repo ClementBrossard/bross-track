@@ -3,3 +3,4 @@ requests
 pdfplumber
 gunicorn
 gevent
+boto3

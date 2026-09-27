@@ -1,0 +1,46 @@
+name: Pipeline — test réel PMU / France Galop
+
+# Collecte une vraie journée passée dans un stockage local jetable, puis
+# construit le dashboard (sans modèle) : vérifie que les API et les PDF
+# sont toujours lus correctement. N'écrit rien dans R2.
+on:
+  push:
+    paths: ["galoptrack/**", ".github/workflows/pipeline-smoke.yml"]
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Journée à collecter (YYYY-MM-DD)"
+        default: "2026-09-20"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      GALOPTRACK_STORAGE: local
+      GALOPTRACK_LOCAL_DIR: /tmp/galoptrack_smoke
+      DAY: ${{ inputs.date || '2026-09-20' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-pipeline.txt
+      - run: pip install -r requirements-pipeline.txt
+      - name: Collecte d'une journée réelle
+        run: python -m galoptrack collect --from "$DAY"
+      - name: Contrôles
+        run: |
+          python -m galoptrack status
+          python - <<'PY'
+          from galoptrack import tables
+          from galoptrack.storage import get_storage
+          st = get_storage()
+          n = {t: len(tables.read_table(st, t)) for t in tables.SCHEMAS}
+          print(n)
+          assert n['chevaux'] > 0, "aucun partant collecté"
+          assert n['tracking'] > 0 and n['troncons'] > 0, "aucun PDF de tracking parsé"
+          assert n['rapports'] > 0, "aucun rapport définitif"
+          PY
+      - name: Dashboard (sans modèle, avec courses du jour)
+        run: python -m galoptrack dashboard
