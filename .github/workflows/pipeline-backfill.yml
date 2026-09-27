@@ -36,3 +36,4 @@ jobs:
       - run: pip install -r requirements-pipeline.txt
       - run: python -m galoptrack collect --from "${{ inputs.date_from }}" --to "${{ inputs.date_to }}" --what "${{ inputs.what }}"
       - run: python -m galoptrack status
+      - run: python -m galoptrack health

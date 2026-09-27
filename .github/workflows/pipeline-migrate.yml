@@ -34,3 +34,4 @@ jobs:
         if: always()
         run: cat migration_report.md >> "$GITHUB_STEP_SUMMARY"
       - run: python -m galoptrack status
+      - run: python -m galoptrack health

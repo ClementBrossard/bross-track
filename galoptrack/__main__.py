@@ -6,6 +6,7 @@
   train                 réentraîne le modèle (run mensuel)
   migrate               import unique de l'historique Drive (raw/)
   status                état des tables et du modèle
+  health                contrôle de santé (page /sante)
 """
 
 import argparse
@@ -14,7 +15,7 @@ import logging
 import sys
 from datetime import timedelta
 
-from . import collect, config, dashboard, migrate, model_store, tables, train
+from . import collect, config, dashboard, health, migrate, model_store, tables, train
 from .storage import get_storage
 
 
@@ -36,10 +37,28 @@ def cmd_collect(storage, args):
             print("  ", e)
 
 
+def _publish_with_health(storage, html, stats, day):
+    h = health.compute(storage, today=day, dashboard_stats=stats)
+    health.publish(storage, h)
+    dashboard.publish(storage, health.inject_badge(html, h), stats)
+    health.github_annotations(h)
+    print(f"Santé : {h['status']} ({h['n_alerts']} alerte(s))")
+    for a in h['alerts']:
+        print(f"  [{a['level']}] {a['msg']}")
+
+
+def cmd_health(storage, args):
+    h = health.compute(storage)
+    health.publish(storage, h)
+    health.github_annotations(h)
+    print(json.dumps({k: h[k] for k in ('status', 'n_alerts', 'alerts', 'tables', 'coherence')},
+                     ensure_ascii=False, indent=1))
+
+
 def cmd_dashboard(storage, args):
     day = config.parse_date(args.day)
     html, stats = dashboard.build(storage, day=day, with_today=not args.no_today)
-    dashboard.publish(storage, html, stats)
+    _publish_with_health(storage, html, stats, day)
     print(json.dumps(stats, indent=1))
 
 
@@ -49,7 +68,7 @@ def cmd_daily(storage, args):
     summary = collect.collect_days(storage, days)
     print("Collecte :", json.dumps(summary['days']), "écrit :", json.dumps(summary['written']))
     html, stats = dashboard.build(storage, day=today)
-    dashboard.publish(storage, html, stats)
+    _publish_with_health(storage, html, stats, today)
     print("Dashboard :", json.dumps(stats))
 
 
@@ -98,6 +117,7 @@ def main(argv=None):
 
     sub.add_parser('migrate').set_defaults(func=cmd_migrate)
     sub.add_parser('status').set_defaults(func=cmd_status)
+    sub.add_parser('health').set_defaults(func=cmd_health)
 
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)-7s %(name)s  %(message)s',
