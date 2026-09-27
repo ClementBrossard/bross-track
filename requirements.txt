@@ -1,6 +1,4 @@
 flask
-requests
-pdfplumber
 gunicorn
 gevent
 boto3
