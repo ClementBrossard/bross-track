@@ -42,37 +42,40 @@ def login_required(f):
 
 def _load_page(key):
     """Relit une page générée sur R2 si elle a changé (vérifié au plus toutes
-    les 5 minutes). Retourne (html, gzip) ou (None, None)."""
+    les 5 minutes). Seule la version compressée est gardée en mémoire (le
+    dashboard pèse plusieurs dizaines de Mo, l'offre gratuite de Render
+    n'a que 512 Mo). Retourne les octets gzip, ou None."""
     now = time.time()
-    c = _page_caches.setdefault(key, {"html": None, "gz": None, "checked": 0.0, "etag": None})
-    if c["html"] is not None and now - c["checked"] < REFRESH_S:
-        return c["html"], c["gz"]
+    c = _page_caches.setdefault(key, {"gz": None, "checked": 0.0, "etag": None})
+    if c["gz"] is not None and now - c["checked"] < REFRESH_S:
+        return c["gz"]
     c["checked"] = now
     try:
         from galoptrack.storage import get_storage
         st = get_storage()
         if hasattr(st, "s3"):
             head = st.s3.head_object(Bucket=st.bucket, Key=key)
-            if head["ETag"] == c["etag"] and c["html"] is not None:
-                return c["html"], c["gz"]
+            if head["ETag"] == c["etag"] and c["gz"] is not None:
+                return c["gz"]
             c["etag"] = head["ETag"]
         elif not st.exists(key):
-            return None, None
+            return None
         data = st.read_bytes(key)
-        c["html"], c["gz"] = data, gzip.compress(data, compresslevel=6)
+        c["gz"] = gzip.compress(data, compresslevel=6)
+        del data
     except Exception as e:  # stockage non configuré / fichier absent
         app.logger.warning("Page %s indisponible : %s", key, e)
-    return c["html"], c["gz"]
+    return c["gz"]
 
 
 def _serve_generated(key, missing_msg):
-    html, gz = _load_page(key)
-    if html is None:
+    gz = _load_page(key)
+    if gz is None:
         return (missing_msg, 503)
     if "gzip" in request.headers.get("Accept-Encoding", ""):
         return app.response_class(gz, mimetype="text/html",
                                   headers={"Content-Encoding": "gzip", "Cache-Control": "private, max-age=300"})
-    return app.response_class(html, mimetype="text/html")
+    return app.response_class(gzip.decompress(gz), mimetype="text/html")
 
 
 LOGIN_PAGE = """<!DOCTYPE html>
