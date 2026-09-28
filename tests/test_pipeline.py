@@ -280,3 +280,41 @@ def test_finishing_position_is_integer_text(raw):
     races_list, _, _ = build_races(tr, raw['troncons'], raw['chevaux'])
     tracked = [r for r in races_list if r.get('tracked')]
     assert tracked and all(any(h['pa'] == '1' for h in r['horses']) for r in tracked)
+
+
+def test_daily_backup_slot_skips_when_already_done(tmp_path, monkeypatch, capsys):
+    import json as _json
+    from galoptrack import __main__ as cli, collect as _collect, config as _config, health
+    from datetime import date
+    st = LocalStorage(tmp_path)
+    monkeypatch.setattr(_config, 'today_paris', lambda: date(2026, 9, 28))
+    monkeypatch.setattr(cli.config, 'today_paris', lambda: date(2026, 9, 28))
+    calls = []
+    monkeypatch.setattr(_collect, 'collect_days', lambda *a, **k: calls.append(1) or
+                        {'days': {}, 'written': {}, 'errors': []})
+    monkeypatch.setattr(cli.dashboard, 'build', lambda *a, **k: ('<html><body></body></html>', {'races_today': 0}))
+    monkeypatch.setattr(cli, '_publish_with_health', lambda *a, **k: None)
+
+    class A:  # arguments de la ligne de commande
+        if_needed = True
+    st.write_bytes(cli.DAILY_MARKER, _json.dumps({'day': 20260927}).encode())
+    cli.cmd_daily(st, A)                      # marqueur d'hier -> la collecte tourne
+    assert len(calls) == 1
+    assert _json.loads(st.read_bytes(cli.DAILY_MARKER))['day'] == 20260928
+    cli.cmd_daily(st, A)                      # créneau de secours -> rien à faire
+    assert len(calls) == 1
+    A.if_needed = False
+    cli.cmd_daily(st, A)                      # lancement manuel -> toujours exécuté
+    assert len(calls) == 2
+
+
+def test_health_alerts_when_daily_did_not_run(tmp_path, raw):
+    import json as _json
+    from datetime import date
+    from galoptrack import health
+    st = LocalStorage(tmp_path)
+    _store_tables(st, raw)
+    st.write_bytes('logs/daily_last.json', _json.dumps({'day': 20260926}).encode())
+    h = health.compute(st, today=date(2026, 9, 28))
+    assert any(a['level'] == 'error' and "n'a pas tourné" in a['msg'] for a in h['alerts'])
+    assert 'gt-health-badge' in health.badge_html(h)

@@ -156,6 +156,16 @@ def compute(storage, today=None, dashboard_stats=None):
             if age > MODEL_MAX_AGE_DAYS:
                 alert(WARN, f"Modèle {version} entraîné il y a {age} jours (réentraînement mensuel en échec ?)")
 
+    # 5b. La collecte automatique du jour a-t-elle tourné ?
+    marker = 'logs/daily_last.json'
+    daily_last = json.loads(storage.read_bytes(marker)) if storage.exists(marker) else None
+    today_i = int(today.strftime('%Y%m%d'))
+    if daily_last is None:
+        alert(INFO, "Aucune collecte quotidienne automatique enregistrée pour l'instant")
+    elif daily_last.get('day') != today_i:
+        alert(ERROR, f"La collecte du jour n'a pas tourné : dernière collecte le "
+                     f"{_d(daily_last['day']):%d/%m/%Y}. Relancer « Pipeline — quotidien » (mode daily)")
+
     # 6. Courses du jour
     if dashboard_stats is not None:
         if dashboard_stats.get('races_today', 0) and not dashboard_stats.get('horses_scored') and version:
@@ -176,6 +186,7 @@ def compute(storage, today=None, dashboard_stats=None):
         'last_collect': {'run_at': last_collect.get('run_at'), 'days': last_collect.get('days'),
                          'written': last_collect.get('written')} if last_collect else None,
         'model': model,
+        'daily_last': daily_last,
         'dashboard': dashboard_stats,
     }
 
@@ -192,10 +203,16 @@ def badge_html(h):
         label, bg = f"⚠️ {h['n_alerts']} alerte(s)", '#b8841f'
     else:
         label, bg = f"❌ {h['n_alerts']} alerte(s)", '#a8402c'
-    return (f'<a href="/sante" title="Santé des données" style="position:fixed;right:16px;bottom:16px;'
-            f'z-index:9999;background:{bg};color:#fff;font:600 13px Inter,system-ui,sans-serif;'
+    day = h['today']
+    # Si le dashboard n'a pas été régénéré aujourd'hui (robot en retard ou
+    # en panne), le badge le signale directement dans le navigateur.
+    script = ("<script>(function(){var d=new Date(),t=d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate();"
+              f"if(t>{day}){{var b=document.getElementById('gt-health-badge');"
+              "b.style.background='#a8402c';b.textContent='❌ Données d\u2019un jour précédent';}})();</script>")
+    return (f'<a id="gt-health-badge" href="/sante" title="Santé des données" style="position:fixed;right:16px;'
+            f'bottom:16px;z-index:9999;background:{bg};color:#fff;font:600 13px Inter,system-ui,sans-serif;'
             f'padding:8px 14px;border-radius:999px;text-decoration:none;'
-            f'box-shadow:0 2px 8px rgba(0,0,0,.25)">{label}</a>')
+            f'box-shadow:0 2px 8px rgba(0,0,0,.25)">{label}</a>{script}')
 
 
 def inject_badge(dashboard_html, h):

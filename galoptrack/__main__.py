@@ -100,11 +100,23 @@ def cmd_dashboard(storage, args):
     print(json.dumps(stats, indent=1))
 
 
+DAILY_MARKER = 'logs/daily_last.json'
+
+
 def cmd_daily(storage, args):
     today = config.today_paris()
+    today_i = int(config.yyyymmdd(today))
+    if args.if_needed and storage.exists(DAILY_MARKER):
+        last = json.loads(storage.read_bytes(DAILY_MARKER))
+        if last.get('day') == today_i:
+            print(f"Collecte du jour déjà faite ({last.get('finished_at')}) : rien à faire.")
+            return
     days = [today - timedelta(days=i) for i in range(config.LOOKBACK_DAYS, 0, -1)]
     summary = collect.collect_days(storage, days)
     print("Collecte :", json.dumps(summary['days']), "écrit :", json.dumps(summary['written']))
+    storage.write_bytes(DAILY_MARKER, json.dumps({
+        'day': today_i, 'finished_at': config.now_paris().isoformat(timespec='seconds')}).encode('utf-8'),
+        content_type='application/json')
     html, stats = dashboard.build(storage, day=today)
     _publish_with_health(storage, html, stats, today)
     print("Dashboard :", json.dumps(stats))
@@ -147,7 +159,10 @@ def main(argv=None):
     s.add_argument('--no-today', action='store_true', help="sans les courses du jour (pas d'appel PMU)")
     s.set_defaults(func=cmd_dashboard)
 
-    sub.add_parser('daily').set_defaults(func=cmd_daily)
+    s = sub.add_parser('daily')
+    s.add_argument('--if-needed', action='store_true',
+                   help="ne fait rien si la collecte du jour a déjà tourné (créneaux de secours)")
+    s.set_defaults(func=cmd_daily)
 
     s = sub.add_parser('train')
     s.add_argument('--no-promote', action='store_true', help="enregistre la version sans la mettre en production")

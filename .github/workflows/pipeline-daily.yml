@@ -3,9 +3,14 @@ name: Pipeline — quotidien
 # Matin : collecte des 3 derniers jours (arrivées, tracking, rapports) puis
 # dashboard du jour. Midi : dashboard seul, pour rafraîchir les cotes.
 # (cron en UTC : 05:40 UTC = 07:40 à Paris l'été, 06:40 l'hiver)
+# GitHub ne garantit pas l'heure des tâches planifiées (retards, créneaux
+# parfois sautés) : deux créneaux de secours à +1 h et +2 h, qui ne font rien
+# si la collecte du jour a déjà tourné.
 on:
   schedule:
     - cron: "40 5 * * *"
+    - cron: "40 6 * * *"
+    - cron: "40 7 * * *"
     - cron: "40 10 * * *"
   workflow_dispatch:
     inputs:
@@ -39,8 +44,9 @@ jobs:
       - name: Run
         run: |
           MODE="${{ inputs.mode }}"
+          EXTRA=""
           if [ -z "$MODE" ]; then
-            if [ "${{ github.event.schedule }}" = "40 10 * * *" ]; then MODE=dashboard; else MODE=daily; fi
+            if [ "${{ github.event.schedule }}" = "40 10 * * *" ]; then MODE=dashboard; else MODE=daily; EXTRA="--if-needed"; fi
           fi
-          echo "Mode : $MODE"
-          python -m galoptrack $MODE
+          echo "Mode : $MODE $EXTRA"
+          python -m galoptrack $MODE $EXTRA
