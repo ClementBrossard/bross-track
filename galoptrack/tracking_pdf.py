@@ -26,6 +26,17 @@ def _find_horse_page(pages_text, nom_up, mots_nom):
     return best_page if best_score > 0 else None
 
 
+_RE_TITRE_BLOC = re.compile(r'Tronçons de (\d+)m')
+
+
+def longueur_troncons(page_text):
+    """200 en plat ; 1000 en obstacles (premier tableau de la page)."""
+    if 'Tronçons de 200m' in page_text:
+        return 200
+    m = _RE_TITRE_BLOC.search(page_text)
+    return int(m.group(1)) if m else 200
+
+
 def _extraire_troncons_page_individuelle(page_text):
     """
     Source UNIQUE de vérité pour les tronçons : tout est lu depuis la page
@@ -35,11 +46,20 @@ def _extraire_troncons_page_individuelle(page_text):
     """
     lines_full = page_text.split('\n')
     idx_titre = next((i for i, l in enumerate(lines_full) if 'Tronçons de 200m' in l), None)
+    ligne_arrivee = None
+    if idx_titre is None:
+        # Obstacles : tronçons de 1000m, bornes d'arrivée sur la ligne du titre
+        # ('     Tronçons de 1000m  4000m   3000m ...  ARR'), bornes de départ
+        # sur la ligne au-dessus ('DEP  4000m  3000m ...').
+        idx_titre = next((i for i, l in enumerate(lines_full) if _RE_TITRE_BLOC.search(l)), None)
+        if idx_titre is not None:
+            ligne_arrivee = _RE_TITRE_BLOC.split(lines_full[idx_titre], maxsplit=1)[-1]
     if idx_titre is None or idx_titre == 0 or idx_titre >= len(lines_full) - 1:
         return []
 
     ligne_depart  = lines_full[idx_titre - 1]
-    ligne_arrivee = lines_full[idx_titre + 1]
+    if ligne_arrivee is None:
+        ligne_arrivee = lines_full[idx_titre + 1]
     tokens_depart  = re.findall(r'(DEP|\d+m)', ligne_depart)
     tokens_arrivee = re.findall(r'(\d+m|ARR)', ligne_arrivee)
     if len(tokens_depart) != len(tokens_arrivee) or not tokens_depart:
@@ -92,7 +112,7 @@ def _extraire_troncons_page_individuelle(page_text):
     return troncons
 
 
-def _extraire_positions_page_individuelle(pdf_pages, idx_page):
+def _extraire_positions_page_individuelle(pdf_pages, idx_page, bloc_m=200):
     """
     Les positions en course sont affichées sous forme de graphique (nombres
     positionnés par coordonnées, pas du texte tabulaire), donc on les lit
@@ -109,9 +129,16 @@ def _extraire_positions_page_individuelle(pdf_pages, idx_page):
             break
     if not pos_y:
         return []
+    y_max = pos_y + 100
+    if bloc_m != 200:
+        # Obstacles : un 2e tableau (par obstacle) suit juste en dessous, on
+        # s'arrête à son titre 'Tronçons' pour ne pas mélanger les deux.
+        below = [w['top'] for w in words if w['text'] == 'Tronçons' and w['top'] > pos_y]
+        if below:
+            y_max = min(y_max, min(below))
     nums = []
     for w in words:
-        if pos_y - 150 < w['top'] < pos_y + 100:
+        if pos_y - 150 < w['top'] < y_max:
             if re.match(r'^\d{1,2}$', w['text']) and int(w['text']) <= 20:
                 nums.append((float(w['x0']), int(w['text'])))
     nums.sort(key=lambda t: t[0])
@@ -133,7 +160,8 @@ def _parse_horse_header(page_text, cheval):
         cheval['temps_officiel_sec'] = round(mn * 60 + sec + cs / 100, 2)
         cheval['temps_officiel']     = f"{mn}'{sec:02d}\"{cs:02d}"
 
-    m = re.search(r"Rang d'arriv[ée]e\s+(\d+)", page_text)
+    m = re.search(r"Rang d'arriv[ée]e\s+(\d+)", page_text) or \
+        re.search(r"Temps de parcours\s+\d{2}:\d{2}\.\d{2}\s+\(rang\s+(\d+)", page_text)  # obstacles
     if m:
         cheval['position_arrivee'] = int(m.group(1))
 
@@ -255,8 +283,11 @@ def parse_pdf_complet(pdf_bytes, date_galop, code_hippo, num_reunion, num_course
 
                 troncons = _extraire_troncons_page_individuelle(cheval_page)
                 cheval['troncons'] = troncons
+                bloc_m = longueur_troncons(cheval_page)
 
-                if troncons:
+                # Temps 600m / 200m final / départ 400m : définis sur des
+                # tronçons de 200m (plat) ; sans objet en obstacles (1000m).
+                if troncons and bloc_m == 200:
                     # Temps des 600 DERNIERS mètres = somme des 3 derniers tronçons de
                     # 200m (ex: '600m-400m' + '400m-200m' + '200m-ARR'), PAS juste le
                     # dernier tronçon — corrigé suite à un signalement réel : le dernier
@@ -275,7 +306,7 @@ def parse_pdf_complet(pdf_bytes, date_galop, code_hippo, num_reunion, num_course
                         cheval['temps_200m_final'] = f'{int(sec200 // 60):02d}:{sec200 % 60:05.2f}'
 
                 # Positions en course (lecture par coordonnées, graphique)
-                positions = _extraire_positions_page_individuelle(pdf_pages, idx_page_trouvee)
+                positions = _extraire_positions_page_individuelle(pdf_pages, idx_page_trouvee, bloc_m)
                 if positions:
                     n = len(troncons)
                     positions_alignees = positions[-n:] if len(positions) >= n else positions
@@ -288,7 +319,7 @@ def parse_pdf_complet(pdf_bytes, date_galop, code_hippo, num_reunion, num_course
                     cheval['vitesses_troncons'] = [t['vitesse_kmh'] for t in troncons if 'vitesse_kmh' in t]
 
                 # DEP → 400m équivalent (premier tronçon de la liste)
-                if troncons:
+                if troncons and bloc_m == 200:
                     t0 = troncons[0]
                     # BUG CORRIGÉ : le nombre dans le label (ex: 'DEP-2200m') est une
                     # distance-repère depuis l'arrivée, PAS la longueur du segment lui-

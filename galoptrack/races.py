@@ -157,6 +157,9 @@ def build_races(tr, tc, ch):
                 feat_400_premier = round((d1 + d2) / (t1 + t2) * 3.6, 1)
 
         feat_200_premier = tron_arr[0][0] if tron_arr and tron_arr[0][0] is not None else None
+        if not is_plat(races[race_key]):
+            # Obstacles : tronçons de 1000m, les « 200/400 premiers mètres » n'ont pas de sens
+            feat_400_premier = feat_200_premier = None
 
         ratio_early_late = None
         if len(vits) >= 4:

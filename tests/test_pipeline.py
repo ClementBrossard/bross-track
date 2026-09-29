@@ -385,3 +385,42 @@ def test_obstacles_stay_out_of_model_features(raw):
     b = build_features(ref_races, ref_labels)
     cols = [c for c in FEATURES if c not in ('terrain', 'piste', 'hippo', 'cat', 'sx', 'oe')]
     pd.testing.assert_frame_equal(a[cols].reset_index(drop=True), b[cols].reset_index(drop=True))
+
+
+# Page individuelle d'un PDF d'obstacles réel (Auteuil 26/09/2026 C1), texte pdfplumber
+PAGE_OBSTACLE = """\
+                                                  Statistiques Tracking
+                                                       AUTEUIL
+                          C1 - PRIX DUC D'ALBUQUERQUE - CHALLENGE DE L'OBSTACLE EQUINAXY - 4400m
+                                                   Redk du 1er: 1'18"46
+   Cheval        HOKUSAI VALLIS       Distance parcourue 4463,11m             Vitesse moyenne 46,5
+   Jockey        J. MAJORCRYK         Tronçon le plus rapide                  Réduction km  1'18"46
+   Temps de parcours 05:45.23 (rang 1, redk : 1'18"46) Vitesse maximale 54,32 (tronçon DEP - 4000m) Nombre de foulées 704
+                                                     Données de tracking
+                       DEP                4000m               3000m               2000m              1000m
+    Tronçons de 1000m  4000m              3000m               2000m               1000m               ARR
+    Temps de parcours 00:32.50            01:53.57           03:13.26            04:30.60            05:45.23
+     Temps du tronçon 00:32.50            01:21.06           01:19.69            01:17.34            01:14.62
+     Vitesse moyenne   48,7                43,9                46                 46,6                49
+    Nombre de foulées   66                 167                 159                158                 154
+       Position         2                   2                  2                   2                   1
+       Tronçons
+    Temps de parcours 00:17.27 00:33.58 00:47.92 00:51.95 01:19.03 01:37.88 01:50.37 02:24.43
+     Temps du tronçon 00:17.27 00:16.30 00:14.33 00:04.03 00:27.07 00:18.84 00:12.49 00:34.05
+     Vitesse moyenne  49  43,7  35,7 43,1 48,9 46,7 42,3 44,1
+"""
+
+
+def test_obstacle_pdf_page_parsing():
+    from galoptrack import tracking_pdf as tp
+    assert tp.longueur_troncons(PAGE_OBSTACLE) == 1000
+    tr = tp._extraire_troncons_page_individuelle(PAGE_OBSTACLE)
+    assert [t['label'] for t in tr] == ['DEP-4000m', '4000m-3000m', '3000m-2000m', '2000m-1000m', '1000m-ARR']
+    assert [t['vitesse_kmh'] for t in tr] == [48.7, 43.9, 46.0, 46.6, 49.0]
+    assert [t['temps_sec'] for t in tr] == [32.5, 81.06, 79.69, 77.34, 74.62]
+    assert tr[-1]['cumul_sec'] == 345.23 and tr[1]['foulees'] == 167
+    cheval = {}
+    tp._parse_horse_header(PAGE_OBSTACLE, cheval)
+    assert cheval['position_arrivee'] == 1
+    assert cheval['temps_officiel_sec'] == 345.23
+    assert cheval['vitesse_moyenne_kmh'] == 46.5 and cheval['vitesse_max_kmh'] == 54.32
