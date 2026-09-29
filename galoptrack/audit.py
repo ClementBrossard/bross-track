@@ -4,6 +4,7 @@ annoncées trackées, et test réel des PDF France Galop (avec d'autres codes
 candidats si le code retenu ne répond pas)."""
 
 import logging
+import re
 from datetime import timedelta
 
 from . import collect, config, pmu
@@ -41,6 +42,7 @@ def audit(end, n_days=365, step=2, pdf_tests=3):
             s = stats.setdefault(nom, {'nom': nom, 'code': reunion_code(reunion), 'code_pmu': code_pmu,
                                        'jours': 0, 'plat': 0, 'obstacles': 0, 'obst_trackees': 0,
                                        'plat_trackees': 0, 'pdf_tests': 0, 'pdf_ok': 0, 'pdf_autre_code': set(),
+                                       'plat_pdf_tests': 0, 'plat_pdf_ok': 0,
                                        'derniere': ''})
             s['jours'] += 1
             s['derniere'] = max(s['derniere'], config.yyyymmdd(d))
@@ -58,19 +60,27 @@ def audit(end, n_days=365, step=2, pdf_tests=3):
                 if any(_pdf_ok(dg, code, num) for code in collect.pdf_codes(s['code'])):
                     s['pdf_ok'] += 1
                 else:
-                    for alt in {code_pmu, nom[:3]} - {s['code'], ''}:
+                    court = re.sub(r"^HIPPODROME( DE LA| DE| DES| DU| D')?\s*", '', nom).replace(' ', '')
+                    for alt in {code_pmu, court[:3], court[:2] + court[-1:]} - {s['code'], ''}:
                         if _pdf_ok(dg, alt, num):
                             s['pdf_autre_code'].add(alt)
+            # Même test sur une course de plat : le code marche-t-il ici ?
+            plat = [c for c, disc in courses if disc == pmu.PLAT]
+            if plat and s['plat_pdf_tests'] < pdf_tests:
+                s['plat_pdf_tests'] += 1
+                if any(_pdf_ok(config.yyyymmdd(d), code, plat[0].get('numOrdre'))
+                       for code in collect.pdf_codes(s['code'])):
+                    s['plat_pdf_ok'] += 1
         log.info("%s audité", config.yyyymmdd(d))
     return sorted(stats.values(), key=lambda s: (-s['obstacles'], -s['plat']))
 
 
 def report(rows):
     lines = [f"{'Hippodrome (PMU)':32s} {'code':5s} {'PMU':5s} {'connu':5s} {'jours':>5s} {'plat':>5s} "
-             f"{'obst':>5s} {'obst.tr':>7s} {'PDF ok':>7s}  autre code PDF"]
+             f"{'obst':>5s} {'PDF obst':>8s} {'PDF plat':>8s}  autre code PDF"]
     for s in rows:
         lines.append(f"{s['nom'][:32]:32s} {s['code']:5s} {s['code_pmu']:5s} "
                      f"{'oui' if s['code'] in CODES_FRANCE else 'NON':5s} {s['jours']:5d} {s['plat']:5d} "
-                     f"{s['obstacles']:5d} {s['obst_trackees']:7d} {s['pdf_ok']:3d}/{s['pdf_tests']:<3d}  "
+                     f"{s['obstacles']:5d} {s['pdf_ok']:4d}/{s['pdf_tests']:<3d} {s['plat_pdf_ok']:4d}/{s['plat_pdf_tests']:<3d}  "
                      f"{','.join(sorted(s['pdf_autre_code']))}")
     return '\n'.join(lines)
