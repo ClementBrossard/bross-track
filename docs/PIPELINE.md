@@ -53,6 +53,23 @@ Service web → *Environment* : les 4 mêmes variables R2, plus
 que depuis la branche par défaut du repo (`main`) : il faut donc que ce code y
 soit fusionné.
 
+### 5. Déclenchement à l'heure pile (cron-job.org)
+GitHub lance les tâches planifiées avec des heures de retard le matin (voire
+les saute). Le vrai déclencheur est donc externe : cron-job.org appelle l'API
+GitHub à l'heure dite (fuseau Europe/Paris, donc pas de décalage été/hiver).
+
+1. GitHub → *Settings* → *Developer settings* → *Fine-grained tokens* → jeton
+   limité au repo `bross-track`, permission **Actions : Read and write** seule.
+2. cron-job.org, deux tâches `POST https://api.github.com/repos/ClementBrossard/bross-track/actions/workflows/pipeline-daily.yml/dispatches`
+   avec les en-têtes `Accept: application/vnd.github+json`,
+   `Authorization: Bearer <jeton>`, `X-GitHub-Api-Version: 2022-11-28` :
+   - 07:40 → corps `{"ref":"main","inputs":{"mode":"daily"}}`
+   - 12:40 → corps `{"ref":"main","inputs":{"mode":"dashboard"}}`
+   Réponse attendue : `204`.
+
+Les crons GitHub restent en secours : les créneaux du matin passent en
+`--if-needed` et ne font rien si la collecte du jour a déjà tourné.
+
 ## Commandes (aussi utilisables en local)
 
 ```bash
