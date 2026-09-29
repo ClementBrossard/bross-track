@@ -1,0 +1,49 @@
+name: Pipeline — sauvegarde / restauration
+
+# Sauvegarde des tables dans R2 (backups/<date-heure>/), liste des
+# sauvegardes, ou retour à une sauvegarde puis régénération du dashboard.
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "lister, sauvegarder ou restaurer"
+        type: choice
+        options: [lister, sauvegarder, restaurer]
+        default: lister
+      name:
+        description: "Nom de la sauvegarde à restaurer (voir « lister »)"
+        default: ""
+
+concurrency:
+  group: galoptrack-data
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    env:
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      ACTION: ${{ inputs.action }}
+      NAME: ${{ inputs.name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-pipeline.txt
+      - run: pip install -r requirements-pipeline.txt
+      - name: Run
+        run: |
+          set -e
+          case "$ACTION" in
+            lister) python -m galoptrack backup --list ;;
+            sauvegarder) python -m galoptrack backup --label manuelle ;;
+            restaurer)
+              python -m galoptrack backup --label avant-restauration
+              python -m galoptrack restore --name "$NAME"
+              python -m galoptrack dashboard ;;
+          esac

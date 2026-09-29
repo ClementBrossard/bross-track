@@ -424,3 +424,17 @@ def test_obstacle_pdf_page_parsing():
     assert cheval['position_arrivee'] == 1
     assert cheval['temps_officiel_sec'] == 345.23
     assert cheval['vitesse_moyenne_kmh'] == 46.5 and cheval['vitesse_max_kmh'] == 54.32
+
+
+def test_backup_and_restore_tables(tmp_path, raw):
+    from galoptrack import __main__ as cli
+    st = LocalStorage(tmp_path)
+    _store_tables(st, raw)
+    before = st.read_bytes(tables.table_key('chevaux'))
+    name = cli.backup(st, 'test')
+    assert cli.list_backups(st) == [name]
+    tables.write_table(st, 'chevaux', raw['chevaux'].head(3))
+    assert cli.restore(st, name) >= len(tables.SCHEMAS)
+    assert st.read_bytes(tables.table_key('chevaux')) == before
+    with pytest.raises(SystemExit):
+        cli.restore(st, 'inexistante')

@@ -98,3 +98,10 @@ Sans variables R2, tout est écrit dans `./galoptrack_data/` (mode local).
   Pour revenir à une version : modifier `model/current.json`.
 - **Test réel** : le workflow *Pipeline — test réel PMU / France Galop* collecte
   une vraie journée à chaque modification du code.
+
+## Sauvegardes et retour en arrière
+- Chaque rattrapage sauvegarde d'abord les tables dans `backups/<date-heure>-avant-rattrapage/` (R2).
+- **Pipeline — sauvegarde / restauration** : `lister`, `sauvegarder`, ou `restaurer` une sauvegarde
+  (nom affiché par `lister`) ; la restauration refait d'abord une sauvegarde, puis régénère le dashboard.
+- Le code, lui, est historisé par git : le bouton *Revert* d'une PR fusionnée crée une PR qui l'annule.
+  Revenir à un code sans obstacles impose aussi de restaurer des tables sans obstacles.

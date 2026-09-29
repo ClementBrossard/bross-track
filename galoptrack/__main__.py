@@ -6,6 +6,8 @@
   train                 réentraîne le modèle (run mensuel)
   migrate               import unique de l'historique Drive (raw/)
   status                état des tables et du modèle
+  backup [--label | --list]           sauvegarde des tables (backups/<nom>/)
+  restore --name                      remet les tables d'une sauvegarde
   health                contrôle de santé (page /sante)
   inspect --date --hippo [--course]   montre les lignes brutes d'une course
 """
@@ -134,6 +136,45 @@ def cmd_daily(storage, args):
     print("Dashboard :", json.dumps(stats))
 
 
+BACKUP_PREFIX = 'backups/'
+BACKUP_KEYS = [tables.table_key(n) for n in tables.SCHEMAS] + ['model/current.json']
+
+
+def list_backups(storage):
+    return sorted({k[len(BACKUP_PREFIX):].split('/', 1)[0] for k in storage.list(BACKUP_PREFIX)})
+
+
+def backup(storage, label=''):
+    """Copie les tables (et le pointeur du modèle en production) dans
+    backups/<date-heure>[-label]/. Retourne le nom de la sauvegarde."""
+    name = config.now_paris().strftime('%Y%m%d-%H%M') + (f'-{label}' if label else '')
+    for key in BACKUP_KEYS:
+        if storage.exists(key):
+            storage.write_bytes(f'{BACKUP_PREFIX}{name}/{key}', storage.read_bytes(key))
+    return name
+
+
+def restore(storage, name):
+    keys = [k for k in storage.list(f'{BACKUP_PREFIX}{name}/')]
+    if not keys:
+        raise SystemExit(f"Sauvegarde introuvable : {name} (disponibles : {', '.join(list_backups(storage)) or 'aucune'})")
+    for k in keys:
+        storage.write_bytes(k[len(f'{BACKUP_PREFIX}{name}/'):], storage.read_bytes(k))
+    return len(keys)
+
+
+def cmd_backup(storage, args):
+    if args.list:
+        print('\n'.join(list_backups(storage)) or 'Aucune sauvegarde')
+        return
+    print("Sauvegarde :", backup(storage, args.label))
+
+
+def cmd_restore(storage, args):
+    n = restore(storage, args.name)
+    print(f"{n} fichier(s) restauré(s) depuis {args.name}. Relancer « dashboard » pour régénérer le site.")
+
+
 def cmd_train(storage, args):
     meta = train.run(storage, promote=not args.no_promote)
     print(json.dumps(meta, indent=1, default=str))
@@ -180,6 +221,15 @@ def main(argv=None):
     s = sub.add_parser('train')
     s.add_argument('--no-promote', action='store_true', help="enregistre la version sans la mettre en production")
     s.set_defaults(func=cmd_train)
+
+    s = sub.add_parser('backup')
+    s.add_argument('--label', default='')
+    s.add_argument('--list', action='store_true', help="liste les sauvegardes")
+    s.set_defaults(func=cmd_backup)
+
+    s = sub.add_parser('restore')
+    s.add_argument('--name', required=True, help="nom affiché par « backup --list »")
+    s.set_defaults(func=cmd_restore)
 
     sub.add_parser('migrate').set_defaults(func=cmd_migrate)
     sub.add_parser('status').set_defaults(func=cmd_status)

@@ -37,6 +37,8 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-pipeline.txt
       - run: pip install -r requirements-pipeline.txt
+      - name: Sauvegarde des tables avant rattrapage
+        run: python -m galoptrack backup --label avant-rattrapage
       - run: python -m galoptrack collect --from "${{ inputs.date_from }}" --to "${{ inputs.date_to }}" --what "${{ inputs.what }}" --disciplines "${{ inputs.disciplines }}"
       - run: python -m galoptrack status
       - run: python -m galoptrack health
