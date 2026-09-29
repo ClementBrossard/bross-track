@@ -1,0 +1,29 @@
+name: Pipeline — audit des hippodromes
+
+# Parcourt les programmes PMU (1 jour sur 2 sur un an par défaut) et teste
+# les PDF France Galop de chaque hippodrome de galop français. N'écrit rien.
+on:
+  push:
+    paths: ["galoptrack/audit.py", "galoptrack/hippos.py", ".github/workflows/pipeline-audit-hippos.yml"]
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Nombre de jours à remonter"
+        default: "365"
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GALOPTRACK_STORAGE: local
+      GALOPTRACK_LOCAL_DIR: /tmp/galoptrack_audit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-pipeline.txt
+      - run: pip install -r requirements-pipeline.txt
+      - run: python -m galoptrack audit-hippos --days "${{ inputs.days || '365' }}"

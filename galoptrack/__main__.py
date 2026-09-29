@@ -18,7 +18,7 @@ import logging
 import sys
 from datetime import timedelta
 
-from . import collect, config, dashboard, health, migrate, model_store, tables, train
+from . import audit, collect, config, dashboard, health, migrate, model_store, tables, train
 from .storage import get_storage
 
 
@@ -175,6 +175,11 @@ def cmd_restore(storage, args):
     print(f"{n} fichier(s) restauré(s) depuis {args.name}. Relancer « dashboard » pour régénérer le site.")
 
 
+def cmd_audit_hippos(storage, args):
+    rows = audit.audit(config.today_paris(), n_days=args.days, step=args.step)
+    print(audit.report(rows))
+
+
 def cmd_train(storage, args):
     meta = train.run(storage, promote=not args.no_promote)
     print(json.dumps(meta, indent=1, default=str))
@@ -230,6 +235,11 @@ def main(argv=None):
     s = sub.add_parser('restore')
     s.add_argument('--name', required=True, help="nom affiché par « backup --list »")
     s.set_defaults(func=cmd_restore)
+
+    s = sub.add_parser('audit-hippos', help="hippodromes vus chez PMU + test des PDF France Galop")
+    s.add_argument('--days', type=int, default=365)
+    s.add_argument('--step', type=int, default=2)
+    s.set_defaults(func=cmd_audit_hippos)
 
     sub.add_parser('migrate').set_defaults(func=cmd_migrate)
     sub.add_parser('status').set_defaults(func=cmd_status)
