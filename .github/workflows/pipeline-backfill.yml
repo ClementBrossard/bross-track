@@ -12,6 +12,9 @@ on:
       what:
         description: "Sources (tracking,participants,rapports)"
         default: "tracking,participants,rapports"
+      disciplines:
+        description: "Disciplines (tout, plat, obstacle)"
+        default: "tout"
 
 concurrency:
   group: galoptrack-data
@@ -34,6 +37,6 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-pipeline.txt
       - run: pip install -r requirements-pipeline.txt
-      - run: python -m galoptrack collect --from "${{ inputs.date_from }}" --to "${{ inputs.date_to }}" --what "${{ inputs.what }}"
+      - run: python -m galoptrack collect --from "${{ inputs.date_from }}" --to "${{ inputs.date_to }}" --what "${{ inputs.what }}" --disciplines "${{ inputs.disciplines }}"
       - run: python -m galoptrack status
       - run: python -m galoptrack health

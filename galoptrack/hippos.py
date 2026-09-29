@@ -33,6 +33,9 @@ HIPPO_NAME_TO_CODE = {
     'SAINTES': 'S-M', 'SAINTES-MARIE': 'S-M',
     'SALON': 'SAL', 'SALON-DE-PROVENCE': 'SAL',
     'TARBES': 'TAR',
+    # Hippodromes d'obstacle
+    'AUTEUIL': 'AUT', 'PARIS-AUTEUIL': 'AUT',
+    'ENGHIEN': 'ENG', 'ENGHIEN-SOISY': 'ENG',
 }
 
 # Hippodromes français retenus pour l'enrichissement / les rapports
@@ -40,6 +43,7 @@ CODES_FRANCE = {
     'CHA', 'DEA', 'LPA', 'SAI', 'MAI', 'EVR', 'COM', 'CLF', 'LLA', 'VIC', 'NAR', 'STR',
     'LYO', 'LSO', 'MAR', 'TOU', 'ANG', 'CAG', 'BOR', 'FON', 'AIX', 'AMI', 'ARG', 'BRA',
     'CRA', 'CRO', 'DAX', 'DIE', 'LAT', 'MAN', 'MOU', 'PAU', 'PLB', 'S-M', 'SAL', 'TAR',
+    'AUT', 'ENG',
 }
 
 # Certains hippodromes utilisent un autre code dans l'URL des PDF France Galop

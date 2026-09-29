@@ -78,6 +78,7 @@ tbody tr:last-child td{border-bottom:none;}
 .tag{font-family:'JetBrains Mono',monospace;font-size:10.5px;padding:2px 8px;border-radius:10px;background:#ece6d4;color:var(--ink-soft);border:1px solid var(--line);display:inline-block;}
 .tag.gI{background:var(--gold-soft);color:#4d3a08;border-color:var(--gold);}
 .tag.gII{background:#f0e4bd;color:#6b4a1a;border-color:var(--gold-soft);}
+.tag.obst{background:#e3eaf4;color:#2c4a73;border-color:#9fb4d3;}
 .tag.gIII{background:#f3ead0;color:#7a5c24;border-color:var(--gold-soft);}
 
 .empty{padding:40px;text-align:center;color:var(--ink-soft);font-size:13px;}
@@ -205,6 +206,13 @@ tbody tr:last-child td{border-bottom:none;}
     <div class="controls">
       <label>Recherche cheval
         <input type="text" id="f-search" placeholder="Nom du cheval...">
+      </label>
+      <label>Discipline
+        <select id="f-disc">
+          <option value="">Toutes</option>
+          <option value="plat">Plat</option>
+          <option value="obstacle">Obstacles</option>
+        </select>
       </label>
       <label>Hippodrome
         <select id="f-hippo" multiple></select>
@@ -585,6 +593,11 @@ function speedFromTime(dist, t){
   if(!t || t<=0) return null;
   return dist/t*3.6;
 }
+const DISC_LABEL = {HAIES:'Haies', STEEPLE:'Steeple', CROSS:'Cross', OBSTACLE:'Obstacle'};
+// Courses d'obstacles : discipline 'disc' (absente = plat, historique d'avant les obstacles)
+function isObst(r){ return !!(r && r.disc && r.disc!=='PLAT'); }
+function discFam(r){ return isObst(r) ? 'OBS' : 'PLAT'; }
+function discTag(r){ return isObst(r) ? ` <span class="tag obst">${DISC_LABEL[r.disc]||r.disc}</span>` : ''; }
 function catLabel(cat){
   const map = {
     'GROUPE_I':'Groupe I','GROUPE_II':'Groupe II','GROUPE_III':'Groupe III',
@@ -839,7 +852,7 @@ function buildSpeedChart(race, opts){
    STATE
    ========================================================= */
 const state = {
-  filters:{ search:'', hippo:[], cat:[], terrain:[], distMin:null, distMax:null, dateMin:null, dateMax:null },
+  filters:{ search:'', disc:'', hippo:[], cat:[], terrain:[], distMin:null, distMax:null, dateMin:null, dateMax:null },
   sort:{ col:'date', dir:'desc' },
   chevauxSearch:'', chevauxSort:{col:'nb_courses', dir:'desc'},
   currentRaceId:null, currentHorseName:null,
@@ -943,6 +956,10 @@ function bindEvents(){
     state.filters.search = e.target.value.trim().toUpperCase();
     renderList();
   },200));
+  document.getElementById('f-disc').addEventListener('change', e=>{
+    state.filters.disc = e.target.value;
+    renderList();
+  });
   document.getElementById('f-hippo').addEventListener('change', e=>{
     state.filters.hippo = [...e.target.selectedOptions].map(o=>o.value);
     renderList();
@@ -972,8 +989,9 @@ function bindEvents(){
     renderList();
   });
   document.getElementById('f-reset').addEventListener('click', ()=>{
-    state.filters = { search:'', hippo:[], cat:[], terrain:[], distMin:null, distMax:null, dateMin:null, dateMax:null };
+    state.filters = { search:'', disc:'', hippo:[], cat:[], terrain:[], distMin:null, distMax:null, dateMin:null, dateMax:null };
     document.getElementById('f-search').value='';
+    document.getElementById('f-disc').value='';
     document.getElementById('f-hippo').selectedIndex=-1;
     document.getElementById('f-cat').selectedIndex=-1;
     document.getElementById('f-terrain').selectedIndex=-1;
@@ -1175,6 +1193,7 @@ function goToSubTab(name){
 function getFilteredRaces(){
   const f = state.filters;
   let res = RACES.filter(r=>{
+    if(f.disc && (f.disc==='obstacle') !== isObst(r)) return false;
     if(f.hippo.length && !f.hippo.includes(r.hippo)) return false;
     if(f.cat.length && !f.cat.includes(r.cat)) return false;
     if(f.terrain.length && !f.terrain.includes(r.terrain)) return false;
@@ -1224,7 +1243,7 @@ function renderList(){
     const winner = r.horses.find(h=>h.pa==='1');
     return `<tr data-id="${r.id}">
       <td class="mono">${fmtDate(r.date)}</td>
-      <td><span class="tag">${r.hippo}</span></td>
+      <td><span class="tag">${r.hippo}</span>${discTag(r)}</td>
       <td class="mono">C${r.num}</td>
       <td class="mono">${r.dist ?? '—'} m</td>
       <td>${r.terrain ?? '—'}</td>
@@ -1251,7 +1270,7 @@ function renderToday(){
 
   if(!todayRaces.length){
     el.textContent = '';
-    list.innerHTML = `<div class="empty" style="padding:48px;">Aucune course de plat française trouvée pour aujourd'hui — l'API PMU était peut-être inaccessible au moment de la generation du dashboard. Relance le notebook pour rafraichir.</div>`;
+    list.innerHTML = `<div class="empty" style="padding:48px;">Aucune course de galop française trouvée pour aujourd'hui — l'API PMU était peut-être inaccessible au moment de la generation du dashboard. Relance le notebook pour rafraichir.</div>`;
     return;
   }
 
@@ -1265,7 +1284,8 @@ function renderToday(){
   });
 
   const todayDate = todayRaces[0].date;
-  el.textContent = `${todayRaces.length} course(s) de plat française(s) — ${fmtDate(todayDate)}`;
+  const nObst = todayRaces.filter(isObst).length;
+  el.textContent = `${todayRaces.length} course(s) française(s)${nObst ? ` (${todayRaces.length-nObst} plat, ${nObst} obstacles)` : ''} — ${fmtDate(todayDate)}`;
 
   list.innerHTML = Object.entries(byGroup).map(([key, group])=>{
     const races = group.races;
@@ -1273,7 +1293,7 @@ function renderToday(){
     const rnum  = group.rnum;
     const racesHtml = races.sort((a,b)=>a.num-b.num).map(r=>`
       <tr data-id="${r.id}" style="cursor:pointer;">
-        <td class="mono">${r.rnum ? "R"+r.rnum+" " : ""}C${r.num}</td>
+        <td class="mono">${r.rnum ? "R"+r.rnum+" " : ""}C${r.num}${discTag(r)}</td>
         <td class="mono">${r.dist ?? '—'} m</td>
         <td>${r.terrain ?? '—'}${r.penetro ? ' ('+r.penetro+')' : ''}</td>
         <td><span class="tag ${catTagClass(r.cat)}">${catLabel(r.cat)}</span></td>
@@ -1288,7 +1308,7 @@ function renderToday(){
     return `<div class="today-card">
       <div class="today-card-head" data-key="${key}">
         <h3>${hippo}${rnum ? ' — R'+rnum : ''} <span class="badge-today">Aujourd&#39;hui</span></h3>
-        <span class="mono" style="font-size:12px;color:var(--ink-soft);">${races.length} course(s) de plat</span>
+        <span class="mono" style="font-size:12px;color:var(--ink-soft);">${races.length} course(s)</span>
       </div>
       <div class="today-card-body" id="todayBody-${key}">
         <table>
@@ -2362,6 +2382,7 @@ function openRace(raceId, navList){
     <div>
       <h2>${r.hippo} — ${r.rnum ? "R"+r.rnum+" " : ""}C${r.num} — ${fmtDate(r.date)}${r.today ? ' <span class="badge-today">Aujourd&#39;hui</span>' : ''}</h2>
       <div class="meta">
+        ${discTag(r).trim()}
         <span class="tag">${r.dist ?? '—'} m</span>
         <span class="tag">${r.terrain ?? '—'}${r.penetro ? ' ('+r.penetro+')' : ''}</span>
         <span class="tag">${r.piste ?? '—'}</span>
@@ -2453,6 +2474,7 @@ function renderRaceMetrics(){
   if(state.raceBenchDist || state.raceBenchTerrain){
     benchRaces = RACES.filter(o=>{
       if(o.id===r.id || o.today) return false;
+      if(discFam(o)!==discFam(r)) return false;
       if(state.raceBenchDist){
         if(!r.dist || !o.dist) return false;
         if(Math.abs(o.dist - r.dist)/r.dist > 0.10) return false;
@@ -2527,6 +2549,7 @@ function isSuspectPerf(h){
 function findHistoricalRef(horseName, todayRace){
   let candidates = RACES.filter(race=>{
     if(race.today) return false;
+    if(discFam(race)!==discFam(todayRace)) return false;
     return race.horses.some(h=>h.nom===horseName);
   });
 
@@ -2830,6 +2853,7 @@ function renderSimulation(){
   const profiles = r.horses.map(h=>{
     let hist = RACES.filter(race=>{
       if(race.today || race.id===r.id) return false;
+      if(discFam(race)!==discFam(r)) return false;
       const hh = race.horses.find(x=>x.nom===h.nom);
       if(!hh || !hh.tr || hh.tr.length < 2) return false;
       if(useDist && r.dist && race.dist && Math.abs(race.dist-r.dist)/r.dist > 0.10) return false;
@@ -3210,7 +3234,7 @@ function renderHorseHistory(){
         <div class="hist-head" style="cursor:default;">
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
             <span class="badge ${posBadgeClass(h.pa)}">${h.pa ?? '—'}</span>
-            <strong>${race.hippo} ${race.rnum ? "R"+race.rnum+" " : ""}C${race.num}</strong>
+            <strong>${race.hippo} ${race.rnum ? "R"+race.rnum+" " : ""}C${race.num}</strong>${discTag(race)}
             <span class="tag">${fmtDate(race.date)}</span>
             <span class="tag">${race.dist ?? '—'}m</span>
             <span class="tag">${race.terrain ?? '—'}</span>
@@ -3233,7 +3257,7 @@ function renderHorseHistory(){
       <div class="hist-head" data-toggle="${idx}">
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
           <span class="badge ${posBadgeClass(h.pa)}">${h.pa ?? '—'}</span>
-          <strong>${numBadge(h.npart)}${race.hippo} ${race.rnum ? "R"+race.rnum+" " : ""}C${race.num}</strong>
+          <strong>${numBadge(h.npart)}${race.hippo} ${race.rnum ? "R"+race.rnum+" " : ""}C${race.num}</strong>${discTag(race)}
           <span class="tag">${fmtDate(race.date)}</span>
           <span class="tag">${race.dist ?? '—'}m</span>
           <span class="tag">${race.terrain ?? '—'}</span>
@@ -3353,6 +3377,10 @@ function renderModele(){
     return;
   }
 
+  if(isObst(r)){
+    container.innerHTML = '<div class="empty">Pas de pronostic pour les courses d\'obstacles : le modèle a appris uniquement sur le plat. Les onglets Métriques et Duel restent disponibles.</div>';
+    return;
+  }
   const horses = r.horses.filter(h => h.model_prob !== undefined && h.model_prob !== null);
   if(!horses.length){
     container.innerHTML = '<div class="empty">Pas de prédiction disponible pour cette course — le modèle n\'a pas pu être appliqué lors de la génération du dashboard (fichiers modèle absents ou données insuffisantes).</div>';

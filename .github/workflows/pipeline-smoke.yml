@@ -10,7 +10,7 @@ on:
     inputs:
       date:
         description: "Journée à collecter (YYYY-MM-DD)"
-        default: "2026-09-20"
+        default: "2026-09-26"
 
 jobs:
   smoke:
@@ -18,7 +18,7 @@ jobs:
     env:
       GALOPTRACK_STORAGE: local
       GALOPTRACK_LOCAL_DIR: /tmp/galoptrack_smoke
-      DAY: ${{ inputs.date || '2026-09-20' }}
+      DAY: ${{ inputs.date || '2026-09-26' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -41,6 +41,53 @@ jobs:
           assert n['chevaux'] > 0, "aucun partant collecté"
           assert n['tracking'] > 0 and n['troncons'] > 0, "aucun PDF de tracking parsé"
           assert n['rapports'] > 0, "aucun rapport définitif"
+          PY
+      - name: Obstacles (discipline, tracking, texte d'un PDF)
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          from galoptrack import collect, tables
+          from galoptrack.storage import get_storage
+          from galoptrack.tracking_pdf import parse_pdf_complet
+          st = get_storage()
+          ch = tables.read_table(st, 'chevaux')
+          tr = tables.read_table(st, 'tracking')
+          tc = tables.read_table(st, 'troncons')
+          key = ['code_hippo', 'num_reunion', 'num_course']
+          print("Courses par discipline :")
+          print(ch.drop_duplicates(key).groupby(ch['discipline'].fillna('?')).size().to_string())
+          print("Tracking par discipline :")
+          print(tr.drop_duplicates(key).groupby(tr['discipline'].fillna('?')).size().to_string())
+          obst = ch[ch['discipline'].fillna('PLAT') != 'PLAT']
+          assert len(obst), "aucune course d'obstacles collectée"
+          for (h, r, c), g in obst.groupby(key):
+              t = tr[(tr.code_hippo == h) & (tr.num_reunion == r) & (tr.num_course == c)]
+              k = tc[(tc.code_hippo == h) & (tc.num_reunion == r) & (tc.num_course == c)]
+              print(f"{h} R{r}C{c} {g['discipline'].iloc[0]:8s} partants {len(g):2d} | tracking {len(t):2d} chevaux, "
+                    f"{len(k):3d} tronçons | labels {sorted(k['troncon_label'].unique().tolist())[:4]}")
+          d = str(obst['date'].iloc[0])
+          h, c = 'AUT', 1
+          pdf = collect.fetch_pdf(d, h, c)
+          print(f"\n===== PDF {d}{h}{c:02d} : {'trouvé' if pdf else 'absent'} =====")
+          if pdf:
+              import io, pdfplumber
+              with pdfplumber.open(io.BytesIO(pdf)) as p:
+                  print(len(p.pages), "pages")
+                  for i in (0, 1):
+                      if i < len(p.pages):
+                          print(f"--- page {i + 1} ---")
+                          print('\n'.join((p.pages[i].extract_text(layout=True) or '').split('\n')[:70]))
+              chev, tron = parse_pdf_complet(pdf, d, h, 1, c)
+              print(len(chev), "chevaux parsés,", len(tron), "tronçons")
+              for row in chev[:3]:
+                  print({k: row[k] for k in ('nom_cheval', 'position_arrivee', 'temps_officiel_sec',
+                                             'vitesse_moyenne_kmh', 'nb_troncons', 'distance_m',
+                                             'positions_troncons', 'temps_600m_sec')})
+              for t in tron[:6]:
+                  print(t)
+              assert tron, "aucun tronçon lu dans le PDF d'obstacles"
+              assert all(r['position_arrivee'] != '' for r in chev), "rang d'arrivée manquant"
+          assert len(tc[tc.code_hippo == 'AUT']), "aucun tronçon d'obstacles collecté"
           PY
       - name: Dashboard (sans modèle, avec courses du jour) + santé
         run: python -m galoptrack dashboard

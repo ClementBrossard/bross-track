@@ -20,7 +20,7 @@ import pandas as pd
 from . import config, model_store, pmu, tables
 from .features import FEATURES, build_features
 from .hippos import reunion_code_today
-from .races import build_races
+from .races import build_races, is_plat
 
 log = logging.getLogger(__name__)
 
@@ -107,7 +107,8 @@ def parse_participant(p):
 
 
 def add_today_races(races_list, day: date):
-    """Ajoute les courses de plat françaises du jour (flag 'today'). Une course
+    """Ajoute les courses de galop françaises du jour, plat et obstacles
+    (flag 'today', discipline dans 'disc'). Une course
     déjà présente dans l'historique (résultat connu) n'est jamais ajoutée une
     seconde fois : ce serait une fuite du résultat vers sa propre prédiction."""
     prog = pmu.fetch_programme(day)
@@ -122,8 +123,8 @@ def add_today_races(races_list, day: date):
         num_r = reunion['numOfficiel']
         code_h = reunion_code_today(reunion)
         for course in reunion.get('courses', []):
-            disc = (course.get('specialite') or course.get('discipline') or '').upper()
-            if 'PLAT' not in disc:
+            disc = pmu.discipline_galop(course)
+            if disc is None:
                 continue
             num_c = course.get('numOrdre', 0)
             if not num_c:
@@ -154,6 +155,7 @@ def add_today_races(races_list, day: date):
                 'cat': str(cat).strip() if cat else None,
                 'alloc': float(alloc) if alloc else None,
                 'cond_age': str(cond_age).strip() if cond_age else None,
+                'disc': disc,
                 'today': True,
                 'horses': horses,
             })
@@ -224,12 +226,14 @@ def model_meta(version):
 
 
 def score_today(races_list, labels_array, booster, calib):
-    """Probabilité calibrée + détail SHAP pour chaque cheval des courses du
-    jour. Retourne le nombre de chevaux scorés."""
-    today_ids = {r['id'] for r in races_list if r.get('today')}
+    """Probabilité calibrée + détail SHAP pour chaque cheval des courses de
+    plat du jour (le modèle n'a appris que le plat : les obstacles ne sont pas
+    scorés). Retourne le nombre de chevaux scorés."""
+    plat = [r for r in races_list if is_plat(r)]
+    today_ids = {r['id'] for r in plat if r.get('today')}
     if not today_ids:
         return 0
-    fdf = build_features(races_list, labels_array)
+    fdf = build_features(plat, labels_array)
     X = fdf[fdf['race_id'].isin(today_ids)].reset_index(drop=True)
     X['pred'] = booster.predict(X[FEATURES])
     X['calib'] = calib.predict(X['pred'])
@@ -470,6 +474,7 @@ def build(storage, day=None, with_today=True):
     stats = {'day': config.yyyymmdd(day), 'races_history': len(races_list)}
 
     stats['races_today'] = add_today_races(races_list, day) if with_today else 0
+    stats['races_today_plat'] = sum(1 for r in races_list if r.get('today') and is_plat(r))
 
     version = model_store.current_version(storage)
     backtest, meta = None, None

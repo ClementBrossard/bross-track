@@ -51,6 +51,17 @@ def norm_pa(v):
     return s if s else None
 
 
+def race_discipline(v):
+    """Discipline stockée -> PLAT / HAIES / STEEPLE / CROSS / OBSTACLE.
+    Vide = historique d'avant les obstacles, donc du plat."""
+    s = safe_str(v)
+    return s.upper() if s else 'PLAT'
+
+
+def is_plat(race):
+    return race.get('disc', 'PLAT') == 'PLAT'
+
+
 def clean_tables(tr, tc, ch):
     """Cellule 3 : conversion des clés, retrait des lignes corrompues,
     dédoublonnage cheval x course."""
@@ -118,6 +129,8 @@ def build_races(tr, tc, ch):
                 'cat': safe_str(r.get('categorie_particularite')),
                 'alloc': safe_num(r.get('allocation_totale')),
                 'cond_age': safe_str(r.get('condition_age')),
+                'disc': race_discipline(r.get('discipline') if pd.notna(r.get('discipline'))
+                                        else r.get('discipline_ch')),
                 'horses': []
             }
 
@@ -144,6 +157,9 @@ def build_races(tr, tc, ch):
                 feat_400_premier = round((d1 + d2) / (t1 + t2) * 3.6, 1)
 
         feat_200_premier = tron_arr[0][0] if tron_arr and tron_arr[0][0] is not None else None
+        if not is_plat(races[race_key]):
+            # Obstacles : tronçons de 1000m, les « 200/400 premiers mètres » n'ont pas de sens
+            feat_400_premier = feat_200_premier = None
 
         ratio_early_late = None
         if len(vits) >= 4:
@@ -223,6 +239,7 @@ def build_races(tr, tc, ch):
                 'cat': str(r['categorie_particularite']).strip() if pd.notna(r.get('categorie_particularite')) else None,
                 'alloc': float(r['allocation_totale']) if pd.notna(r.get('allocation_totale')) else None,
                 'cond_age': str(r['condition_age']).strip() if pd.notna(r.get('condition_age')) else None,
+                'disc': race_discipline(r.get('discipline')),
                 'tracked': False,
                 'horses': []
             }

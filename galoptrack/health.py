@@ -29,6 +29,13 @@ def _d(i):
     return datetime.strptime(str(int(i)), '%Y%m%d').date()
 
 
+def _is_obstacle(df):
+    if 'discipline' not in df.columns:
+        return pd.Series(False, index=df.index)
+    disc = df['discipline'].fillna('').astype(str).str.upper()
+    return (disc != '') & (disc != 'PLAT')
+
+
 def _race_set(df, since=None):
     if df is None or df.empty:
         return set()
@@ -105,6 +112,7 @@ def compute(storage, today=None, dashboard_stats=None):
         row = {
             'date': di,
             'courses': len(races),
+            'obstacles': len(_race_set(chd[_is_obstacle(chd)])) if len(chd) else 0,
             'avec_arrivee': len(races_arr),
             'tracking': len(day_set('tracking')),
             'troncons': len(day_set('troncons')),
@@ -117,7 +125,7 @@ def compute(storage, today=None, dashboard_stats=None):
             if row['avec_arrivee'] < row['courses']:
                 alert(WARN, f"{label} : {row['courses'] - row['avec_arrivee']} course(s) sans arrivée")
             if row['tracking'] == 0:
-                alert(WARN, f"{label} : aucun PDF de tracking récupéré ({row['courses']} courses de plat)")
+                alert(WARN, f"{label} : aucun PDF de tracking récupéré ({row['courses']} courses)")
             if row['rapports'] < row['avec_arrivee']:
                 alert(INFO if i == 1 else WARN,
                       f"{label} : rapports définitifs manquants pour {row['avec_arrivee'] - row['rapports']} course(s)")
@@ -156,9 +164,19 @@ def compute(storage, today=None, dashboard_stats=None):
             if age > MODEL_MAX_AGE_DAYS:
                 alert(WARN, f"Modèle {version} entraîné il y a {age} jours (réentraînement mensuel en échec ?)")
 
+    # 5b. La collecte automatique du jour a-t-elle tourné ?
+    marker = 'logs/daily_last.json'
+    daily_last = json.loads(storage.read_bytes(marker)) if storage.exists(marker) else None
+    today_i = int(today.strftime('%Y%m%d'))
+    if daily_last is None:
+        alert(INFO, "Aucune collecte quotidienne automatique enregistrée pour l'instant")
+    elif daily_last.get('day') != today_i:
+        alert(ERROR, f"La collecte du jour n'a pas tourné : dernière collecte le "
+                     f"{_d(daily_last['day']):%d/%m/%Y}. Relancer « Pipeline — quotidien » (mode daily)")
+
     # 6. Courses du jour
     if dashboard_stats is not None:
-        if dashboard_stats.get('races_today', 0) and not dashboard_stats.get('horses_scored') and version:
+        if dashboard_stats.get('races_today_plat', dashboard_stats.get('races_today', 0)) and not dashboard_stats.get('horses_scored') and version:
             alert(ERROR, "Courses du jour présentes mais aucun cheval scoré par le modèle")
 
     worst = max((a['level'] for a in alerts), key=lambda l: _LEVEL_ORDER[l], default=OK)
@@ -176,6 +194,7 @@ def compute(storage, today=None, dashboard_stats=None):
         'last_collect': {'run_at': last_collect.get('run_at'), 'days': last_collect.get('days'),
                          'written': last_collect.get('written')} if last_collect else None,
         'model': model,
+        'daily_last': daily_last,
         'dashboard': dashboard_stats,
     }
 
@@ -192,10 +211,16 @@ def badge_html(h):
         label, bg = f"⚠️ {h['n_alerts']} alerte(s)", '#b8841f'
     else:
         label, bg = f"❌ {h['n_alerts']} alerte(s)", '#a8402c'
-    return (f'<a href="/sante" title="Santé des données" style="position:fixed;right:16px;bottom:16px;'
-            f'z-index:9999;background:{bg};color:#fff;font:600 13px Inter,system-ui,sans-serif;'
+    day = h['today']
+    # Si le dashboard n'a pas été régénéré aujourd'hui (robot en retard ou
+    # en panne), le badge le signale directement dans le navigateur.
+    script = ("<script>(function(){var d=new Date(),t=d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate();"
+              f"if(t>{day}){{var b=document.getElementById('gt-health-badge');"
+              "b.style.background='#a8402c';b.textContent='❌ Données d\u2019un jour précédent';}})();</script>")
+    return (f'<a id="gt-health-badge" href="/sante" title="Santé des données" style="position:fixed;right:16px;'
+            f'bottom:16px;z-index:9999;background:{bg};color:#fff;font:600 13px Inter,system-ui,sans-serif;'
             f'padding:8px 14px;border-radius:999px;text-decoration:none;'
-            f'box-shadow:0 2px 8px rgba(0,0,0,.25)">{label}</a>')
+            f'box-shadow:0 2px 8px rgba(0,0,0,.25)">{label}</a>{script}')
 
 
 def inject_badge(dashboard_html, h):
@@ -228,7 +253,8 @@ def render_page(h):
     for r in h['recent_days']:
         dd = _d(r['date'])
         cotes = '—' if r['cotes_pct'] is None else f"{r['cotes_pct']:.0%}"
-        day_rows += (f'<tr><td>{jours[dd.weekday()]} {dd:%d/%m}</td>{cell(r["courses"])}'
+        obst = f' ({r["obstacles"]})' if r.get('obstacles') else ''
+        day_rows += (f'<tr><td>{jours[dd.weekday()]} {dd:%d/%m}</td><td class="n">{r["courses"]}{obst}</td>'
                      f'{cell(r["avec_arrivee"], r["courses"])}{cell(r["tracking"])}'
                      f'{cell(r["troncons"], r["tracking"])}{cell(r["rapports"], r["avec_arrivee"])}'
                      f'<td class="n">{cotes}</td></tr>')
@@ -286,7 +312,7 @@ a{{color:var(--green)}}
 {table_rows}</table></section>
 
 <section><h2>{RECENT_DAYS} derniers jours</h2><table>
-<tr><th>Jour</th><th class="n">Courses plat</th><th class="n">Avec arrivée</th><th class="n">PDF tracking</th>
+<tr><th>Jour</th><th class="n">Courses (dont obst.)</th><th class="n">Avec arrivée</th><th class="n">PDF tracking</th>
 <th class="n">Tronçons</th><th class="n">Rapports</th><th class="n">Cotes</th></tr>
 {day_rows}</table></section>
 

@@ -52,6 +52,7 @@ def collect_tracking_course(d, course):
         c['terrain'] = course.get('terrain', '')
         c['penetrometre'] = course.get('penetrometre_valeur', '')
         c['type_piste'] = course.get('type_piste_brut', '')
+        c['discipline'] = course.get('discipline', '')
     return chevaux, troncons, None
 
 
@@ -99,6 +100,7 @@ def participant_row(d, course, p):
         'ecart_precedent': (p.get('distanceChevalPrecedent') or {}).get('libelleCourt', ''),
         'commentaire_course': (p.get('commentaireApresCourse') or {}).get('texte', ''),
         'cote_directe': pmu.cote_directe(p),
+        'discipline': course.get('discipline', ''),
     }
 
 
@@ -185,18 +187,20 @@ def _collect_course(d, course, what):
     return out
 
 
-def collect_days(storage, days, what=('tracking', 'participants', 'rapports')):
-    """Collecte toutes les courses de plat françaises des jours donnés, puis
-    écrit chaque table une seule fois. Retourne un résumé."""
+def collect_days(storage, days, what=('tracking', 'participants', 'rapports'), disciplines=None):
+    """Collecte les courses de galop françaises des jours donnés (plat et
+    obstacles, ou seulement `disciplines`), puis écrit chaque table une seule
+    fois. Retourne un résumé."""
     what = set(what)
     acc = {k: [] for k in tables.SCHEMAS}
     errors = []
     summary_days = {}
     for d in days:
-        courses = pmu.list_courses_plat(d)
+        courses = pmu.list_courses_galop(d, disciplines)
         with ThreadPoolExecutor(max_workers=config.WORKERS) as ex:
             results = list(ex.map(lambda c: _collect_course(d, c, what), courses))
-        day = {'courses': len(courses)}
+        day = {'courses': len(courses),
+               'obstacles': sum(1 for c in courses if c.get('discipline') != pmu.PLAT)}
         for k in acc:
             rows = [r for res in results for r in res[k]]
             acc[k].extend(rows)

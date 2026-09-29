@@ -10,9 +10,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from galoptrack import dashboard, migrate, model_store, tables, train
+from galoptrack import dashboard, migrate, model_store, pmu, tables, train
 from galoptrack.features import FEATURES, build_features
-from galoptrack.races import build_races
+from galoptrack.races import build_races, is_plat
 from galoptrack.storage import LocalStorage
 
 from .reference_notebook import notebook_features
@@ -144,9 +144,14 @@ def test_train_and_dashboard_end_to_end(tmp_path, raw, monkeypatch):
     for i, h in enumerate(today['horses']):
         h.update({'pa': None, 'tr': [], 'cote': 2.0 + i})
     races_list.append(today)
+    # Même course en obstacles : jamais scorée (modèle de plat)
+    obst = copy.deepcopy(today)
+    obst.update({'id': 'TODAY_AUT_R2_1', 'hippo': 'AUT', 'rnum': 2, 'disc': 'HAIES'})
+    races_list.append(obst)
     booster, calib, backtest, _ = model_store.load_version(st, 'v1')
     n = dashboard.score_today(races_list, labels_array, booster, calib)
     assert n == len(today['horses'])
+    assert not any('model_prob' in h for h in obst['horses'])
     probs = [h['model_prob'] for h in today['horses']]
     assert abs(sum(probs) - 100) < 0.5
     assert all(len(h['shap_top']) == 8 for h in today['horses'])
@@ -280,3 +285,142 @@ def test_finishing_position_is_integer_text(raw):
     races_list, _, _ = build_races(tr, raw['troncons'], raw['chevaux'])
     tracked = [r for r in races_list if r.get('tracked')]
     assert tracked and all(any(h['pa'] == '1' for h in r['horses']) for r in tracked)
+
+
+def test_daily_backup_slot_skips_when_already_done(tmp_path, monkeypatch, capsys):
+    import json as _json
+    from galoptrack import __main__ as cli, collect as _collect, config as _config, health
+    from datetime import date
+    st = LocalStorage(tmp_path)
+    monkeypatch.setattr(_config, 'today_paris', lambda: date(2026, 9, 28))
+    monkeypatch.setattr(cli.config, 'today_paris', lambda: date(2026, 9, 28))
+    calls = []
+    monkeypatch.setattr(_collect, 'collect_days', lambda *a, **k: calls.append(1) or
+                        {'days': {}, 'written': {}, 'errors': []})
+    monkeypatch.setattr(cli.dashboard, 'build', lambda *a, **k: ('<html><body></body></html>', {'races_today': 0}))
+    monkeypatch.setattr(cli, '_publish_with_health', lambda *a, **k: None)
+
+    class A:  # arguments de la ligne de commande
+        if_needed = True
+    st.write_bytes(cli.DAILY_MARKER, _json.dumps({'day': 20260927}).encode())
+    cli.cmd_daily(st, A)                      # marqueur d'hier -> la collecte tourne
+    assert len(calls) == 1
+    assert _json.loads(st.read_bytes(cli.DAILY_MARKER))['day'] == 20260928
+    cli.cmd_daily(st, A)                      # créneau de secours -> rien à faire
+    assert len(calls) == 1
+    A.if_needed = False
+    cli.cmd_daily(st, A)                      # lancement manuel -> toujours exécuté
+    assert len(calls) == 2
+
+
+def test_health_alerts_when_daily_did_not_run(tmp_path, raw):
+    import json as _json
+    from datetime import date
+    from galoptrack import health
+    st = LocalStorage(tmp_path)
+    _store_tables(st, raw)
+    st.write_bytes('logs/daily_last.json', _json.dumps({'day': 20260926}).encode())
+    h = health.compute(st, today=date(2026, 9, 28))
+    assert any(a['level'] == 'error' and "n'a pas tourné" in a['msg'] for a in h['alerts'])
+    assert 'gt-health-badge' in health.badge_html(h)
+
+
+# ── Obstacles ───────────────────────────────────────────────────────────────
+
+def test_discipline_galop():
+    assert pmu.discipline_galop({'specialite': 'PLAT', 'discipline': 'PLAT'}) == 'PLAT'
+    assert pmu.discipline_galop({'specialite': 'OBSTACLE', 'discipline': 'HAIE'}) == 'HAIES'
+    assert pmu.discipline_galop({'discipline': 'STEEPLECHASE'}) == 'STEEPLE'
+    assert pmu.discipline_galop({'discipline': 'CROSS_COUNTRY'}) == 'CROSS'
+    assert pmu.discipline_galop({'specialite': 'OBSTACLE'}) == 'OBSTACLE'
+    assert pmu.discipline_galop({'specialite': 'TROT_ATTELE', 'discipline': 'ATTELE'}) is None
+    assert pmu.wanted('HAIES', None) and pmu.wanted('HAIES', {'obstacle'})
+    assert not pmu.wanted('HAIES', {'plat'}) and not pmu.wanted(None, None)
+
+
+def test_list_courses_galop_filters(monkeypatch):
+    def course(n, spec, disc):
+        return {'numOrdre': n, 'specialite': spec, 'discipline': disc, 'statut': 'FIN_COURSE'}
+    prog = {'programme': {'reunions': [
+        {'numOfficiel': 1, 'pays': {'code': 'FRA'}, 'hippodrome': {'libelleLong': 'AUTEUIL'},
+         'courses': [course(1, 'OBSTACLE', 'HAIE'), course(2, 'OBSTACLE', 'STEEPLECHASE'), course(3, 'PLAT', 'PLAT')]},
+        {'numOfficiel': 2, 'pays': {'code': 'FRA'}, 'hippodrome': {'libelleLong': 'CHANTILLY'},
+         'courses': [course(1, 'PLAT', 'PLAT')]},
+        {'numOfficiel': 3, 'pays': {'code': 'FRA'}, 'hippodrome': {'libelleLong': 'VINCENNES'},
+         'courses': [course(1, 'TROT_ATTELE', 'ATTELE')]},
+    ]}}
+    monkeypatch.setattr(pmu, 'fetch_programme', lambda d: prog)
+    from datetime import date
+    allc = pmu.list_courses_galop(date(2026, 9, 26))
+    assert [(c['code_hippo'], c['num_course'], c['discipline']) for c in allc] == [
+        ('AUT', 1, 'HAIES'), ('AUT', 2, 'STEEPLE'), ('AUT', 3, 'PLAT'), ('CHA', 1, 'PLAT')]
+    assert [c['code_hippo'] for c in pmu.list_courses_plat(date(2026, 9, 26))] == ['AUT', 'CHA']
+    assert len(pmu.list_courses_galop(date(2026, 9, 26), {'obstacle'})) == 2
+
+
+def test_obstacles_stay_out_of_model_features(raw):
+    """Des courses d'obstacles ajoutées aux tables ne changent pas les
+    features du plat (entraînement et scoring filtrent le plat)."""
+    ch = raw['chevaux'].copy()
+    tr = raw['tracking'].copy()
+    last = pd.to_numeric(ch['date']).max()
+    obst = ch[pd.to_numeric(ch['date']) == last].copy()
+    obst['code_hippo'] = 'AUT'
+    obst['num_reunion'] = 9
+    obst['discipline'] = 'HAIES'
+    obst_tr = tr[pd.to_numeric(tr['date']) == last].copy()
+    obst_tr['code_hippo'] = 'AUT'
+    obst_tr['num_reunion'] = 9
+    obst_tr['discipline'] = 'HAIES'
+    ch2 = pd.concat([ch, obst], ignore_index=True)
+    tr2 = pd.concat([tr, obst_tr], ignore_index=True)
+
+    races, labels, _ = build_races(tr2, raw['troncons'], ch2)
+    discs = {r['disc'] for r in races}
+    assert discs == {'PLAT', 'HAIES'}
+    assert all(r['disc'] == 'HAIES' for r in races if r['hippo'] == 'AUT')
+
+    ref_races, ref_labels, _ = build_races(raw['tracking'], raw['troncons'], raw['chevaux'])
+    a = build_features([r for r in races if is_plat(r)], labels)
+    b = build_features(ref_races, ref_labels)
+    cols = [c for c in FEATURES if c not in ('terrain', 'piste', 'hippo', 'cat', 'sx', 'oe')]
+    pd.testing.assert_frame_equal(a[cols].reset_index(drop=True), b[cols].reset_index(drop=True))
+
+
+# Page individuelle d'un PDF d'obstacles réel (Auteuil 26/09/2026 C1), texte pdfplumber
+PAGE_OBSTACLE = """\
+                                                  Statistiques Tracking
+                                                       AUTEUIL
+                          C1 - PRIX DUC D'ALBUQUERQUE - CHALLENGE DE L'OBSTACLE EQUINAXY - 4400m
+                                                   Redk du 1er: 1'18"46
+   Cheval        HOKUSAI VALLIS       Distance parcourue 4463,11m             Vitesse moyenne 46,5
+   Jockey        J. MAJORCRYK         Tronçon le plus rapide                  Réduction km  1'18"46
+   Temps de parcours 05:45.23 (rang 1, redk : 1'18"46) Vitesse maximale 54,32 (tronçon DEP - 4000m) Nombre de foulées 704
+                                                     Données de tracking
+                       DEP                4000m               3000m               2000m              1000m
+    Tronçons de 1000m  4000m              3000m               2000m               1000m               ARR
+    Temps de parcours 00:32.50            01:53.57           03:13.26            04:30.60            05:45.23
+     Temps du tronçon 00:32.50            01:21.06           01:19.69            01:17.34            01:14.62
+     Vitesse moyenne   48,7                43,9                46                 46,6                49
+    Nombre de foulées   66                 167                 159                158                 154
+       Position         2                   2                  2                   2                   1
+       Tronçons
+    Temps de parcours 00:17.27 00:33.58 00:47.92 00:51.95 01:19.03 01:37.88 01:50.37 02:24.43
+     Temps du tronçon 00:17.27 00:16.30 00:14.33 00:04.03 00:27.07 00:18.84 00:12.49 00:34.05
+     Vitesse moyenne  49  43,7  35,7 43,1 48,9 46,7 42,3 44,1
+"""
+
+
+def test_obstacle_pdf_page_parsing():
+    from galoptrack import tracking_pdf as tp
+    assert tp.longueur_troncons(PAGE_OBSTACLE) == 1000
+    tr = tp._extraire_troncons_page_individuelle(PAGE_OBSTACLE)
+    assert [t['label'] for t in tr] == ['DEP-4000m', '4000m-3000m', '3000m-2000m', '2000m-1000m', '1000m-ARR']
+    assert [t['vitesse_kmh'] for t in tr] == [48.7, 43.9, 46.0, 46.6, 49.0]
+    assert [t['temps_sec'] for t in tr] == [32.5, 81.06, 79.69, 77.34, 74.62]
+    assert tr[-1]['cumul_sec'] == 345.23 and tr[1]['foulees'] == 167
+    cheval = {}
+    tp._parse_horse_header(PAGE_OBSTACLE, cheval)
+    assert cheval['position_arrivee'] == 1
+    assert cheval['temps_officiel_sec'] == 345.23
+    assert cheval['vitesse_moyenne_kmh'] == 46.5 and cheval['vitesse_max_kmh'] == 54.32
