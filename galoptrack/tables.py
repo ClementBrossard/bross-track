@@ -31,6 +31,8 @@ COLS_CHEVAUX = [
     'ordre_arrivee', 'ecart_precedent', 'commentaire_course',
     # anciennement cotes_data.csv (même appel API /participants)
     'cote_directe',
+    # PLAT / HAIES / STEEPLE / CROSS (vide dans l'historique = plat)
+    'discipline',
 ]
 
 COLS_RAPPORTS = [
@@ -46,7 +48,7 @@ COLS_COMBINES = [
 ]
 
 SCHEMAS = {
-    'tracking': COLS_MAIN,
+    'tracking': COLS_MAIN + ['discipline'],
     'troncons': COLS_TRONC,
     'chevaux': COLS_CHEVAUX,
     'rapports': COLS_RAPPORTS,

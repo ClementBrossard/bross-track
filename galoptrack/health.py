@@ -29,6 +29,13 @@ def _d(i):
     return datetime.strptime(str(int(i)), '%Y%m%d').date()
 
 
+def _is_obstacle(df):
+    if 'discipline' not in df.columns:
+        return pd.Series(False, index=df.index)
+    disc = df['discipline'].fillna('').astype(str).str.upper()
+    return (disc != '') & (disc != 'PLAT')
+
+
 def _race_set(df, since=None):
     if df is None or df.empty:
         return set()
@@ -105,6 +112,7 @@ def compute(storage, today=None, dashboard_stats=None):
         row = {
             'date': di,
             'courses': len(races),
+            'obstacles': len(_race_set(chd[_is_obstacle(chd)])) if len(chd) else 0,
             'avec_arrivee': len(races_arr),
             'tracking': len(day_set('tracking')),
             'troncons': len(day_set('troncons')),
@@ -117,7 +125,7 @@ def compute(storage, today=None, dashboard_stats=None):
             if row['avec_arrivee'] < row['courses']:
                 alert(WARN, f"{label} : {row['courses'] - row['avec_arrivee']} course(s) sans arrivée")
             if row['tracking'] == 0:
-                alert(WARN, f"{label} : aucun PDF de tracking récupéré ({row['courses']} courses de plat)")
+                alert(WARN, f"{label} : aucun PDF de tracking récupéré ({row['courses']} courses)")
             if row['rapports'] < row['avec_arrivee']:
                 alert(INFO if i == 1 else WARN,
                       f"{label} : rapports définitifs manquants pour {row['avec_arrivee'] - row['rapports']} course(s)")
@@ -168,7 +176,7 @@ def compute(storage, today=None, dashboard_stats=None):
 
     # 6. Courses du jour
     if dashboard_stats is not None:
-        if dashboard_stats.get('races_today', 0) and not dashboard_stats.get('horses_scored') and version:
+        if dashboard_stats.get('races_today_plat', dashboard_stats.get('races_today', 0)) and not dashboard_stats.get('horses_scored') and version:
             alert(ERROR, "Courses du jour présentes mais aucun cheval scoré par le modèle")
 
     worst = max((a['level'] for a in alerts), key=lambda l: _LEVEL_ORDER[l], default=OK)
@@ -245,7 +253,8 @@ def render_page(h):
     for r in h['recent_days']:
         dd = _d(r['date'])
         cotes = '—' if r['cotes_pct'] is None else f"{r['cotes_pct']:.0%}"
-        day_rows += (f'<tr><td>{jours[dd.weekday()]} {dd:%d/%m}</td>{cell(r["courses"])}'
+        obst = f' ({r["obstacles"]})' if r.get('obstacles') else ''
+        day_rows += (f'<tr><td>{jours[dd.weekday()]} {dd:%d/%m}</td><td class="n">{r["courses"]}{obst}</td>'
                      f'{cell(r["avec_arrivee"], r["courses"])}{cell(r["tracking"])}'
                      f'{cell(r["troncons"], r["tracking"])}{cell(r["rapports"], r["avec_arrivee"])}'
                      f'<td class="n">{cotes}</td></tr>')
@@ -303,7 +312,7 @@ a{{color:var(--green)}}
 {table_rows}</table></section>
 
 <section><h2>{RECENT_DAYS} derniers jours</h2><table>
-<tr><th>Jour</th><th class="n">Courses plat</th><th class="n">Avec arrivée</th><th class="n">PDF tracking</th>
+<tr><th>Jour</th><th class="n">Courses (dont obst.)</th><th class="n">Avec arrivée</th><th class="n">PDF tracking</th>
 <th class="n">Tronçons</th><th class="n">Rapports</th><th class="n">Cotes</th></tr>
 {day_rows}</table></section>
 

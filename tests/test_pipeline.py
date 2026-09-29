@@ -10,9 +10,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from galoptrack import dashboard, migrate, model_store, tables, train
+from galoptrack import dashboard, migrate, model_store, pmu, tables, train
 from galoptrack.features import FEATURES, build_features
-from galoptrack.races import build_races
+from galoptrack.races import build_races, is_plat
 from galoptrack.storage import LocalStorage
 
 from .reference_notebook import notebook_features
@@ -144,9 +144,14 @@ def test_train_and_dashboard_end_to_end(tmp_path, raw, monkeypatch):
     for i, h in enumerate(today['horses']):
         h.update({'pa': None, 'tr': [], 'cote': 2.0 + i})
     races_list.append(today)
+    # Même course en obstacles : jamais scorée (modèle de plat)
+    obst = copy.deepcopy(today)
+    obst.update({'id': 'TODAY_AUT_R2_1', 'hippo': 'AUT', 'rnum': 2, 'disc': 'HAIES'})
+    races_list.append(obst)
     booster, calib, backtest, _ = model_store.load_version(st, 'v1')
     n = dashboard.score_today(races_list, labels_array, booster, calib)
     assert n == len(today['horses'])
+    assert not any('model_prob' in h for h in obst['horses'])
     probs = [h['model_prob'] for h in today['horses']]
     assert abs(sum(probs) - 100) < 0.5
     assert all(len(h['shap_top']) == 8 for h in today['horses'])
@@ -318,3 +323,65 @@ def test_health_alerts_when_daily_did_not_run(tmp_path, raw):
     h = health.compute(st, today=date(2026, 9, 28))
     assert any(a['level'] == 'error' and "n'a pas tourné" in a['msg'] for a in h['alerts'])
     assert 'gt-health-badge' in health.badge_html(h)
+
+
+# ── Obstacles ───────────────────────────────────────────────────────────────
+
+def test_discipline_galop():
+    assert pmu.discipline_galop({'specialite': 'PLAT', 'discipline': 'PLAT'}) == 'PLAT'
+    assert pmu.discipline_galop({'specialite': 'OBSTACLE', 'discipline': 'HAIE'}) == 'HAIES'
+    assert pmu.discipline_galop({'discipline': 'STEEPLECHASE'}) == 'STEEPLE'
+    assert pmu.discipline_galop({'discipline': 'CROSS_COUNTRY'}) == 'CROSS'
+    assert pmu.discipline_galop({'specialite': 'OBSTACLE'}) == 'OBSTACLE'
+    assert pmu.discipline_galop({'specialite': 'TROT_ATTELE', 'discipline': 'ATTELE'}) is None
+    assert pmu.wanted('HAIES', None) and pmu.wanted('HAIES', {'obstacle'})
+    assert not pmu.wanted('HAIES', {'plat'}) and not pmu.wanted(None, None)
+
+
+def test_list_courses_galop_filters(monkeypatch):
+    def course(n, spec, disc):
+        return {'numOrdre': n, 'specialite': spec, 'discipline': disc, 'statut': 'FIN_COURSE'}
+    prog = {'programme': {'reunions': [
+        {'numOfficiel': 1, 'pays': {'code': 'FRA'}, 'hippodrome': {'libelleLong': 'AUTEUIL'},
+         'courses': [course(1, 'OBSTACLE', 'HAIE'), course(2, 'OBSTACLE', 'STEEPLECHASE'), course(3, 'PLAT', 'PLAT')]},
+        {'numOfficiel': 2, 'pays': {'code': 'FRA'}, 'hippodrome': {'libelleLong': 'CHANTILLY'},
+         'courses': [course(1, 'PLAT', 'PLAT')]},
+        {'numOfficiel': 3, 'pays': {'code': 'FRA'}, 'hippodrome': {'libelleLong': 'VINCENNES'},
+         'courses': [course(1, 'TROT_ATTELE', 'ATTELE')]},
+    ]}}
+    monkeypatch.setattr(pmu, 'fetch_programme', lambda d: prog)
+    from datetime import date
+    allc = pmu.list_courses_galop(date(2026, 9, 26))
+    assert [(c['code_hippo'], c['num_course'], c['discipline']) for c in allc] == [
+        ('AUT', 1, 'HAIES'), ('AUT', 2, 'STEEPLE'), ('AUT', 3, 'PLAT'), ('CHA', 1, 'PLAT')]
+    assert [c['code_hippo'] for c in pmu.list_courses_plat(date(2026, 9, 26))] == ['AUT', 'CHA']
+    assert len(pmu.list_courses_galop(date(2026, 9, 26), {'obstacle'})) == 2
+
+
+def test_obstacles_stay_out_of_model_features(raw):
+    """Des courses d'obstacles ajoutées aux tables ne changent pas les
+    features du plat (entraînement et scoring filtrent le plat)."""
+    ch = raw['chevaux'].copy()
+    tr = raw['tracking'].copy()
+    last = pd.to_numeric(ch['date']).max()
+    obst = ch[pd.to_numeric(ch['date']) == last].copy()
+    obst['code_hippo'] = 'AUT'
+    obst['num_reunion'] = 9
+    obst['discipline'] = 'HAIES'
+    obst_tr = tr[pd.to_numeric(tr['date']) == last].copy()
+    obst_tr['code_hippo'] = 'AUT'
+    obst_tr['num_reunion'] = 9
+    obst_tr['discipline'] = 'HAIES'
+    ch2 = pd.concat([ch, obst], ignore_index=True)
+    tr2 = pd.concat([tr, obst_tr], ignore_index=True)
+
+    races, labels, _ = build_races(tr2, raw['troncons'], ch2)
+    discs = {r['disc'] for r in races}
+    assert discs == {'PLAT', 'HAIES'}
+    assert all(r['disc'] == 'HAIES' for r in races if r['hippo'] == 'AUT')
+
+    ref_races, ref_labels, _ = build_races(raw['tracking'], raw['troncons'], raw['chevaux'])
+    a = build_features([r for r in races if is_plat(r)], labels)
+    b = build_features(ref_races, ref_labels)
+    cols = [c for c in FEATURES if c not in ('terrain', 'piste', 'hippo', 'cat', 'sx', 'oe')]
+    pd.testing.assert_frame_equal(a[cols].reset_index(drop=True), b[cols].reset_index(drop=True))

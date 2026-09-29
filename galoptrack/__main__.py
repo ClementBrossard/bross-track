@@ -26,12 +26,24 @@ def _dates(args):
     return list(config.date_range(start, end))
 
 
+def _disciplines(v):
+    """'plat', 'obstacle', 'plat,obstacle' ou 'tout' -> ensemble (None = tout)."""
+    if not v or v.strip().lower() in ('tout', 'all'):
+        return None
+    out = {x.strip().lower() for x in v.split(',') if x.strip()}
+    bad = out - {'plat', 'obstacle'}
+    if bad:
+        raise SystemExit(f"Discipline inconnue : {', '.join(sorted(bad))} (plat, obstacle ou tout)")
+    return out
+
+
 def cmd_collect(storage, args):
     days = _dates(args)
     # Écriture par blocs de 7 jours : un long rattrapage interrompu garde
     # ce qui a déjà été collecté.
     for i in range(0, len(days), 7):
-        summary = collect.collect_days(storage, days[i:i + 7], what=args.what.split(','))
+        summary = collect.collect_days(storage, days[i:i + 7], what=args.what.split(','),
+                                       disciplines=_disciplines(args.disciplines))
         print(json.dumps({k: v for k, v in summary.items() if k != 'errors'}, indent=1))
         print(f"{len(summary['errors'])} erreur(s)/absence(s) — détail dans logs/ du stockage")
         for e in summary['errors'][:30]:
@@ -152,6 +164,7 @@ def main(argv=None):
     s.add_argument('--from', dest='date_from', required=True, help="YYYY-MM-DD, 'yesterday'...")
     s.add_argument('--to', dest='date_to')
     s.add_argument('--what', default='tracking,participants,rapports')
+    s.add_argument('--disciplines', default='tout', help="plat, obstacle ou tout (défaut)")
     s.set_defaults(func=cmd_collect)
 
     s = sub.add_parser('dashboard')

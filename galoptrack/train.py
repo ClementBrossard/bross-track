@@ -10,7 +10,7 @@ import pandas as pd
 
 from . import config, model_store, tables
 from .features import CAT_COLS, FEATURES, build_features
-from .races import build_races
+from .races import build_races, is_plat
 
 log = logging.getLogger(__name__)
 
@@ -27,7 +27,10 @@ def load_feature_frame(storage):
     tc = tables.read_table(storage, 'troncons')
     ch = tables.read_table(storage, 'chevaux')
     races_list, labels_array, _ = build_races(tr, tc, ch)
-    log.info("Courses construites : %d (trackées %d)", len(races_list),
+    # Le modèle est un modèle de plat : les obstacles n'entrent ni dans
+    # l'entraînement ni dans l'historique des features (Elo, forme...).
+    races_list = [r for r in races_list if is_plat(r)]
+    log.info("Courses de plat construites : %d (trackées %d)", len(races_list),
              sum(1 for r in races_list if r.get('tracked')))
     return build_features(races_list, labels_array)
 

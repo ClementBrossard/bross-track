@@ -56,23 +56,56 @@ def _type_piste(c):
     return c.get('typePiste') or ('PSF' if 'SABLE' in parcours else ('HERBE' if 'HERBE' in parcours else ''))
 
 
-def list_courses_plat(d: date):
-    """Courses de plat françaises du jour, avec toutes les infos de niveau
-    course utilisées par le tracking et l'enrichissement."""
+PLAT = 'PLAT'
+
+
+def discipline_galop(c):
+    """Discipline d'une course du programme PMU : PLAT, HAIES, STEEPLE, CROSS
+    (OBSTACLE si le type exact manque), None pour le trot."""
+    s = ' '.join(str(c.get(k) or '') for k in ('specialite', 'discipline')).upper()
+    if 'PLAT' in s:
+        return PLAT
+    for mot, disc in (('HAIE', 'HAIES'), ('STEEPLE', 'STEEPLE'), ('CROSS', 'CROSS'), ('OBSTACLE', 'OBSTACLE')):
+        if mot in s:
+            return disc
+    return None
+
+
+def wanted(disc, disciplines):
+    """disciplines : None (tout le galop), ou ensemble parmi 'plat' / 'obstacle'."""
+    if disc is None:
+        return False
+    if not disciplines:
+        return True
+    return ('plat' if disc == PLAT else 'obstacle') in disciplines
+
+
+def _reunion_francaise(reunion, code_hippo):
+    pays = ((reunion.get('pays') or {}).get('code') or '').upper()
+    return code_hippo in CODES_FRANCE or pays == 'FRA'
+
+
+def list_courses_galop(d: date, disciplines=None):
+    """Courses de galop françaises du jour (plat et obstacles), avec toutes les
+    infos de niveau course utilisées par le tracking et l'enrichissement.
+    Le plat reste limité aux hippodromes de CODES_FRANCE (périmètre historique
+    du modèle) ; les obstacles acceptent toute réunion en France."""
     prog = fetch_programme(d)
     if not prog:
         return []
     courses = []
     for reunion in prog.get('programme', {}).get('reunions', []):
         code_hippo = reunion_code(reunion)
-        if not code_hippo or code_hippo not in CODES_FRANCE:
+        if not code_hippo or not _reunion_francaise(reunion, code_hippo):
             continue
         num_reunion = reunion.get('numOfficiel') or reunion.get('numReunion') or reunion.get('numero', 0)
         if not num_reunion:
             continue
         for c in reunion.get('courses', []):
-            disc = (c.get('specialite') or c.get('discipline') or '').upper()
-            if 'PLAT' not in disc:
+            disc = discipline_galop(c)
+            if not wanted(disc, disciplines):
+                continue
+            if disc == PLAT and code_hippo not in CODES_FRANCE:
                 continue
             if 'ANNUL' in (c.get('statut') or '').upper():
                 continue
@@ -85,6 +118,7 @@ def list_courses_plat(d: date):
                 'num_reunion': num_reunion,
                 'num_course': num_course,
                 'trackee': c.get('courseTrackee', False),
+                'discipline': disc,
                 'libelle': c.get('libelle', ''),
                 # tracking_data.csv
                 'terrain': penetro.get('intitule', ''),
@@ -101,6 +135,10 @@ def list_courses_plat(d: date):
                 'duree_course_ms': c.get('dureeCourse', ''),
             })
     return courses
+
+
+def list_courses_plat(d: date):
+    return list_courses_galop(d, disciplines={'plat'})
 
 
 def fetch_participants(d: date, num_reunion, num_course):
