@@ -4,6 +4,7 @@
   collect --from --to   collecte / rattrapage d'une période
   dashboard             régénère le dashboard (cotes du jour à jour)
   train                 réentraîne le modèle (run mensuel)
+  promote --version vN  met une version déjà entraînée en production (ou revient en arrière)
   migrate               import unique de l'historique Drive (raw/)
   status                état des tables et du modèle
   backup [--label | --list]           sauvegarde des tables (backups/<nom>/)
@@ -188,6 +189,15 @@ def cmd_experiment_opp(storage, args):
     print(experiment.run_opposition(storage))
 
 
+def cmd_promote(storage, args):
+    versions = model_store.list_versions(storage)
+    if args.version not in versions:
+        raise SystemExit(f"Version inconnue : {args.version} (disponibles : {', '.join(versions)})")
+    before = model_store.current_version(storage)
+    model_store.set_current(storage, args.version)
+    print(f"Modèle en production : {before} -> {args.version}")
+
+
 def cmd_train(storage, args):
     meta = train.run(storage, promote=not args.no_promote)
     print(json.dumps(meta, indent=1, default=str))
@@ -253,6 +263,10 @@ def main(argv=None):
         .set_defaults(func=cmd_experiment)
     sub.add_parser('experiment-adversaires', help="niveau des adversaires affrontés vs peloton du jour (n'écrit rien)") \
         .set_defaults(func=cmd_experiment_opp)
+
+    s = sub.add_parser('promote', help="met une version déjà entraînée en production (ex. v9)")
+    s.add_argument('--version', required=True)
+    s.set_defaults(func=cmd_promote)
 
     sub.add_parser('migrate').set_defaults(func=cmd_migrate)
     sub.add_parser('status').set_defaults(func=cmd_status)

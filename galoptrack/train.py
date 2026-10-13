@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from . import config, model_store, tables
-from .features import CAT_COLS, FEATURES, build_features
+from .features import BASE_FEATURES, CAT_COLS, FEATURES, build_features
 from .races import build_races, is_plat
 
 log = logging.getLogger(__name__)
@@ -157,18 +157,31 @@ def run(storage, promote=True):
     le garde-fou. Retourne le résumé."""
     fdf = load_feature_frame(storage)
     model, calib, backtest, metrics = train_model(fdf)
+    # Témoin : même entraînement avec les 37 variables d'origine (v1-v8), sur
+    # exactement la même période. La nouvelle version ne passe en production
+    # que si elle ne fait pas moins bien que ce témoin (tolérance 0,5 point).
+    base = None
+    if FEATURES != BASE_FEATURES:
+        _, _, _, bm = train_model(fdf, features=BASE_FEATURES)
+        base = {k: bm[k] for k in ('hit_rate_top1', 'ndcg@1', 'ndcg@3', 'n_valid_races')}
     version = model_store.next_version(storage)
     previous = model_store.current_version(storage)
     meta = {'version': version, 'trained_at': config.now_paris().isoformat(timespec='seconds'),
-            'previous': previous, 'metrics': metrics, 'features': FEATURES}
+            'previous': previous, 'metrics': metrics, 'features': FEATURES,
+            'temoin_37_variables': base}
     model_store.save_version(storage, version, model.model_to_string(), calib, backtest, meta)
 
     hit = metrics['hit_rate_top1'] or 0
-    promoted = bool(promote and hit >= config.MIN_HIT_RATE_TOP1)
+    not_worse = base is None or hit >= (base['hit_rate_top1'] or 0) - config.MAX_DROP_VS_TEMOIN
+    promoted = bool(promote and hit >= config.MIN_HIT_RATE_TOP1 and not_worse)
     if promoted:
         model_store.set_current(storage, version)
     meta['promoted'] = promoted
     model_store.write_meta(storage, version, meta)
+    if base:
+        log.info("Témoin 37 variables, même période : hit-rate top1 %.1f%%", (base['hit_rate_top1'] or 0) * 100)
     log.info("Modèle %s : hit-rate top1 %.1f%% -> %s", version, hit * 100,
-             "EN PRODUCTION" if promoted else f"non promu (seuil {config.MIN_HIT_RATE_TOP1:.0%})")
+             "EN PRODUCTION" if promoted else
+             ("non promu (demandé)" if not promote else
+              f"non promu (seuil {config.MIN_HIT_RATE_TOP1:.0%} ou moins bien que le témoin)"))
     return meta

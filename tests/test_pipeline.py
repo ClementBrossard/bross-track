@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 
 from galoptrack import dashboard, migrate, model_store, pmu, tables, train
-from galoptrack.features import FEATURES, build_features
+from galoptrack.features import BASE_FEATURES, FEATURES, FIELD_FEATURES, build_features, opposition_features
 from galoptrack.races import build_races, is_plat
 from galoptrack.storage import LocalStorage
 
@@ -49,7 +49,8 @@ def test_features_parity_with_notebook(built):
     new = new.sort_values(key).reset_index(drop=True)
     assert (ref[key].values == new[key].values).all()
     checked = 0
-    for f in FEATURES:
+    # Les 37 variables du notebook (les variables « peloton » de la v9 n'y existent pas)
+    for f in BASE_FEATURES:
         a, b = ref[f], new[f]
         if isinstance(a.dtype, pd.CategoricalDtype) or isinstance(b.dtype, pd.CategoricalDtype) or a.dtype == object:
             def norm(s):
@@ -60,7 +61,8 @@ def test_features_parity_with_notebook(built):
             np.testing.assert_allclose(a.astype(float).values, b.astype(float).values, rtol=1e-9,
                                        equal_nan=True, err_msg=f)
         checked += 1
-    assert checked == len(FEATURES)
+    assert checked == len(BASE_FEATURES)
+    assert all(new[f].notna().any() for f in FIELD_FEATURES)
     # Les features tronçons doivent être réellement calculées sur ces données
     assert new['accel_roll5'].notna().sum() > 100
     assert new['elo'].nunique() > 50
@@ -127,8 +129,11 @@ def test_train_and_dashboard_end_to_end(tmp_path, raw, monkeypatch):
     st = LocalStorage(tmp_path)
     _store_tables(st, raw)
     monkeypatch.setattr(train.config, 'MIN_HIT_RATE_TOP1', 0.0)
+    monkeypatch.setattr(train.config, 'MAX_DROP_VS_TEMOIN', 1.0)
     meta = train.run(st)
     assert meta['promoted'] and model_store.current_version(st) == 'v1'
+    # Témoin à 37 variables entraîné sur la même période
+    assert meta['temoin_37_variables']['n_valid_races'] == meta['metrics']['n_valid_races']
     m = meta['metrics']
     assert m['n_valid_races'] > 20
     # Les chevaux ont une vraie « ability » cachée : le modèle doit battre le hasard
@@ -152,6 +157,15 @@ def test_train_and_dashboard_end_to_end(tmp_path, raw, monkeypatch):
     n = dashboard.score_today(races_list, labels_array, booster, calib)
     assert n == len(today['horses'])
     assert not any('model_prob' in h for h in obst['horses'])
+    # « Peloton déjà dépassé » renseigné, avec les meilleurs chevaux battus
+    assert any(h['opp']['pct'] is not None and h['opp']['best'] for h in today['horses'])
+    # Un modèle à 37 variables (v8) se score toujours avec ses propres variables
+    fdf_all = build_features([r for r in races_list if r.get('disc', 'PLAT') == 'PLAT'], labels_array)
+    m37, cal37, _, _ = train.train_model(fdf_all, features=BASE_FEATURES)
+    for h in today['horses']:
+        h.pop('model_prob', None)
+    assert dashboard.score_today(races_list, labels_array, m37, cal37) == len(today['horses'])
+    assert m37.feature_name() == BASE_FEATURES
     probs = [h['model_prob'] for h in today['horses']]
     assert abs(sum(probs) - 100) < 0.5
     assert all(len(h['shap_top']) == 8 for h in today['horses'])
@@ -476,7 +490,7 @@ def test_weight_features_use_only_the_past(built):
 def test_opposition_features_use_only_the_past(built):
     from galoptrack import experiment
     races_list, labels_array, _ = built
-    fdf = experiment.opposition_features(build_features(copy.deepcopy(races_list), labels_array))
+    fdf = opposition_features(build_features(copy.deepcopy(races_list), labels_array))
     extra = ['field_avg', 'field_max', 'field_top3', 'beaten_vs_field_90', 'beaten_vs_top3_90',
              'field_below_bmax_90', 'field_below_bavg_90']
     for f in experiment.opposition_set(90) + experiment.opposition_set(180) + extra:
@@ -494,3 +508,15 @@ def test_opposition_features_use_only_the_past(built):
     both = fdf[['field_below_bmax_90', 'field_below_bavg_90']].dropna()
     assert both.min().min() >= 0 and both.max().max() <= 1
     assert (both['field_below_bmax_90'] >= both['field_below_bavg_90']).all()
+
+
+def test_promote_existing_version(tmp_path, capsys):
+    from galoptrack import __main__ as cli
+    st = LocalStorage(tmp_path)
+    for v in ('v8', 'v9'):
+        st.write_bytes(f'model/{v}/meta.json', b'{}')
+    model_store.set_current(st, 'v8')
+    cli.cmd_promote(st, type('A', (), {'version': 'v9'})())
+    assert model_store.current_version(st) == 'v9'
+    with pytest.raises(SystemExit):
+        cli.cmd_promote(st, type('A', (), {'version': 'v12'})())

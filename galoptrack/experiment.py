@@ -13,13 +13,12 @@ Expérience « poids » :
 
 import logging
 import os
-from collections import deque
 
 import numpy as np
 import pandas as pd
 
 from . import train
-from .features import FEATURES
+from .features import BASE_FEATURES, FEATURES
 
 log = logging.getLogger(__name__)
 
@@ -118,7 +117,7 @@ def _compare(fdf, valid, variants):
         only0 = sum(1 for r in common if h0[r][0] and not h1[r][0])
         total = sum(imp.values()) or 1
         ranked = sorted(imp, key=imp.get, reverse=True)
-        extra = [f for f in feats if f not in FEATURES]
+        extra = [f for f in feats if f not in res[names[0]][3]]
         md += [f"**{n}** : gagnant trouvé seulement par cette variante dans **{only1}** courses, "
                f"seulement par la production dans **{only0}** (sur {len(common)}).", ""]
         md += [f"- `{f}` : {imp[f] / total:.1%} de l'importance (rang {ranked.index(f) + 1}/{len(ranked)})"
@@ -138,100 +137,8 @@ def _publish(md):
 
 
 # ── Expérience « adversaires » ───────────────────────────────────────────────
-# Idée : un cheval qui a déjà affronté (ou battu) de très bons chevaux ces
-# derniers mois et qui retrouve aujourd'hui un peloton plus faible. Le niveau
-# d'un cheval = son Elo juste avant la course concernée (aucune fuite).
-
-def opposition_features(fdf, windows=(90, 180)):
-    """Ajoute, pour chaque fenêtre de N jours (courses strictement antérieures) :
-      opp_avg_{N}        niveau moyen des pelotons affrontés
-      opp_max_{N}        meilleur adversaire affronté
-      beaten_max_{N}     meilleur cheval battu
-      beaten_avg_{N}     niveau moyen des chevaux battus
-      drop_avg_{N}       opp_avg_{N} - niveau moyen du peloton du jour (> 0 : il descend de niveau)
-      beaten_vs_top_{N}  beaten_max_{N} - meilleur rival du jour (> 0 : il a déjà battu mieux)
-    et le niveau du peloton du jour : field_avg, field_max (rivaux seulement)."""
-    fdf = fdf.copy()
-    elo = fdf['elo'].to_numpy(dtype=float)
-    pa = fdf['pa_num'].to_numpy(dtype=float)
-    n = len(fdf)
-    field_avg, field_max, field_top3 = np.full(n, np.nan), np.full(n, np.nan), np.full(n, np.nan)
-    r_beaten_max, r_beaten_avg = np.full(n, np.nan), np.full(n, np.nan)
-    r_beaten_sum, r_beaten_cnt = np.zeros(n), np.zeros(n)
-    for idx in fdf.groupby('race_id').indices.values():
-        e, p = elo[idx], pa[idx]
-        if len(idx) < 2:
-            continue
-        tot = e.sum()
-        for k, i in enumerate(idx):
-            others = np.delete(e, k)
-            field_avg[i] = (tot - e[k]) / (len(idx) - 1)
-            field_max[i] = others.max()
-            field_top3[i] = np.sort(others)[-3:].mean()
-            if not np.isnan(p[k]):
-                b = e[(p > p[k])]
-                if len(b):
-                    r_beaten_max[i], r_beaten_avg[i] = b.max(), b.mean()
-                    r_beaten_sum[i], r_beaten_cnt[i] = b.sum(), len(b)
-    fdf['field_avg'], fdf['field_max'], fdf['field_top3'] = field_avg, field_max, field_top3
-
-    dates = pd.to_datetime(fdf['date'].astype(int).astype(str), format='%Y%m%d').to_numpy()
-    out = {f'{c}_{w}': np.full(n, np.nan) for w in windows
-           for c in ('opp_avg', 'opp_max', 'beaten_max', 'beaten_avg', 'beaten_pool')}
-    order = np.lexsort((fdf['is_today'].to_numpy(), dates, fdf['nom'].to_numpy()))
-    noms = fdf['nom'].to_numpy()
-    start = 0
-    while start < n:
-        end = start
-        while end < n and noms[order[end]] == noms[order[start]]:
-            end += 1
-        rows = order[start:end]
-        for w in windows:
-            win = deque()
-            for i in rows:
-                lim = dates[i] - np.timedelta64(w, 'D')
-                while win and dates[win[0]] < lim:
-                    win.popleft()
-                past = [j for j in win if dates[j] < dates[i]]
-                if past:
-                    fa = field_avg[past]
-                    fm = field_max[past]
-                    bm = r_beaten_max[past]
-                    ba = r_beaten_avg[past]
-                    if not np.isnan(fa).all():
-                        out[f'opp_avg_{w}'][i] = np.nanmean(fa)
-                        out[f'opp_max_{w}'][i] = np.nanmax(fm)
-                    if not np.isnan(bm).all():
-                        out[f'beaten_max_{w}'][i] = np.nanmax(bm)
-                        out[f'beaten_avg_{w}'][i] = np.nanmean(ba)
-                        # tous les chevaux battus de la période, à poids égal
-                        out[f'beaten_pool_{w}'][i] = r_beaten_sum[past].sum() / r_beaten_cnt[past].sum()
-                win.append(i)
-        start = end
-    for k, v in out.items():
-        fdf[k] = v
-    for w in windows:
-        fdf[f'drop_avg_{w}'] = fdf[f'opp_avg_{w}'] - fdf['field_avg']
-        fdf[f'beaten_vs_top_{w}'] = fdf[f'beaten_max_{w}'] - fdf['field_max']
-        fdf[f'beaten_vs_field_{w}'] = fdf[f'beaten_pool_{w}'] - fdf['field_avg']
-        fdf[f'beaten_vs_top3_{w}'] = fdf[f'beaten_pool_{w}'] - fdf['field_top3']
-        # Part du peloton du jour moins bien notée que les chevaux qu'il a déjà
-        # battus (meilleur battu / moyenne des battus)
-        bmax, bpool = fdf[f'beaten_max_{w}'].to_numpy(), fdf[f'beaten_pool_{w}'].to_numpy()
-        f_max, f_avg = np.full(n, np.nan), np.full(n, np.nan)
-        for idx in fdf.groupby('race_id').indices.values():
-            if len(idx) < 2:
-                continue
-            e = elo[idx]
-            for k, i in enumerate(idx):
-                others = np.delete(e, k)
-                if not np.isnan(bmax[i]):
-                    f_max[i] = (others < bmax[i]).mean()
-                if not np.isnan(bpool[i]):
-                    f_avg[i] = (others < bpool[i]).mean()
-        fdf[f'field_below_bmax_{w}'], fdf[f'field_below_bavg_{w}'] = f_max, f_avg
-    return fdf
-
+# Variables calculées par features.opposition_features (passées en production
+# pour la fenêtre de 3 mois, voir FIELD_FEATURES).
 
 def opposition_set(w):
     return [f'opp_avg_{w}', f'opp_max_{w}', f'beaten_max_{w}', f'beaten_avg_{w}',
@@ -281,7 +188,7 @@ def _compare_folds(fdf, variants, folds=FOLDS):
 
 
 def run_opposition(storage):
-    fdf = opposition_features(train.load_feature_frame(storage), windows=(90,))
+    fdf = train.load_feature_frame(storage)  # contient déjà la fenêtre de 3 mois
     ready, cutoff = _split(fdf)
     valid = ready[ready['date'] >= cutoff]
     md = [f"# Expérience adversaires (peloton entier) — 3 mois", "",
@@ -308,10 +215,10 @@ def run_opposition(storage):
     lean = ['beaten_vs_top_90', 'drop_avg_90']
     whole = ['beaten_vs_field_90', 'beaten_vs_top3_90', 'field_below_bmax_90', 'field_below_bavg_90']
     md += _compare_folds(fdf, {
-        'Production (37 variables)': FEATURES,
-        'A. Meilleur battu + descente (2)': FEATURES + lean,
-        'B. Peloton entier (4)': FEATURES + whole,
-        'A + B (6)': FEATURES + lean + whole,
+        'v1-v8 (37 variables)': BASE_FEATURES,
+        'A. Meilleur battu + descente (2)': BASE_FEATURES + lean,
+        'B. Peloton entier (4) = v9': BASE_FEATURES + whole,
+        'A + B (6)': BASE_FEATURES + lean + whole,
     })
     return _publish(md)
 
@@ -344,7 +251,7 @@ def run(storage):
 
     # 3. Modèle actuel vs modèle + poids, mêmes données, même coupure
     res = {}
-    for name, feats in (('Production (37 variables)', FEATURES),
+    for name, feats in (('Production', FEATURES),
                         ('Production + poids relatif', FEATURES + WEIGHT_FEATURES)):
         model, _, _, metrics = train.train_model(fdf, features=feats)
         res[name] = (metrics, _hits(valid, model.predict(valid[feats])),
