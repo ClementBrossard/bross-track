@@ -15,7 +15,10 @@ from .races import build_races, is_plat
 log = logging.getLogger(__name__)
 
 PARAMS = {'objective': 'lambdarank', 'metric': 'ndcg', 'ndcg_eval_at': [1, 3],
-          'learning_rate': 0.05, 'num_leaves': 31, 'min_data_in_leaf': 50, 'verbosity': -1}
+          'learning_rate': 0.05, 'num_leaves': 31, 'min_data_in_leaf': 50, 'verbosity': -1,
+          # Résultats reproductibles d'un run à l'autre (sinon le calcul
+          # multi-thread fait varier le modèle de quelques dixièmes de point)
+          'deterministic': True, 'force_row_wise': True, 'seed': 42}
 
 
 def _groups(d):
