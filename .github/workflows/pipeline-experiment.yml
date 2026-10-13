@@ -1,13 +1,19 @@
-name: Pipeline — expérience poids
+name: Pipeline — expériences modèle
 
-# Compare le modèle de production et un modèle + poids relatif sur les mêmes
-# données. Lecture seule : aucun modèle enregistré, rien d'écrit dans R2.
+# Compare le modèle de production et des variantes (poids relatif, niveau des
+# adversaires affrontés) sur les mêmes données. Lecture seule : aucun modèle enregistré, rien d'écrit dans R2.
 # Résultat dans le résumé du run.
 on:
   push:
     branches-ignore: [main]
     paths: ["galoptrack/experiment.py", ".github/workflows/pipeline-experiment.yml"]
   workflow_dispatch:
+    inputs:
+      experience:
+        description: "Expérience à lancer"
+        type: choice
+        options: [adversaires, poids]
+        default: adversaires
 
 jobs:
   experiment:
@@ -26,4 +32,4 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-pipeline.txt
       - run: pip install -r requirements-pipeline.txt
-      - run: python -m galoptrack experiment-poids
+      - run: python -m galoptrack "experiment-${{ inputs.experience || 'adversaires' }}"

@@ -471,3 +471,20 @@ def test_weight_features_use_only_the_past(built):
     # La course précédente d'un cheval n'est jamais celle du jour même
     first = fdf.groupby('nom').head(1)
     assert first['pd_delta_last'].isna().all() and first['last_race_beaten_pd_diff'].isna().all()
+
+
+def test_opposition_features_use_only_the_past(built):
+    from galoptrack import experiment
+    races_list, labels_array, _ = built
+    fdf = experiment.opposition_features(build_features(copy.deepcopy(races_list), labels_array))
+    for f in experiment.opposition_set(90) + experiment.opposition_set(180) + ['field_avg', 'field_max']:
+        assert f in fdf and fdf[f].notna().any(), f
+    # Première course d'un cheval : aucun historique d'adversaires
+    first = fdf.sort_values(['date', 'is_today']).groupby('nom').head(1)
+    assert first['opp_avg_90'].isna().all() and first['beaten_max_180'].isna().all()
+    # Peloton du jour : moyenne des Elo des rivaux (le cheval lui-même exclu)
+    r = fdf[fdf['race_id'] == fdf['race_id'].iloc[0]]
+    i = r.index[0]
+    assert np.isclose(fdf.at[i, 'field_avg'], r['elo'].drop(i).mean())
+    # 6 mois couvrent au moins autant de courses que 3 mois
+    assert fdf['opp_avg_180'].notna().sum() >= fdf['opp_avg_90'].notna().sum()

@@ -184,6 +184,10 @@ def cmd_experiment(storage, args):
     print(experiment.run(storage))
 
 
+def cmd_experiment_opp(storage, args):
+    print(experiment.run_opposition(storage))
+
+
 def cmd_train(storage, args):
     meta = train.run(storage, promote=not args.no_promote)
     print(json.dumps(meta, indent=1, default=str))
@@ -247,6 +251,8 @@ def main(argv=None):
 
     sub.add_parser('experiment-poids', help="compare le modèle avec / sans poids relatif (n'écrit rien)") \
         .set_defaults(func=cmd_experiment)
+    sub.add_parser('experiment-adversaires', help="niveau des adversaires affrontés vs peloton du jour (n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_opp)
 
     sub.add_parser('migrate').set_defaults(func=cmd_migrate)
     sub.add_parser('status').set_defaults(func=cmd_status)
