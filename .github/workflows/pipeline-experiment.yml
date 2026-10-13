@@ -6,7 +6,7 @@ name: Pipeline — expériences modèle
 on:
   push:
     branches-ignore: [main]
-    paths: ["galoptrack/experiment.py", ".github/workflows/pipeline-experiment.yml"]
+    paths: ["galoptrack/experiment.py", "galoptrack/features.py", "galoptrack/train.py", ".github/workflows/pipeline-experiment.yml"]
   workflow_dispatch:
     inputs:
       experience:
