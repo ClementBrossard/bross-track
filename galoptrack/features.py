@@ -25,11 +25,15 @@ FEATURES = ['hv', 'ag', 'sx', 'oe', 'dist', 'alloc', 'cat', 'piste', 'terrain', 
             'elo', 'days_since_last', 'alloc_delta', 'alloc_ratio',
             'last_race_opp_elo_ahead_avg', 'last_race_opp_elo_ahead_max',
             'last_race_opp_elo_beaten_avg', 'last_race_opp_elo_beaten_max']
-# v1 à v8 : les 37 variables ci-dessus. v9 : + niveau des chevaux battus sur
-# 3 mois comparé au peloton du jour (expérience « adversaires », PR #17).
 BASE_FEATURES = list(FEATURES)
+# Niveau des chevaux battus sur 3 mois comparé au peloton du jour : calculées
+# (affichées dans l'onglet Modèle) mais PAS utilisées par le modèle. Testées
+# sur 4 périodes (expérience « adversaires ») : signal brut net (14,6 % de
+# victoires contre 6,2 %), mais aucun gain du modèle au-delà du bruit (24,8 %
+# contre 24,7 %), l'Elo et les face-à-face portant déjà l'information. Pour
+# les ajouter un jour : FEATURES = BASE_FEATURES + FIELD_FEATURES (l'entraînement
+# compare alors automatiquement au témoin à 37 variables).
 FIELD_FEATURES = ['beaten_vs_field_90', 'beaten_vs_top3_90', 'field_below_bmax_90', 'field_below_bavg_90']
-FEATURES = BASE_FEATURES + FIELD_FEATURES
 CAT_COLS = ['sx', 'oe', 'cat', 'piste', 'terrain', 'hippo']
 
 SORT_CHRONO = ['date', 'is_today', 'race_id']

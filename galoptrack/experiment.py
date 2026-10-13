@@ -215,9 +215,9 @@ def run_opposition(storage):
     lean = ['beaten_vs_top_90', 'drop_avg_90']
     whole = ['beaten_vs_field_90', 'beaten_vs_top3_90', 'field_below_bmax_90', 'field_below_bavg_90']
     md += _compare_folds(fdf, {
-        'v1-v8 (37 variables)': BASE_FEATURES,
+        'Production (37 variables)': BASE_FEATURES,
         'A. Meilleur battu + descente (2)': BASE_FEATURES + lean,
-        'B. Peloton entier (4) = v9': BASE_FEATURES + whole,
+        'B. Peloton entier (4)': BASE_FEATURES + whole,
         'A + B (6)': BASE_FEATURES + lean + whole,
     })
     return _publish(md)

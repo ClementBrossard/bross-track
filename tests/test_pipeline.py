@@ -130,6 +130,8 @@ def test_train_and_dashboard_end_to_end(tmp_path, raw, monkeypatch):
     _store_tables(st, raw)
     monkeypatch.setattr(train.config, 'MIN_HIT_RATE_TOP1', 0.0)
     monkeypatch.setattr(train.config, 'MAX_DROP_VS_TEMOIN', 1.0)
+    # Modèle à 41 variables (37 + peloton) pour tester le témoin et le scoring mixte
+    monkeypatch.setattr(train, 'FEATURES', BASE_FEATURES + FIELD_FEATURES)
     meta = train.run(st)
     assert meta['promoted'] and model_store.current_version(st) == 'v1'
     # Témoin à 37 variables entraîné sur la même période
