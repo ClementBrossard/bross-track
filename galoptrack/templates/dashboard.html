@@ -3402,6 +3402,7 @@ function renderModele(){
       <td style="padding:7px 10px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--ink-soft);">${h.npart ?? '—'}</td>
       <td style="padding:7px 10px;font-size:13px;font-weight:600;"><span class="horse-link">${h.nom}</span></td>
       <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;">${h.cote ? h.cote.toFixed(1) : '—'}</td>
+      <td style="padding:7px 10px;text-align:right;white-space:nowrap;">${weightCell(h)}</td>
       <td style="padding:7px 10px;min-width:170px;">
         <div style="background:#ece6d4;border-radius:3px;height:13px;margin-bottom:2px;">
           <div style="background:var(--green);height:13px;border-radius:3px;width:${wModel}%;"></div>
@@ -3441,7 +3442,7 @@ function renderModele(){
   }).join('');
 
   container.innerHTML = `
-    <p class="count">Probabilités calibrées du modèle vs probabilité implicite du marché (1/cote).</p>
+    <p class="count">Probabilités calibrées du modèle vs probabilité implicite du marché (1/cote). Poids : le modèle ne l'utilise pas ; écart avec la dernière course et avec la moyenne du champ (vert = plus léger, rouge = plus lourd), décharge du jockey.</p>
     <table style="width:100%;border-collapse:collapse;background:var(--paper);border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-bottom:26px;">
       <thead>
         <tr style="text-align:left;border-bottom:2px solid var(--green);background:var(--green);">
@@ -3449,6 +3450,7 @@ function renderModele(){
           <th style="padding:8px 10px;font-size:12px;color:var(--paper);text-align:center;">N°</th>
           <th style="padding:8px 10px;font-size:12px;color:var(--paper);">Cheval</th>
           <th style="padding:8px 10px;font-size:12px;color:var(--paper);text-align:right;">Cote</th>
+          <th style="padding:8px 10px;font-size:12px;color:var(--paper);text-align:right;">Poids</th>
           <th style="padding:8px 10px;font-size:12px;color:var(--paper);">Proba modèle</th>
           <th style="padding:8px 10px;font-size:12px;color:var(--paper);">Proba marché</th>
           <th style="padding:8px 10px;font-size:12px;color:var(--paper);text-align:right;">Écart</th>
@@ -3475,6 +3477,20 @@ function renderModele(){
   container.querySelectorAll('[data-toggle-shap]').forEach(el=>{
     el.addEventListener('click', ()=> toggleShapPanel(parseInt(el.dataset.toggleShap,10)));
   });
+}
+
+function weightCell(h){
+  const w = h.w;
+  if(!w) return '<span style="color:var(--ink-soft);">—</span>';
+  const num = v => String(v).replace('.', ',');
+  const sign = v => (v > 0 ? '+' : '') + num(v);
+  const col = v => v < 0 ? 'var(--green)' : (v > 0 ? '#a8402c' : 'var(--ink-soft)');
+  const lines = [];
+  if(w.delta !== undefined) lines.push(`<span style="color:${col(w.delta)};">${sign(w.delta)} vs dern.</span>`);
+  if(w.field !== undefined) lines.push(`<span style="color:${col(w.field)};">${sign(w.field)} vs moy.</span>`);
+  if(w.decharge) lines.push(`déch. ${num(w.decharge)}`);
+  return `<div style="font-family:'JetBrains Mono',monospace;font-size:13px;">${num(w.kg)} kg</div>`
+    + `<div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--ink-soft);line-height:1.35;">${lines.join('<br>')}</div>`;
 }
 
 function toggleShapPanel(idx){

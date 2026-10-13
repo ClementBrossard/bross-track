@@ -35,7 +35,9 @@ def load_feature_frame(storage):
     return build_features(races_list, labels_array)
 
 
-def train_model(fdf, num_boost_round=500, early_stopping=30):
+def train_model(fdf, num_boost_round=500, early_stopping=30, features=None):
+    """`features` : liste à utiliser (défaut FEATURES) — pour les expériences."""
+    features = features or FEATURES
     import lightgbm as lgb
     from sklearn.isotonic import IsotonicRegression
 
@@ -53,14 +55,14 @@ def train_model(fdf, num_boost_round=500, early_stopping=30):
     valid = model_ready[model_ready['date'] >= cutoff].copy()
     log.info("Coupure temporelle : %s | train %d lignes | valid %d lignes", cutoff, len(train), len(valid))
 
-    lgb_train = lgb.Dataset(train[FEATURES], label=train['label'], group=_groups(train),
+    lgb_train = lgb.Dataset(train[features], label=train['label'], group=_groups(train),
                             categorical_feature=CAT_COLS, free_raw_data=False)
-    lgb_valid = lgb.Dataset(valid[FEATURES], label=valid['label'], group=_groups(valid),
+    lgb_valid = lgb.Dataset(valid[features], label=valid['label'], group=_groups(valid),
                             categorical_feature=CAT_COLS, reference=lgb_train, free_raw_data=False)
     model = lgb.train(PARAMS, lgb_train, num_boost_round=num_boost_round, valid_sets=[lgb_valid],
                       callbacks=[lgb.early_stopping(early_stopping), lgb.log_evaluation(50)])
 
-    valid['pred'] = model.predict(valid[FEATURES])
+    valid['pred'] = model.predict(valid[features])
     hits_model, hits_hv, hits_mu = [], [], []
     for _, g in valid.groupby('race_id'):
         if g['win'].sum() == 0:

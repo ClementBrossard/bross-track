@@ -62,6 +62,15 @@ def parse_participant(p):
             except (TypeError, ValueError):
                 pass
 
+    # Poids « handicap » (avant décharge du jockey) : même source que
+    # l'historique (collect.participant_row), pour comparer d'une course à l'autre
+    pdh = None
+    try:
+        v = float(p.get('handicapPoids'))
+        pdh = round(v / 10, 1) if v > 200 else round(v, 1)
+    except (TypeError, ValueError):
+        pass
+
     gains_obj = p.get('gainsParticipant') or {}
     gains = None
     if isinstance(gains_obj, dict) and gains_obj.get('gainsCarriere') is not None:
@@ -90,6 +99,7 @@ def parse_participant(p):
         'npart': si(p.get('numPmu')),
         'cd': si(p.get('placeCorde')),
         'pd': poids_kg,
+        'pdh': pdh,
         'mu': sn(p.get('musique')),
         'oe': sn(p.get('oeilleres')),
         'nc': si(p.get('nombreCourses')),
@@ -162,6 +172,43 @@ def add_today_races(races_list, day: date):
             added += 1
     log.info("Courses du jour ajoutées : %d (%d déjà courues ignorées)", added, skipped)
     return added
+
+
+def add_weight_info(races_list):
+    """Pour chaque cheval des courses du jour : poids, écart avec sa dernière
+    course de la même famille (plat / obstacles), écart avec la moyenne du
+    champ, décharge. Affichage seulement : le modèle n'utilise pas le poids."""
+    fam = lambda r: 'PLAT' if is_plat(r) else 'OBS'
+    hist = defaultdict(list)
+    for r in races_list:
+        if r.get('today'):
+            continue
+        for h in r['horses']:
+            if h.get('pd') is not None:
+                hist[(h['nom'], fam(r))].append((r['date'], float(h['pd'])))
+    n = 0
+    for r in races_list:
+        if not r.get('today'):
+            continue
+        poids = {h['nom']: h.get('pdh') if h.get('pdh') is not None else h.get('pd') for h in r['horses']}
+        vals = [float(v) for v in poids.values() if v is not None]
+        moyenne = sum(vals) / len(vals) if len(vals) > 1 else None
+        for h in r['horses']:
+            w = poids[h['nom']]
+            if w is None:
+                continue
+            info = {'kg': w}
+            prev = [x for x in hist.get((h['nom'], fam(r)), []) if x[0] < r['date']]
+            if prev:
+                last = max(prev)[1]
+                info.update(last=last, delta=round(w - last, 1))
+            if moyenne is not None:
+                info['field'] = round(w - moyenne, 1)
+            if h.get('pd') is not None and h.get('pdh') is not None and h['pdh'] - h['pd'] >= 0.5:
+                info['decharge'] = round(h['pdh'] - h['pd'], 1)
+            h['w'] = info
+            n += 1
+    return n
 
 
 # ── Cellule 6c : scoring des courses du jour ─────────────────────────────────
@@ -475,6 +522,7 @@ def build(storage, day=None, with_today=True):
 
     stats['races_today'] = add_today_races(races_list, day) if with_today else 0
     stats['races_today_plat'] = sum(1 for r in races_list if r.get('today') and is_plat(r))
+    add_weight_info(races_list)
 
     version = model_store.current_version(storage)
     backtest, meta = None, None

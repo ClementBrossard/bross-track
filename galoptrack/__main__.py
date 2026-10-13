@@ -18,7 +18,7 @@ import logging
 import sys
 from datetime import timedelta
 
-from . import audit, collect, config, dashboard, health, migrate, model_store, tables, train
+from . import audit, collect, config, experiment, dashboard, health, migrate, model_store, tables, train
 from .storage import get_storage
 
 
@@ -180,6 +180,10 @@ def cmd_audit_hippos(storage, args):
     print(audit.report(rows))
 
 
+def cmd_experiment(storage, args):
+    print(experiment.run(storage))
+
+
 def cmd_train(storage, args):
     meta = train.run(storage, promote=not args.no_promote)
     print(json.dumps(meta, indent=1, default=str))
@@ -240,6 +244,9 @@ def main(argv=None):
     s.add_argument('--days', type=int, default=365)
     s.add_argument('--step', type=int, default=2)
     s.set_defaults(func=cmd_audit_hippos)
+
+    sub.add_parser('experiment-poids', help="compare le modèle avec / sans poids relatif (n'écrit rien)") \
+        .set_defaults(func=cmd_experiment)
 
     sub.add_parser('migrate').set_defaults(func=cmd_migrate)
     sub.add_parser('status').set_defaults(func=cmd_status)

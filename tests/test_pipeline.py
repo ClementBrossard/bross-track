@@ -438,3 +438,36 @@ def test_backup_and_restore_tables(tmp_path, raw):
     assert st.read_bytes(tables.table_key('chevaux')) == before
     with pytest.raises(SystemExit):
         cli.restore(st, 'inexistante')
+
+
+# ── Poids ───────────────────────────────────────────────────────────────────
+
+def test_weight_info_for_today_races():
+    hist = {'id': 'H', 'date': 20261001, 'hippo': 'CHA', 'horses': [{'nom': 'A', 'pd': 58}, {'nom': 'B', 'pd': 55}]}
+    obst = {'id': 'O', 'date': 20261005, 'hippo': 'AUT', 'disc': 'HAIES', 'horses': [{'nom': 'A', 'pd': 67}]}
+    today = {'id': 'T', 'date': 20261010, 'hippo': 'CHA', 'today': True, 'horses': [
+        {'nom': 'A', 'pd': 54, 'pdh': 56},   # décharge de 2 kg
+        {'nom': 'B', 'pd': 57, 'pdh': 57},
+        {'nom': 'C', 'pd': None, 'pdh': None},
+    ]}
+    assert dashboard.add_weight_info([hist, obst, today]) == 2
+    a, b, c = today['horses']
+    # Comparaison au plat (pas à la course d'obstacles), poids avant décharge
+    assert a['w'] == {'kg': 56, 'last': 58.0, 'delta': -2.0, 'field': -0.5, 'decharge': 2}
+    assert b['w'] == {'kg': 57, 'last': 55.0, 'delta': 2.0, 'field': 0.5}
+    assert 'w' not in c
+
+
+def test_weight_features_use_only_the_past(built):
+    from galoptrack import experiment
+    races_list, labels_array, _ = built
+    fdf = experiment.add_weight_features(build_features(copy.deepcopy(races_list), labels_array))
+    for f in experiment.WEIGHT_FEATURES:
+        assert f in fdf and fdf[f].notna().any()
+    # Écart avec la course précédente = différence de poids entre deux sorties consécutives
+    g = fdf[fdf['nom'] == fdf['nom'].iloc[-1]]
+    w = pd.to_numeric(g['pd'], errors='coerce').to_numpy()
+    np.testing.assert_allclose(g['pd_delta_last'].to_numpy()[1:], w[1:] - w[:-1])
+    # La course précédente d'un cheval n'est jamais celle du jour même
+    first = fdf.groupby('nom').head(1)
+    assert first['pd_delta_last'].isna().all() and first['last_race_beaten_pd_diff'].isna().all()
