@@ -477,7 +477,9 @@ def test_opposition_features_use_only_the_past(built):
     from galoptrack import experiment
     races_list, labels_array, _ = built
     fdf = experiment.opposition_features(build_features(copy.deepcopy(races_list), labels_array))
-    for f in experiment.opposition_set(90) + experiment.opposition_set(180) + ['field_avg', 'field_max']:
+    extra = ['field_avg', 'field_max', 'field_top3', 'beaten_vs_field_90', 'beaten_vs_top3_90',
+             'field_below_bmax_90', 'field_below_bavg_90']
+    for f in experiment.opposition_set(90) + experiment.opposition_set(180) + extra:
         assert f in fdf and fdf[f].notna().any(), f
     # Première course d'un cheval : aucun historique d'adversaires
     first = fdf.sort_values(['date', 'is_today']).groupby('nom').head(1)
@@ -488,3 +490,7 @@ def test_opposition_features_use_only_the_past(built):
     assert np.isclose(fdf.at[i, 'field_avg'], r['elo'].drop(i).mean())
     # 6 mois couvrent au moins autant de courses que 3 mois
     assert fdf['opp_avg_180'].notna().sum() >= fdf['opp_avg_90'].notna().sum()
+    # Parts du peloton : entre 0 et 1, et « sous le meilleur battu » >= « sous la moyenne des battus »
+    both = fdf[['field_below_bmax_90', 'field_below_bavg_90']].dropna()
+    assert both.min().min() >= 0 and both.max().max() <= 1
+    assert (both['field_below_bmax_90'] >= both['field_below_bavg_90']).all()

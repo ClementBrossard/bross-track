@@ -35,8 +35,10 @@ def load_feature_frame(storage):
     return build_features(races_list, labels_array)
 
 
-def train_model(fdf, num_boost_round=500, early_stopping=30, features=None):
-    """`features` : liste à utiliser (défaut FEATURES) — pour les expériences."""
+def train_model(fdf, num_boost_round=500, early_stopping=30, features=None, train_frac=0.8, valid_frac=None):
+    """Pour les expériences : `features` (défaut FEATURES), part des dates pour
+    l'entraînement (`train_frac`) et, si donnée, longueur de la période de
+    validation (`valid_frac`, sinon jusqu'à la fin)."""
     features = features or FEATURES
     import lightgbm as lgb
     from sklearn.isotonic import IsotonicRegression
@@ -50,9 +52,14 @@ def train_model(fdf, num_boost_round=500, early_stopping=30, features=None):
 
     # Split temporel : 80 % des dates les plus anciennes pour l'entraînement
     dates_sorted = sorted(model_ready['date'].unique())
-    cutoff = dates_sorted[int(len(dates_sorted) * 0.8)]
+    cutoff = dates_sorted[int(len(dates_sorted) * train_frac)]
     train = model_ready[model_ready['date'] < cutoff]
-    valid = model_ready[model_ready['date'] >= cutoff].copy()
+    valid = model_ready[model_ready['date'] >= cutoff]
+    if valid_frac is not None:
+        end = int(len(dates_sorted) * (train_frac + valid_frac))
+        if end < len(dates_sorted):
+            valid = valid[valid['date'] < dates_sorted[end]]
+    valid = valid.copy()
     log.info("Coupure temporelle : %s | train %d lignes | valid %d lignes", cutoff, len(train), len(valid))
 
     lgb_train = lgb.Dataset(train[features], label=train['label'], group=_groups(train),

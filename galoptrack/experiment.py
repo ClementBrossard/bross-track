@@ -155,8 +155,9 @@ def opposition_features(fdf, windows=(90, 180)):
     elo = fdf['elo'].to_numpy(dtype=float)
     pa = fdf['pa_num'].to_numpy(dtype=float)
     n = len(fdf)
-    field_avg, field_max = np.full(n, np.nan), np.full(n, np.nan)
+    field_avg, field_max, field_top3 = np.full(n, np.nan), np.full(n, np.nan), np.full(n, np.nan)
     r_beaten_max, r_beaten_avg = np.full(n, np.nan), np.full(n, np.nan)
+    r_beaten_sum, r_beaten_cnt = np.zeros(n), np.zeros(n)
     for idx in fdf.groupby('race_id').indices.values():
         e, p = elo[idx], pa[idx]
         if len(idx) < 2:
@@ -166,15 +167,17 @@ def opposition_features(fdf, windows=(90, 180)):
             others = np.delete(e, k)
             field_avg[i] = (tot - e[k]) / (len(idx) - 1)
             field_max[i] = others.max()
+            field_top3[i] = np.sort(others)[-3:].mean()
             if not np.isnan(p[k]):
                 b = e[(p > p[k])]
                 if len(b):
                     r_beaten_max[i], r_beaten_avg[i] = b.max(), b.mean()
-    fdf['field_avg'], fdf['field_max'] = field_avg, field_max
+                    r_beaten_sum[i], r_beaten_cnt[i] = b.sum(), len(b)
+    fdf['field_avg'], fdf['field_max'], fdf['field_top3'] = field_avg, field_max, field_top3
 
     dates = pd.to_datetime(fdf['date'].astype(int).astype(str), format='%Y%m%d').to_numpy()
     out = {f'{c}_{w}': np.full(n, np.nan) for w in windows
-           for c in ('opp_avg', 'opp_max', 'beaten_max', 'beaten_avg')}
+           for c in ('opp_avg', 'opp_max', 'beaten_max', 'beaten_avg', 'beaten_pool')}
     order = np.lexsort((fdf['is_today'].to_numpy(), dates, fdf['nom'].to_numpy()))
     noms = fdf['nom'].to_numpy()
     start = 0
@@ -201,6 +204,8 @@ def opposition_features(fdf, windows=(90, 180)):
                     if not np.isnan(bm).all():
                         out[f'beaten_max_{w}'][i] = np.nanmax(bm)
                         out[f'beaten_avg_{w}'][i] = np.nanmean(ba)
+                        # tous les chevaux battus de la période, à poids égal
+                        out[f'beaten_pool_{w}'][i] = r_beaten_sum[past].sum() / r_beaten_cnt[past].sum()
                 win.append(i)
         start = end
     for k, v in out.items():
@@ -208,6 +213,23 @@ def opposition_features(fdf, windows=(90, 180)):
     for w in windows:
         fdf[f'drop_avg_{w}'] = fdf[f'opp_avg_{w}'] - fdf['field_avg']
         fdf[f'beaten_vs_top_{w}'] = fdf[f'beaten_max_{w}'] - fdf['field_max']
+        fdf[f'beaten_vs_field_{w}'] = fdf[f'beaten_pool_{w}'] - fdf['field_avg']
+        fdf[f'beaten_vs_top3_{w}'] = fdf[f'beaten_pool_{w}'] - fdf['field_top3']
+        # Part du peloton du jour moins bien notée que les chevaux qu'il a déjà
+        # battus (meilleur battu / moyenne des battus)
+        bmax, bpool = fdf[f'beaten_max_{w}'].to_numpy(), fdf[f'beaten_pool_{w}'].to_numpy()
+        f_max, f_avg = np.full(n, np.nan), np.full(n, np.nan)
+        for idx in fdf.groupby('race_id').indices.values():
+            if len(idx) < 2:
+                continue
+            e = elo[idx]
+            for k, i in enumerate(idx):
+                others = np.delete(e, k)
+                if not np.isnan(bmax[i]):
+                    f_max[i] = (others < bmax[i]).mean()
+                if not np.isnan(bpool[i]):
+                    f_avg[i] = (others < bpool[i]).mean()
+        fdf[f'field_below_bmax_{w}'], fdf[f'field_below_bavg_{w}'] = f_max, f_avg
     return fdf
 
 
@@ -216,12 +238,54 @@ def opposition_set(w):
             f'drop_avg_{w}', f'beaten_vs_top_{w}']
 
 
+FOLDS = ((0.6, 0.1), (0.7, 0.1), (0.8, 0.1), (0.9, None))
+
+
+def _compare_folds(fdf, variants, folds=FOLDS):
+    """Même comparaison que _compare, répétée sur plusieurs périodes de test
+    successives (le modèle n'apprend que sur ce qui précède chaque période)."""
+    ready = fdf.dropna(subset=['pa_num']).sort_values(['date', 'race_id']).reset_index(drop=True)
+    dates = sorted(ready['date'].unique())
+    res = {name: [] for name in variants}
+    periods = []
+    for tf, vf in folds:
+        lo = dates[int(len(dates) * tf)]
+        valid = ready[ready['date'] >= lo]
+        if vf is not None and int(len(dates) * (tf + vf)) < len(dates):
+            valid = valid[valid['date'] < dates[int(len(dates) * (tf + vf))]]
+        periods.append(f"{str(valid['date'].min())[4:6]}/{str(valid['date'].min())[2:4]}"
+                       f"→{str(valid['date'].max())[4:6]}/{str(valid['date'].max())[2:4]}")
+        for name, feats in variants.items():
+            model, _, _, _ = train.train_model(fdf, features=feats, train_frac=tf, valid_frac=vf)
+            res[name].append(_hits(valid, model.predict(valid[feats])))
+    names = list(variants)
+    md = ["| | " + " | ".join(periods) + " | Moyenne | Périodes où elle bat la production |",
+          "|---|" + "---:|" * (len(periods) + 2)]
+    base = [np.mean([v[0] for v in h.values()]) for h in res[names[0]]]
+    for name in names:
+        rates = [np.mean([v[0] for v in h.values()]) for h in res[name]]
+        wins = '—' if name == names[0] else f"{sum(r > b for r, b in zip(rates, base))}/{len(rates)}"
+        md.append(f"| {name} | " + " | ".join(f"{r:.1%}" for r in rates) + f" | **{np.mean(rates):.1%}** | {wins} |")
+    md += ["", "Sur toutes les périodes réunies :", ""]
+    for name in names[1:]:
+        only1 = only0 = total = 0
+        for h0, h1 in zip(res[names[0]], res[name]):
+            for r in h0.keys() & h1.keys():
+                total += 1
+                only1 += h1[r][0] and not h0[r][0]
+                only0 += h0[r][0] and not h1[r][0]
+        md.append(f"- **{name}** : gagnant trouvé seulement par la variante dans {only1} courses, "
+                  f"seulement par la production dans {only0} (sur {total}).")
+    md += ["", "Pourcentages = part des courses où le cheval classé 1er par le modèle a gagné."]
+    return md
+
+
 def run_opposition(storage):
-    fdf = opposition_features(train.load_feature_frame(storage))
+    fdf = opposition_features(train.load_feature_frame(storage), windows=(90,))
     ready, cutoff = _split(fdf)
     valid = ready[ready['date'] >= cutoff]
-    md = [f"# Expérience adversaires — coupure {cutoff}", "",
-          f"Validation : {valid['race_id'].nunique()} courses, {len(valid)} chevaux (plat).", "",
+    md = [f"# Expérience adversaires (peloton entier) — 3 mois", "",
+          f"Tableaux sur la validation récente : {valid['race_id'].nunique()} courses de plat depuis {cutoff}.", "",
           "Niveau d'un cheval = son rating Elo juste avant la course. « Peloton du jour » = ses rivaux.", ""]
 
     def quint(col, title, labels=('très bas', 'bas', 'moyen', 'haut', 'très haut')):
@@ -229,19 +293,25 @@ def run_opposition(storage):
         qs[0], qs[-1] = -np.inf, np.inf
         return _bucket_table(valid, col, qs, list(labels)[:len(qs) - 1], title) + [""]
 
-    md += quint('drop_avg_90', "1. Descente de niveau sur 3 mois : peloton moyen affronté - peloton du jour",
-                ('monte fort', 'monte', 'stable', 'descend', 'descend fort'))
-    md += quint('beaten_vs_top_90', "2. Meilleur cheval battu sur 3 mois - meilleur rival du jour",
-                ('très en dessous', 'en dessous', 'proche', 'au-dessus', 'très au-dessus'))
-    md += quint('beaten_max_90', "3. Meilleur cheval battu sur 3 mois (niveau absolu)")
-    md += quint('last_race_opp_elo_beaten_avg', "4. Pour comparaison : chevaux battus, dernière course seulement")
-    md += ["« (inconnu) » : pas de course dans la fenêtre, ou aucun cheval battu.", "",
-           "### 5. Modèle actuel vs modèle + adversaires", ""]
-    md += _compare(fdf, valid, {
+    below = ['0-20 %', '20-40 %', '40-60 %', '60-80 %', '80-100 %']
+    edges = [-0.01, 0.2, 0.4, 0.6, 0.8, 1.0]
+    md += _bucket_table(valid, 'field_below_bavg_90', edges, below,
+                        "1. Part du peloton du jour moins forte que la moyenne des chevaux qu'il a battus (3 mois)") + [""]
+    md += _bucket_table(valid, 'field_below_bmax_90', edges, below,
+                        "2. Part du peloton du jour moins forte que le meilleur cheval qu'il a battu (3 mois)") + [""]
+    md += quint('beaten_vs_field_90', "3. Moyenne des chevaux battus (3 mois) - moyenne du peloton du jour",
+                ('bien en dessous', 'en dessous', 'proche', 'au-dessus', 'bien au-dessus'))
+    md += quint('beaten_vs_top3_90', "4. Moyenne des chevaux battus (3 mois) - moyenne des 3 meilleurs rivaux",
+                ('bien en dessous', 'en dessous', 'proche', 'au-dessus', 'bien au-dessus'))
+    md += ["« (inconnu) » : pas de course dans les 3 mois, ou aucun cheval battu.", "",
+           "### 5. Modèle actuel vs variantes, sur 4 périodes de test successives", ""]
+    lean = ['beaten_vs_top_90', 'drop_avg_90']
+    whole = ['beaten_vs_field_90', 'beaten_vs_top3_90', 'field_below_bmax_90', 'field_below_bavg_90']
+    md += _compare_folds(fdf, {
         'Production (37 variables)': FEATURES,
-        '+ adversaires 3 mois': FEATURES + opposition_set(90),
-        '+ adversaires 6 mois': FEATURES + opposition_set(180),
-        '+ adversaires 3 et 6 mois': FEATURES + opposition_set(90) + opposition_set(180),
+        'A. Meilleur battu + descente (2)': FEATURES + lean,
+        'B. Peloton entier (4)': FEATURES + whole,
+        'A + B (6)': FEATURES + lean + whole,
     })
     return _publish(md)
 
