@@ -3442,7 +3442,7 @@ function renderModele(){
   }).join('');
 
   container.innerHTML = `
-    <p class="count">Probabilités calibrées du modèle vs probabilité implicite du marché (1/cote). Poids : le modèle ne l'utilise pas ; écart avec la dernière course et avec la moyenne du champ (vert = plus léger, rouge = plus lourd), décharge du jockey.</p>
+    <p class="count">Probabilités calibrées du modèle vs probabilité implicite du marché (1/cote). Poids : le modèle ne l'utilise pas ; écart avec la dernière course (même discipline) et avec la moyenne du champ, décharge du jockey. Sur l'historique, un cheval allégé ou plus léger que le champ gagne en moyenne moins souvent : le poids suit le handicap, donc la forme et la classe.</p>
     <table style="width:100%;border-collapse:collapse;background:var(--paper);border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-bottom:26px;">
       <thead>
         <tr style="text-align:left;border-bottom:2px solid var(--green);background:var(--green);">
@@ -3484,10 +3484,11 @@ function weightCell(h){
   if(!w) return '<span style="color:var(--ink-soft);">—</span>';
   const num = v => String(v).replace('.', ',');
   const sign = v => (v > 0 ? '+' : '') + num(v);
-  const col = v => v < 0 ? 'var(--green)' : (v > 0 ? '#a8402c' : 'var(--ink-soft)');
+  // Couleur neutre : sur l'historique, plus léger ne veut pas dire plus de
+  // chances (le poids suit le handicap, donc la forme et la classe).
   const lines = [];
-  if(w.delta !== undefined) lines.push(`<span style="color:${col(w.delta)};">${sign(w.delta)} vs dern.</span>`);
-  if(w.field !== undefined) lines.push(`<span style="color:${col(w.field)};">${sign(w.field)} vs moy.</span>`);
+  if(w.delta !== undefined) lines.push(`${sign(w.delta)} vs dern.`);
+  if(w.field !== undefined) lines.push(`${sign(w.field)} vs moy.`);
   if(w.decharge) lines.push(`déch. ${num(w.decharge)}`);
   return `<div style="font-family:'JetBrains Mono',monospace;font-size:13px;">${num(w.kg)} kg</div>`
     + `<div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--ink-soft);line-height:1.35;">${lines.join('<br>')}</div>`;
