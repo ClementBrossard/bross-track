@@ -1911,9 +1911,18 @@ function renderBacktestKpis(races){
   const moyTop3 = races.reduce((s,r)=>s+r.nb_pred_top5_in_real_top3,0) / n;
   const pctAu2 = races.filter(r=>r.nb_pred_top5_in_real_top3>=2).length / n;
   const pctAu3 = races.filter(r=>r.nb_pred_top5_in_real_top3>=3).length / n;
+  // Objectif « 3 premiers » : top 3 du modèle vs vrai top 3
+  const t3 = r => { const real = r.real_top5.slice(0,3).map(bhName);
+    return predTop5(r).slice(0,3).map(bhName).filter(x => real.includes(x)).length; };
+  const moyT3 = races.reduce((s,r)=>s+t3(r),0) / n;
+  const pctTrio = races.filter(r=>t3(r)===3).length / n;
+  const pctT3x2 = races.filter(r=>t3(r)>=2).length / n;
 
   kpiEl.innerHTML = `
     <div class="kpi"><div class="label">Courses (filtre actif)</div><div class="val">${n.toLocaleString('fr-FR')}</div></div>
+    <div class="kpi"><div class="label">Top 3 du modèle dans le vrai top 3</div><div class="val">${moyT3.toFixed(2)} / 3</div></div>
+    <div class="kpi"><div class="label">Au moins 2 des 3 premiers</div><div class="val">${(pctT3x2*100).toFixed(1)}%</div></div>
+    <div class="kpi"><div class="label">Trio complet (3/3)</div><div class="val">${(pctTrio*100).toFixed(1)}%</div></div>
     <div class="kpi"><div class="label">Hit-rate top-1 (vainqueur)</div><div class="val">${(hitTop1*100).toFixed(1)}%</div></div>
     <div class="kpi"><div class="label">Moy. top5 prédit dans le vrai top3</div><div class="val">${moyTop3.toFixed(2)} / 5</div></div>
     <div class="kpi"><div class="label">Au moins 2/5 dans le top3</div><div class="val">${(pctAu2*100).toFixed(1)}%</div></div>

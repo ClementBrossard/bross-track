@@ -39,12 +39,13 @@ def load_feature_frame(storage):
 
 
 def train_model(fdf, num_boost_round=500, early_stopping=30, features=None, train_frac=0.8, valid_frac=None,
-                label_mode='win'):
+                label_mode=None):
     """Pour les expériences : `features` (défaut FEATURES), part des dates pour
     l'entraînement (`train_frac`) et, si donnée, longueur de la période de
     validation (`valid_frac`, sinon jusqu'à la fin). `label_mode` : 'win'
-    (gagnant 3, placé 1 — production) ou 'top3' (dans les 3 premiers = 1)."""
+    (gagnant 3, placé 1) ou 'top3' (dans les 3 premiers = 1), défaut config.LABEL_MODE."""
     features = features or FEATURES
+    label_mode = label_mode or config.LABEL_MODE
     import lightgbm as lgb
     from sklearn.isotonic import IsotonicRegression
 
@@ -76,12 +77,14 @@ def train_model(fdf, num_boost_round=500, early_stopping=30, features=None, trai
                       callbacks=[lgb.early_stopping(early_stopping), lgb.log_evaluation(50)])
 
     valid['pred'] = model.predict(valid[features])
-    hits_model, hits_hv, hits_mu = [], [], []
+    hits_model, hits_hv, hits_mu, top3 = [], [], [], []
     for _, g in valid.groupby('race_id'):
         if g['win'].sum() == 0:
             continue
         winner = g.loc[g['win'] == 1, 'nom'].iloc[0]
         hits_model.append(int(g.loc[g['pred'].idxmax(), 'nom'] == winner))
+        if len(g) >= 4:
+            top3.append(int(g.nlargest(3, 'pred')['pa_num'].le(3).sum()))
         hv = g['hv'].fillna(-1)
         hits_hv.append(int(g.loc[hv.idxmax(), 'nom'] == winner))
         mu = g['mu_last1'].fillna(99)
@@ -96,6 +99,12 @@ def train_model(fdf, num_boost_round=500, early_stopping=30, features=None, trai
         'ndcg@3': float(model.best_score['valid_0']['ndcg@3']),
         'n_valid_races': len(hits_model),
         'hit_rate_top1': float(np.mean(hits_model)) if hits_model else None,
+        'label_mode': label_mode,
+        # Objectif « 3 premiers » : sur les 3 chevaux en tête du modèle, combien
+        # finissent dans les 3 premiers (courses d'au moins 4 partants)
+        'top3_in_top3': float(np.mean(top3)) if top3 else None,
+        'pct_top3_2plus': float(np.mean([t >= 2 for t in top3])) if top3 else None,
+        'pct_trio': float(np.mean([t == 3 for t in top3])) if top3 else None,
         'baseline_hv': float(np.mean(hits_hv)) if hits_hv else None,
         'baseline_last_perf': float(np.mean(hits_mu)) if hits_mu else None,
         'baseline_random': float((1 / valid.groupby('race_id').size()).mean()) if len(valid) else None,
@@ -126,6 +135,7 @@ def build_backtest(valid, hits_model):
         top5_real = g.nsmallest(5, 'pa_num')
         true_top3 = set(g.nsmallest(3, 'pa_num')['nom'])
         nb_in_top3 = sum(1 for n in top10_pred['nom'].iloc[:5] if n in true_top3)
+        nb3_in_top3 = sum(1 for n in top10_pred['nom'].iloc[:3] if n in true_top3)
         m = _rc_re.search(rid)
         out.append({
             'race_id': rid,
@@ -139,6 +149,7 @@ def build_backtest(valid, hits_model):
             'pred_top10': [_horse_entry(r) for _, r in top10_pred.iterrows()],
             'real_top5': [_horse_entry(r) for _, r in top5_real.iterrows()],
             'nb_pred_top5_in_real_top3': int(nb_in_top3),
+            'nb_pred_top3_in_real_top3': int(nb3_in_top3),
         })
     if not out:
         return {'summary': {'n_courses': 0}, 'races': []}
@@ -154,6 +165,8 @@ def build_backtest(valid, hits_model):
         'pct_au_moins_3': round(float(np.mean([n >= 3 for n in nb])), 3),
         'distribution': {str(k): int(v) for k, v in dist.items()},
         'hit_rate_top1': round(float(np.mean(hits_model)), 3) if hits_model else None,
+        'moyenne_top3_dans_top3': round(float(np.mean([b['nb_pred_top3_in_real_top3'] for b in out])), 3),
+        'pct_trio': round(float(np.mean([b['nb_pred_top3_in_real_top3'] == 3 for b in out])), 3),
     }
     return {'summary': summary, 'races': out}
 
@@ -163,30 +176,33 @@ def run(storage, promote=True):
     le garde-fou. Retourne le résumé."""
     fdf = load_feature_frame(storage)
     model, calib, backtest, metrics = train_model(fdf)
-    # Témoin : même entraînement avec les 37 variables d'origine (v1-v8), sur
-    # exactement la même période. La nouvelle version ne passe en production
-    # que si elle ne fait pas moins bien que ce témoin (tolérance 0,5 point).
+    # Témoin : recette v8 (37 variables, apprise « gagnant ») sur exactement la
+    # même période. La nouvelle version ne passe en production que si elle ne
+    # fait pas moins bien en « top 3 » (tolérance MAX_DROP_VS_TEMOIN).
     base = None
-    if FEATURES != BASE_FEATURES:
-        _, _, _, bm = train_model(fdf, features=BASE_FEATURES)
-        base = {k: bm[k] for k in ('hit_rate_top1', 'ndcg@1', 'ndcg@3', 'n_valid_races')}
+    if FEATURES != BASE_FEATURES or config.LABEL_MODE != 'win':
+        _, _, _, bm = train_model(fdf, features=BASE_FEATURES, label_mode='win')
+        base = {k: bm[k] for k in ('hit_rate_top1', 'top3_in_top3', 'pct_trio', 'ndcg@1', 'ndcg@3',
+                                   'n_valid_races')}
     version = model_store.next_version(storage)
     previous = model_store.current_version(storage)
     meta = {'version': version, 'trained_at': config.now_paris().isoformat(timespec='seconds'),
             'previous': previous, 'metrics': metrics, 'features': FEATURES,
-            'temoin_37_variables': base}
+            'temoin_v8': base}
     model_store.save_version(storage, version, model.model_to_string(), calib, backtest, meta)
 
     hit = metrics['hit_rate_top1'] or 0
-    not_worse = base is None or hit >= (base['hit_rate_top1'] or 0) - config.MAX_DROP_VS_TEMOIN
+    t3 = metrics['top3_in_top3'] or 0
+    not_worse = base is None or t3 >= (base['top3_in_top3'] or 0) - config.MAX_DROP_VS_TEMOIN
     promoted = bool(promote and hit >= config.MIN_HIT_RATE_TOP1 and not_worse)
     if promoted:
         model_store.set_current(storage, version)
     meta['promoted'] = promoted
     model_store.write_meta(storage, version, meta)
     if base:
-        log.info("Témoin 37 variables, même période : hit-rate top1 %.1f%%", (base['hit_rate_top1'] or 0) * 100)
-    log.info("Modèle %s : hit-rate top1 %.1f%% -> %s", version, hit * 100,
+        log.info("Témoin v8, même période : top 3 %.3f / 3, n°1 gagnant %.1f%%",
+                 base['top3_in_top3'] or 0, (base['hit_rate_top1'] or 0) * 100)
+    log.info("Modèle %s : top 3 %.3f / 3, n°1 gagnant %.1f%% -> %s", version, t3, hit * 100,
              "EN PRODUCTION" if promoted else
              ("non promu (demandé)" if not promote else
               f"non promu (seuil {config.MIN_HIT_RATE_TOP1:.0%} ou moins bien que le témoin)"))
