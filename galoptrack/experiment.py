@@ -310,6 +310,71 @@ def run_classe(storage):
     return _publish(md)
 
 
+# ── Étape 2 du modèle Compétition : confrontations ──────────────────────────
+
+CLASSE_FEATURES = ['classe_m0', 'classe_n12m_m0', 'classe_vs_field_m0', 'classe_vs_best_m0', 'classe_vs_race_m0']
+# Modèle « Compétition » partiel : ni Elo (ni variables dérivées de l'Elo), ni
+# jockey / entraîneur (étape 4), ni tronçons (étape 3).
+COMPET_BASE = ['ag', 'sx', 'oe', 'dist', 'alloc', 'cat', 'piste', 'terrain', 'hippo',
+               'win_rate_career', 'place_rate_career', 'gain_moy', 'mu_avg5', 'mu_last1', 'mu_wins5',
+               'h2h_wins_field', 'h2h_losses_field', 'h2h_net_field', 'h2h_opp_met',
+               'days_since_last', 'alloc_delta', 'alloc_ratio']
+
+
+def _yes_no_table(df, col, title, labels=('oui', 'non', 'jamais rencontré')):
+    lines = [f"### {title}", "", "| | Chevaux | % victoire | % top 3 |", "|---|---:|---:|---:|"]
+    for lab, mask in ((labels[0], df[col] == 1), (labels[1], df[col] == 0), (labels[2], df[col].isna())):
+        d = df[mask]
+        if len(d):
+            lines.append(f"| {lab} | {len(d)} | {d['win'].mean():.1%} | {(d['pa_num'] <= 3).mean():.1%} |")
+    return lines + [""]
+
+
+def run_confront(storage):
+    from .classe import class_features
+    from .confront import CONFRONT_FEATURES, confrontation_features
+    fdf = train.load_feature_frame(storage)
+    fdf = class_features(fdf, prior_weight=0.0, suffix='_m0')
+    fdf = confrontation_features(fdf)
+    ready, cutoff = _split(fdf)
+    valid = ready[ready['date'] >= cutoff].copy()
+    md = ["# Étape 2 — confrontations", "",
+          f"Validation : {valid['race_id'].nunique()} courses de plat depuis {cutoff}.", "",
+          "Force d'un adversaire = sa note de classe au moment de la rencontre. Fenêtre : 12 mois.", ""]
+
+    def quint(col, title, labels):
+        qs = np.unique(valid[col].quantile([0, .2, .4, .6, .8, 1]).to_numpy())
+        qs[0], qs[-1] = -np.inf, np.inf
+        return _bucket_table(valid, col, qs, list(labels)[:len(qs) - 1], title) + [""]
+
+    lv = ('très en dessous', 'en dessous', 'proche', 'au-dessus', 'très au-dessus')
+    md += quint('cf_niveau_vs_best', "1. Niveau démontré (meilleur battu ou battu de peu) vs meilleur rival du jour", lv)
+    md += quint('cf_close_vs_best', "2. « Battu de moins d'une longueur par un cador » : ce cador vs meilleur rival du jour", lv)
+    md += _bucket_table(valid, 'cf_weak_ahead_rate', [-0.01, 0, 0.5, 1, 2, np.inf],
+                        ['aucun', '≤ 0,5 par course', '0,5 à 1', '1 à 2', 'plus de 2'],
+                        "3. « Des daubes devant lui » : chevaux plus faibles que le peloton du jour qui l'ont battu (par course, 12 mois)") + [""]
+    md += _yes_no_table(valid, 'cf_beat_top', "4. A déjà fini devant le rival le mieux noté du jour")
+    md += _yes_no_table(valid, 'cf_lost_to_weaker', "5. A déjà été battu par un rival du jour moins bien noté que lui",
+                        labels=('oui', 'non', 'aucune rencontre'))
+
+    md += ["### 6. Le cheval classé n°1 selon… gagne la course", "",
+           "| Classement selon | % |", "|---|---:|"]
+    valid['_mix'] = (valid.groupby('race_id')['classe_m0'].rank(ascending=False)
+                     + valid.groupby('race_id')['cf_niveau_vs_best'].rank(ascending=False))
+    for label, col, hi in (("Rating Elo", 'elo', True), ("Note de classe", 'classe_m0', True),
+                           ("Niveau démontré", 'cf_niveau_vs_best', True),
+                           ("Note de classe + niveau démontré", '_mix', False)):
+        md.append(f"| {label} | {_pick_rate(valid, col, hi)[0]:.1%} |")
+    md += ["", "### 7. Modèles, sur 4 périodes de test successives", ""]
+    md += _compare_folds(fdf, {
+        'Production (37 variables)': BASE_FEATURES,
+        'Production + classe + confrontations': BASE_FEATURES + CLASSE_FEATURES + CONFRONT_FEATURES,
+        'Compétition partiel (sans Elo, jockey, tronçons)': COMPET_BASE + CLASSE_FEATURES + CONFRONT_FEATURES,
+        'Compétition partiel sans classe ni confrontations': COMPET_BASE,
+    })
+    return _publish(md)
+
+
 def run(storage):
     fdf = add_weight_features(train.load_feature_frame(storage))
     ready, cutoff = _split(fdf)

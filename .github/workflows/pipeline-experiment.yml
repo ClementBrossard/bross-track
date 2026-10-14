@@ -6,14 +6,14 @@ name: Pipeline — expériences modèle
 on:
   push:
     branches-ignore: [main]
-    paths: ["galoptrack/experiment.py", "galoptrack/classe.py", "galoptrack/features.py", "galoptrack/train.py", ".github/workflows/pipeline-experiment.yml"]
+    paths: ["galoptrack/experiment.py", "galoptrack/classe.py", "galoptrack/confront.py", "galoptrack/features.py", "galoptrack/train.py", ".github/workflows/pipeline-experiment.yml"]
   workflow_dispatch:
     inputs:
       experience:
         description: "Expérience à lancer"
         type: choice
-        options: [classe, adversaires, poids]
-        default: classe
+        options: [confrontations, classe, adversaires, poids]
+        default: confrontations
 
 jobs:
   experiment:
@@ -32,4 +32,4 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-pipeline.txt
       - run: pip install -r requirements-pipeline.txt
-      - run: python -m galoptrack "experiment-${{ inputs.experience || 'classe' }}"
+      - run: python -m galoptrack "experiment-${{ inputs.experience || 'confrontations' }}"

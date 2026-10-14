@@ -73,7 +73,7 @@ def flatten(races_list):
                 'ag': h.get('ag'), 'sx': h.get('sx'),
                 'cd': h.get('cd'), 'pd': h.get('pd'), 'oe': h.get('oe'), 'nc': h.get('nc'), 'nv': h.get('nv'),
                 'np': h.get('np'), 'gc': h.get('gc'), 'hv': h.get('hv'), 'cote': h.get('cote'),
-                'mu': h.get('mu'), 'pa': h.get('pa'), 'tr': h.get('tr'),
+                'mu': h.get('mu'), 'pa': h.get('pa'), 'tr': h.get('tr'), 'ec': h.get('ec'),
             })
     return pd.DataFrame(rows)
 

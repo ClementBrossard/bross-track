@@ -560,3 +560,38 @@ def test_class_note_accounts_for_experience():
     # Valeur d'une performance : 2e d'une course à 20 000 = 8 000
     from galoptrack.classe import performance_value
     assert performance_value([20000], [2])[0] == 8000
+
+
+# ── Confrontations ──────────────────────────────────────────────────────────
+
+def test_parse_ecart():
+    from galoptrack.confront import parse_ecart
+    assert parse_ecart('Nez') == 0.05 and parse_ecart('Cte Tête') == 0.1 and parse_ecart('Tête') == 0.2
+    assert parse_ecart('1 L') == 1 and parse_ecart('3 L 1/2') == 3.5 and parse_ecart('1/2 L') == 0.5
+    assert parse_ecart('Loin') == 30 and np.isnan(parse_ecart(None)) and np.isnan(parse_ecart('?'))
+
+
+def test_confrontations_use_only_the_past():
+    from galoptrack.confront import confrontation_features
+    rows = []
+    def race(rid, date, alloc, res):
+        for nom, pa, ec in res:
+            rows.append({'race_id': rid, 'date': date, 'is_today': False, 'nom': nom,
+                         'alloc': alloc, 'pa_num': pa, 'ec': ec})
+    # CADOR gagne gros ; A finit 2e à une courte tête de CADOR ; FAIBLE bat B
+    race('r1', 20250101, 100000, [('CADOR', 1, None), ('Z', 2, '2 L')])
+    race('r2', 20250201, 20000, [('CADOR', 1, None), ('A', 2, 'Cte Tête'), ('Y', 3, '5 L')])
+    race('r3', 20250210, 4000, [('FAIBLE', 1, None), ('B', 2, '1 L')])
+    race('r4', 20250215, 20000, [('A', 1, None), ('B', 2, '3 L')])
+    race('r5', 20250301, 20000, [('A', np.nan, None), ('B', np.nan, None), ('FAIBLE', np.nan, None)])
+    fdf = confrontation_features(pd.DataFrame(rows))
+    get = lambda nom, col: fdf[(fdf['race_id'] == 'r5') & (fdf['nom'] == nom)][col].iloc[0]
+    # A a fini à une courte tête de CADOR : niveau « battu de peu » renseigné
+    assert not np.isnan(get('A', 'cf_close_vs_best'))
+    # B a été battu par FAIBLE, rival du jour moins bien noté que lui
+    assert get('B', 'cf_lost_to_weaker') == 1
+    # A a déjà battu B ; rencontres directes vides pour qui n'a jamais rencontré le mieux noté
+    assert get('A', 'cf_lost_to_weaker') == 0 or np.isnan(get('A', 'cf_lost_to_weaker'))
+    # Rien n'est calculé à partir de la course du jour elle-même
+    first = fdf[fdf['race_id'] == 'r1']
+    assert first['cf_niveau_vs_best'].isna().all() and first['cf_beat_top'].isna().all()
