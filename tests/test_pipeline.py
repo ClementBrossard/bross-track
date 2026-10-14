@@ -522,3 +522,41 @@ def test_promote_existing_version(tmp_path, capsys):
     assert model_store.current_version(st) == 'v9'
     with pytest.raises(SystemExit):
         cli.cmd_promote(st, type('A', (), {'version': 'v12'})())
+
+
+# ── Note de classe ──────────────────────────────────────────────────────────
+
+def _class_frame():
+    """A gagne une fois (allocation 20 000), B gagne trois fois ; ils se
+    retrouvent le 2025-03-01 avec C, débutant."""
+    rows = []
+    def race(rid, date, alloc, res):
+        for nom, pa in res:
+            rows.append({'race_id': rid, 'date': date, 'is_today': False, 'nom': nom,
+                         'alloc': alloc, 'pa_num': pa})
+    race('r1', 20250101, 20000, [('A', 1), ('X', 2)])
+    race('r2', 20250105, 20000, [('B', 1), ('Y', 2)])
+    race('r3', 20250110, 20000, [('B', 1), ('Y', 2)])
+    race('r4', 20250115, 20000, [('B', 1), ('X', 2)])
+    race('r5', 20250301, 30000, [('A', np.nan), ('B', np.nan), ('C', np.nan)])
+    return pd.DataFrame(rows)
+
+
+def test_class_note_accounts_for_experience():
+    from galoptrack.classe import class_features
+    raw = class_features(_class_frame(), prior_weight=0.0)
+    cor = class_features(_class_frame(), prior_weight=1.0)
+    get = lambda d, nom, col='classe': d[(d['race_id'] == 'r5') & (d['nom'] == nom)][col].iloc[0]
+    # Sans correction, 1 victoire = 3 victoires ; avec correction, l'expérience compte
+    assert np.isclose(get(raw, 'A'), get(raw, 'B'))
+    assert get(cor, 'B') > get(cor, 'A') > get(cor, 'C')
+    assert get(cor, 'A', 'classe_n12m') == 1 and get(cor, 'B', 'classe_n12m') == 3
+    # Débutant sans correction : pas de note ; rang 1 = meilleure note
+    assert np.isnan(get(raw, 'C'))
+    assert get(cor, 'B', 'classe_rank') == 1
+    # La course du jour (sans arrivée) ne sert jamais à sa propre note
+    first = cor[cor['race_id'] == 'r1']
+    assert (first['classe_n12m'] == 0).all()
+    # Valeur d'une performance : 2e d'une course à 20 000 = 8 000
+    from galoptrack.classe import performance_value
+    assert performance_value([20000], [2])[0] == 8000

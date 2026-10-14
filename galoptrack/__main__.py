@@ -189,6 +189,10 @@ def cmd_experiment_opp(storage, args):
     print(experiment.run_opposition(storage))
 
 
+def cmd_experiment_classe(storage, args):
+    print(experiment.run_classe(storage))
+
+
 def cmd_promote(storage, args):
     versions = model_store.list_versions(storage)
     if args.version not in versions:
@@ -263,6 +267,8 @@ def main(argv=None):
         .set_defaults(func=cmd_experiment)
     sub.add_parser('experiment-adversaires', help="niveau des adversaires affrontés vs peloton du jour (n'écrit rien)") \
         .set_defaults(func=cmd_experiment_opp)
+    sub.add_parser('experiment-classe', help="note de classe turfiste (étape 1 du modèle Compétition, n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_classe)
 
     s = sub.add_parser('promote', help="met une version déjà entraînée en production (ex. v9)")
     s.add_argument('--version', required=True)

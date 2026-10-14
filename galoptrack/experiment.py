@@ -223,6 +223,93 @@ def run_opposition(storage):
     return _publish(md)
 
 
+# ── Étape 1 du modèle Compétition : note de classe ──────────────────────────
+
+def _pick_rate(valid, col, higher=True):
+    """Part des courses gagnées par le cheval classé n°1 selon `col`."""
+    hits = []
+    for _, g in valid.groupby('race_id'):
+        if g['win'].sum() == 0 or g[col].isna().all():
+            continue
+        i = g[col].idxmax() if higher else g[col].idxmin()
+        hits.append(int(g.at[i, 'win'] == 1))
+    return (np.mean(hits) if hits else np.nan), len(hits)
+
+
+def run_classe(storage):
+    from .classe import class_features
+    fdf = train.load_feature_frame(storage)
+    fdf = class_features(fdf, prior_weight=0.0, suffix='_m0')   # sans correction d'expérience
+    fdf = class_features(fdf, prior_weight=1.0)                 # retenue
+    fdf = class_features(fdf, prior_weight=3.0, suffix='_m3')   # correction forte
+    ready, cutoff = _split(fdf)
+    valid = ready[ready['date'] >= cutoff].copy()
+    md = [f"# Étape 1 — note de classe « turfiste »", "",
+          f"Validation : {valid['race_id'].nunique()} courses de plat depuis {cutoff}.", "",
+          "Performance = allocation de la course x part de la place (100/40/30/20/10 %). "
+          "Note = moyenne des 3 meilleures performances sur 12 mois, tirée vers la moyenne "
+          "générale quand le cheval a peu couru (1 performance moyenne fictive ajoutée).", ""]
+
+    qs = np.unique(valid['classe_vs_field'].quantile([0, .2, .4, .6, .8, 1]).to_numpy())
+    qs[0], qs[-1] = -np.inf, np.inf
+    md += _bucket_table(valid, 'classe_vs_field', qs,
+                        ['bien en dessous', 'en dessous', 'dans la moyenne', 'au-dessus', 'bien au-dessus'][:len(qs) - 1],
+                        "1. Note de classe du cheval comparée à la moyenne du peloton du jour") + [""]
+
+    md += ["### 2. Le cheval classé n°1 selon… gagne la course", "",
+           "| Classement selon | % de courses gagnées par le n°1 |", "|---|---:|"]
+    valid['_rank_mix'] = (valid.groupby('race_id')['elo'].rank(ascending=False)
+                          + valid.groupby('race_id')['classe'].rank(ascending=False))
+    for label, col, hi in (("Rating Elo (variable de la v8)", 'elo', True),
+                           ("Note de classe, sans correction d'expérience", 'classe_m0', True),
+                           ("Note de classe, correction légère (retenue)", 'classe', True),
+                           ("Note de classe, correction forte", 'classe_m3', True),
+                           ("Elo + note de classe (rang moyen)", '_rank_mix', False),
+                           ("Valeur handicap", 'hv', True),
+                           ("Musique : moyenne des 5 dernières places", 'mu_avg5', False)):
+        r, nb = _pick_rate(valid, col, hi)
+        md.append(f"| {label} | {r:.1%} |")
+    rnd = (1 / valid.groupby('race_id').size()).mean()
+    md += [f"| Hasard | {rnd:.1%} |", "",
+           f"Pour comparaison, la v8 (37 variables) trouve le gagnant dans ~25 % des courses.", ""]
+
+    # 3. Expérience : le n°1 de la note gagne-t-il autant avec peu de courses ?
+    md += ["### 3. Effet de l'expérience : le cheval n°1 de la note, selon son nombre de courses (12 mois)", "",
+           "| Courses sur 12 mois | Sans correction : n°1 | % victoire | Avec correction : n°1 | % victoire |",
+           "|---|---:|---:|---:|---:|"]
+    for lo, hi_, lab in ((0, 0, 'aucune'), (1, 2, '1 à 2'), (3, 5, '3 à 5'), (6, 999, '6 et plus')):
+        row = [lab]
+        for col, ncol in (('classe_m0', 'classe_n12m_m0'), ('classe', 'classe_n12m')):
+            top = valid[valid.groupby('race_id')[col].rank(ascending=False, method='first') == 1]
+            top = top[(top[ncol] >= lo) & (top[ncol] <= hi_)]
+            row += [str(len(top)), f"{top['win'].mean():.1%}" if len(top) else '—']
+        md.append("| " + " | ".join(row) + " |")
+    md += ["", "Sans correction, un cheval peu expérimenté avec une belle note est surévalué si son % de "
+               "victoire est nettement plus bas que celui des chevaux expérimentés.", ""]
+
+    qs = np.unique(valid['classe_vs_race'].quantile([0, .2, .4, .6, .8, 1]).to_numpy())
+    qs[0], qs[-1] = -np.inf, np.inf
+    md += _bucket_table(valid, 'classe_vs_race', qs,
+                        ['monte fort', 'monte', 'à son niveau', 'descend', 'descend fort'][:len(qs) - 1],
+                        "4. Note de classe comparée au niveau (allocation) de la course du jour") + [""]
+
+    # 5. Classe vs Elo : mesurent-elles la même chose ?
+    corr = valid[['classe', 'elo']].corr(method='spearman').iloc[0, 1]
+    dis = []
+    for _, g in valid.groupby('race_id'):
+        if g['win'].sum() == 0:
+            continue
+        ie, ic = g['elo'].idxmax(), g['classe'].idxmax()
+        if ie != ic:
+            dis.append((g.at[ie, 'win'], g.at[ic, 'win']))
+    d = np.array(dis) if dis else np.zeros((0, 2))
+    md += ["### 5. Note de classe et Elo", "",
+           f"Corrélation (rangs) entre les deux : {corr:.2f} (1 = identiques, 0 = sans rapport).", "",
+           f"Courses où le n°1 Elo et le n°1 de la note sont différents : {len(d)}. "
+           f"Le n°1 Elo gagne {d[:, 0].mean():.1%} d'entre elles, le n°1 de la note {d[:, 1].mean():.1%}." if len(d) else "", ""]
+    return _publish(md)
+
+
 def run(storage):
     fdf = add_weight_features(train.load_feature_frame(storage))
     ready, cutoff = _split(fdf)
