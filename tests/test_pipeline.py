@@ -603,3 +603,15 @@ def test_train_model_top3_labels(built):
     fdf = build_features(copy.deepcopy(races_list), labels_array)
     model, _, _, metrics = train.train_model(fdf, features=BASE_FEATURES, label_mode='top3')
     assert metrics['n_valid_races'] > 0 and model.num_trees() > 0
+
+
+def test_tracking_features_use_only_the_past(built):
+    from galoptrack.troncons import TRACK_FEATURES, tracking_features
+    races_list, labels_array, _ = built
+    fdf = tracking_features(build_features(copy.deepcopy(races_list), labels_array))
+    for f in TRACK_FEATURES:
+        assert f in fdf, f
+    assert fdf['tk_fin600_mean'].notna().sum() > 100 and fdf['tk_style'].notna().sum() > 100
+    assert fdf['tk_fin600_mean'].dropna().between(0, 1).all()
+    first = fdf.sort_values(['date', 'is_today']).groupby('nom').head(1)
+    assert (first['tk_n'] == 0).all() and first['tk_fin600_mean'].isna().all()

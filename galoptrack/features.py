@@ -74,6 +74,7 @@ def flatten(races_list):
                 'cd': h.get('cd'), 'pd': h.get('pd'), 'oe': h.get('oe'), 'nc': h.get('nc'), 'nv': h.get('nv'),
                 'np': h.get('np'), 'gc': h.get('gc'), 'hv': h.get('hv'), 'cote': h.get('cote'),
                 'mu': h.get('mu'), 'pa': h.get('pa'), 'tr': h.get('tr'), 'ec': h.get('ec'),
+                't6': h.get('t6'), 't2f': h.get('t2f'), 'vm': h.get('vm'), 'vy': h.get('vy'),
             })
     return pd.DataFrame(rows)
 

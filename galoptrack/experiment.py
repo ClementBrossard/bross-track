@@ -449,6 +449,64 @@ def run_top3(storage):
     return _publish(md)
 
 
+# ── Étape 3 du modèle Compétition : tronçons ────────────────────────────────
+
+def _scenario_table(valid):
+    """Style du cheval x nombre de meneurs parmi ses rivaux -> % top 3."""
+    d = valid.dropna(subset=['tk_style', 'tk_field_leaders'])
+    styles = (('meneur (part en tête)', d['tk_style'] < 0.25),
+              ('placé (milieu)', (d['tk_style'] >= 0.25) & (d['tk_style'] < 0.6)),
+              ('finisseur (part de l\'arrière)', d['tk_style'] >= 0.6))
+    packs = (('0 autre meneur', d['tk_field_leaders'] == 0), ('1', d['tk_field_leaders'] == 1),
+             ('2', d['tk_field_leaders'] == 2), ('3 et plus', d['tk_field_leaders'] >= 3))
+    lines = ["### 3. Scénario de course : style du cheval x nombre de meneurs parmi ses rivaux (% top 3)", "",
+             "| Style / meneurs en face | " + " | ".join(p for p, _ in packs) + " |",
+             "|---|" + "---:|" * len(packs)]
+    for sname, sm in styles:
+        cells = []
+        for _, pm in packs:
+            x = d[sm & pm]
+            cells.append(f"{(x['pa_num'] <= 3).mean():.0%} ({len(x)})" if len(x) >= 30 else '—')
+        lines.append(f"| {sname} | " + " | ".join(cells) + " |")
+    return lines + ["", "Entre parenthèses : nombre de chevaux.", ""]
+
+
+def run_troncons(storage):
+    from .classe import class_features
+    from .confront import CONFRONT_FEATURES, confrontation_features
+    from .troncons import TRACK_FEATURES, tracking_features
+    fdf = train.load_feature_frame(storage)
+    fdf = tracking_features(fdf)
+    fdf = class_features(fdf, prior_weight=0.0, suffix='_m0')
+    fdf = confrontation_features(fdf)
+    ready, cutoff = _split(fdf)
+    valid = ready[ready['date'] >= cutoff].copy()
+    cov = valid['tk_n'].gt(0).mean()
+    md = ["# Étape 3 — tronçons", "",
+          f"Validation : {valid['race_id'].nunique()} courses de plat depuis {cutoff}. "
+          f"{cov:.0%} des partants ont au moins une course trackée dans les 12 mois.", "",
+          "Rangs dans la course (0 = le meilleur du peloton, 1 = le dernier), moyenne des 3 dernières courses trackées.", ""]
+    lv = ('les plus rapides', 'rapides', 'moyens', 'lents', 'les plus lents')
+
+    def quint(col, title, labels):
+        qs = np.unique(valid[col].quantile([0, .2, .4, .6, .8, 1]).to_numpy())
+        qs[0], qs[-1] = -np.inf, np.inf
+        return _bucket_table(valid, col, qs, list(labels)[:len(qs) - 1], title) + [""]
+
+    md += quint('tk_fin600_mean', "1. Vitesse sur les 600 derniers mètres, comparée au peloton de chaque course", lv)
+    md += quint('tk_fin600_vs_field', "2. Sa vitesse de finish comparée à celle de ses rivaux du jour",
+                ('bien plus rapide', 'plus rapide', 'pareil', 'plus lent', 'bien plus lent'))
+    md += _scenario_table(valid)
+    md += ["### 4. Modèles « top 3 », sur 4 périodes de test successives", ""]
+    rules = CLASSE_FEATURES + CONFRONT_FEATURES
+    md += _compare_folds_top3(fdf, {
+        'v8 apprise « top 3 » (nouvelle référence)': (BASE_FEATURES, 'top3'),
+        '+ tronçons': (BASE_FEATURES + TRACK_FEATURES, 'top3'),
+        '+ tronçons + classe + confrontations': (BASE_FEATURES + TRACK_FEATURES + rules, 'top3'),
+    })
+    return _publish(md)
+
+
 def run(storage):
     fdf = add_weight_features(train.load_feature_frame(storage))
     ready, cutoff = _split(fdf)
