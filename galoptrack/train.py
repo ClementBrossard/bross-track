@@ -38,10 +38,12 @@ def load_feature_frame(storage):
     return build_features(races_list, labels_array)
 
 
-def train_model(fdf, num_boost_round=500, early_stopping=30, features=None, train_frac=0.8, valid_frac=None):
+def train_model(fdf, num_boost_round=500, early_stopping=30, features=None, train_frac=0.8, valid_frac=None,
+                label_mode='win'):
     """Pour les expériences : `features` (défaut FEATURES), part des dates pour
     l'entraînement (`train_frac`) et, si donnée, longueur de la période de
-    validation (`valid_frac`, sinon jusqu'à la fin)."""
+    validation (`valid_frac`, sinon jusqu'à la fin). `label_mode` : 'win'
+    (gagnant 3, placé 1 — production) ou 'top3' (dans les 3 premiers = 1)."""
     features = features or FEATURES
     import lightgbm as lgb
     from sklearn.isotonic import IsotonicRegression
@@ -49,7 +51,8 @@ def train_model(fdf, num_boost_round=500, early_stopping=30, features=None, trai
     fdf = fdf.copy()
     fdf['label'] = 0
     fdf.loc[fdf['pa_num'] <= 3, 'label'] = 1
-    fdf.loc[fdf['pa_num'] == 1, 'label'] = 3
+    if label_mode == 'win':
+        fdf.loc[fdf['pa_num'] == 1, 'label'] = 3
 
     model_ready = fdf.dropna(subset=['pa_num']).sort_values(['date', 'race_id']).reset_index(drop=True)
 

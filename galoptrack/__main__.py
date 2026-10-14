@@ -197,6 +197,10 @@ def cmd_experiment_confront(storage, args):
     print(experiment.run_confront(storage))
 
 
+def cmd_experiment_top3(storage, args):
+    print(experiment.run_top3(storage))
+
+
 def cmd_promote(storage, args):
     versions = model_store.list_versions(storage)
     if args.version not in versions:
@@ -275,6 +279,8 @@ def main(argv=None):
         .set_defaults(func=cmd_experiment_classe)
     sub.add_parser('experiment-confrontations', help="confrontations (étape 2 du modèle Compétition, n'écrit rien)") \
         .set_defaults(func=cmd_experiment_confront)
+    sub.add_parser('experiment-top3', help="objectif 3 premiers : modèle appris « gagnant » vs « top 3 » (n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_top3)
 
     s = sub.add_parser('promote', help="met une version déjà entraînée en production (ex. v9)")
     s.add_argument('--version', required=True)

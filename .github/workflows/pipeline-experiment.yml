@@ -12,8 +12,8 @@ on:
       experience:
         description: "Expérience à lancer"
         type: choice
-        options: [confrontations, classe, adversaires, poids]
-        default: confrontations
+        options: [top3, confrontations, classe, adversaires, poids]
+        default: top3
 
 jobs:
   experiment:
@@ -32,4 +32,4 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-pipeline.txt
       - run: pip install -r requirements-pipeline.txt
-      - run: python -m galoptrack "experiment-${{ inputs.experience || 'confrontations' }}"
+      - run: python -m galoptrack "experiment-${{ inputs.experience || 'top3' }}"

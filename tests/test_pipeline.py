@@ -595,3 +595,10 @@ def test_confrontations_use_only_the_past():
     # Rien n'est calculé à partir de la course du jour elle-même
     first = fdf[fdf['race_id'] == 'r1']
     assert first['cf_niveau_vs_best'].isna().all() and first['cf_beat_top'].isna().all()
+
+
+def test_train_model_top3_labels(built):
+    races_list, labels_array, _ = built
+    fdf = build_features(copy.deepcopy(races_list), labels_array)
+    model, _, _, metrics = train.train_model(fdf, features=BASE_FEATURES, label_mode='top3')
+    assert metrics['n_valid_races'] > 0 and model.num_trees() > 0

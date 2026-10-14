@@ -77,8 +77,11 @@ def _hits(valid, pred):
             continue
         top = g.loc[g['pred'].idxmax()]
         top3 = set(g.nlargest(3, 'pred')['nom'])
+        # (n°1 gagne, n°1 placé, gagnant dans le top 3 du modèle,
+        #  nombre de chevaux du top 3 du modèle finissant dans les 3 premiers)
         out[rid] = (int(top['win'] == 1), int(top['pa_num'] <= 3),
-                    int(g.loc[g['win'] == 1, 'nom'].iloc[0] in top3))
+                    int(g.loc[g['win'] == 1, 'nom'].iloc[0] in top3),
+                    int(g[g['nom'].isin(top3)]['pa_num'].le(3).sum()))
     return out
 
 
@@ -371,6 +374,77 @@ def run_confront(storage):
         'Production + classe + confrontations': BASE_FEATURES + CLASSE_FEATURES + CONFRONT_FEATURES,
         'Compétition partiel (sans Elo, jockey, tronçons)': COMPET_BASE + CLASSE_FEATURES + CONFRONT_FEATURES,
         'Compétition partiel sans classe ni confrontations': COMPET_BASE,
+    })
+    return _publish(md)
+
+
+# ── Objectif « les 3 premiers » ─────────────────────────────────────────────
+
+def _compare_folds_top3(fdf, variants, folds=FOLDS):
+    """variants : {nom: (variables, label_mode)}. Mesure principale : sur les 3
+    chevaux classés en tête par le modèle, combien finissent dans les 3 premiers."""
+    ready = fdf.dropna(subset=['pa_num']).sort_values(['date', 'race_id']).reset_index(drop=True)
+    dates = sorted(ready['date'].unique())
+    res = {name: [] for name in variants}
+    periods = []
+    for tf, vf in folds:
+        lo = dates[int(len(dates) * tf)]
+        valid = ready[ready['date'] >= lo]
+        if vf is not None and int(len(dates) * (tf + vf)) < len(dates):
+            valid = valid[valid['date'] < dates[int(len(dates) * (tf + vf))]]
+        valid = valid[valid.groupby('race_id')['nom'].transform('size') >= 4]
+        periods.append(f"{str(valid['date'].min())[4:6]}/{str(valid['date'].min())[2:4]}"
+                       f"→{str(valid['date'].max())[4:6]}/{str(valid['date'].max())[2:4]}")
+        for name, (feats, mode) in variants.items():
+            model, _, _, _ = train.train_model(fdf, features=feats, train_frac=tf, valid_frac=vf, label_mode=mode)
+            res[name].append(_hits(valid, model.predict(valid[feats])))
+    names = list(variants)
+    p3 = lambda h: np.mean([v[3] for v in h.values()])
+    md = ["Sur les 3 chevaux classés en tête par le modèle, nombre moyen qui finissent dans les 3 premiers "
+          "(courses d'au moins 4 partants) :", "",
+          "| | " + " | ".join(periods) + " | Moyenne | Bat la référence |",
+          "|---|" + "---:|" * (len(periods) + 2)]
+    base = [p3(h) for h in res[names[0]]]
+    for name in names:
+        r = [p3(h) for h in res[name]]
+        wins = '—' if name == names[0] else f"{sum(a > b for a, b in zip(r, base))}/{len(r)}"
+        md.append(f"| {name} | " + " | ".join(f"{x:.2f}" for x in r) + f" | **{np.mean(r):.3f}** | {wins} |")
+    md += ["", "Détail, toutes périodes réunies :", "",
+           "| | 0 sur 3 | 1 sur 3 | 2 sur 3 | **3 sur 3 (trio)** | ≥ 2 sur 3 | Gagnant dans le top 3 | N°1 placé |",
+           "|---|---:|---:|---:|---:|---:|---:|---:|"]
+    for name in names:
+        allv = [v for h in res[name] for v in h.values()]
+        c = np.array([v[3] for v in allv])
+        md.append(f"| {name} | " + " | ".join(f"{(c == k).mean():.1%}" for k in range(3))
+                  + f" | **{(c == 3).mean():.1%}** | {(c >= 2).mean():.1%} | "
+                  f"{np.mean([v[2] for v in allv]):.1%} | {np.mean([v[1] for v in allv]):.1%} |")
+    n_races = sum(len(h) for h in res[names[0]])
+    md += ["", f"{n_races} courses de test au total. Un écart de moins de ~0,02 sur la moyenne est dans le bruit."]
+    return md
+
+
+def run_top3(storage):
+    from .classe import class_features
+    from .confront import CONFRONT_FEATURES, confrontation_features
+    fdf = train.load_feature_frame(storage)
+    fdf = class_features(fdf, prior_weight=0.0, suffix='_m0')
+    fdf = confrontation_features(fdf)
+    ready, cutoff = _split(fdf)
+    valid = ready[ready['date'] >= cutoff]
+    md = ["# Objectif : les 3 premiers", "",
+          "Deux façons d'entraîner le modèle : « gagnant » (production : gagnant 3 points, placé 1 point) "
+          "et « top 3 » (dans les 3 premiers = 1 point, sans favoriser le gagnant).", ""]
+    # Tes règles jugées au % de top 3 (tableaux de l'étape 2, période récente)
+    md += _bucket_table(valid, 'cf_weak_ahead_rate', [-0.01, 0, 0.5, 1, 2, np.inf],
+                        ['aucun', '≤ 0,5 par course', '0,5 à 1', '1 à 2', 'plus de 2'],
+                        "Rappel : « des daubes devant lui » (12 mois)") + [""]
+    rules = BASE_FEATURES + CLASSE_FEATURES + CONFRONT_FEATURES
+    md += ["### Modèles, sur 4 périodes de test successives", ""]
+    md += _compare_folds_top3(fdf, {
+        'v8 (référence, appris « gagnant »)': (BASE_FEATURES, 'win'),
+        'v8 appris « top 3 »': (BASE_FEATURES, 'top3'),
+        'v8 + classe + confrontations, appris « top 3 »': (rules, 'top3'),
+        'v8 + classe + confrontations, appris « gagnant »': (rules, 'win'),
     })
     return _publish(md)
 
