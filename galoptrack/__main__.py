@@ -206,11 +206,11 @@ def cmd_experiment_troncons(storage, args):
 
 
 def cmd_experiment_seuils(storage, args):
-    print(experiment.run_seuils(storage))
+    print(experiment.run_seuils(storage, args.version))
 
 
 def cmd_experiment_rentabilite(storage, args):
-    print(experiment.run_rentabilite(storage))
+    print(experiment.run_rentabilite(storage, args.version))
 
 
 def cmd_promote(storage, args):
@@ -295,10 +295,12 @@ def main(argv=None):
         .set_defaults(func=cmd_experiment_top3)
     sub.add_parser('experiment-troncons', help="tronçons : vitesses relatives et scénario de course (n'écrit rien)") \
         .set_defaults(func=cmd_experiment_troncons)
-    sub.add_parser('experiment-seuils', help="% de placés selon la proba du modèle en production (n'écrit rien)") \
-        .set_defaults(func=cmd_experiment_seuils)
-    sub.add_parser('experiment-rentabilite', help="simple placé : seuils de proba et de cote rentables (n'écrit rien)") \
-        .set_defaults(func=cmd_experiment_rentabilite)
+    for name, fn, hlp in (('experiment-seuils', cmd_experiment_seuils, "% de placés selon la proba du modèle"),
+                          ('experiment-rentabilite', cmd_experiment_rentabilite,
+                           "simple placé : seuils de proba et de cote rentables")):
+        s = sub.add_parser(name, help=hlp + " (n'écrit rien)")
+        s.add_argument('--version', default=None, help="version du modèle (défaut : celle en production)")
+        s.set_defaults(func=fn)
 
     s = sub.add_parser('promote', help="met une version déjà entraînée en production (ex. v9)")
     s.add_argument('--version', required=True)

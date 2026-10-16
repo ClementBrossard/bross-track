@@ -542,9 +542,9 @@ def _seuil_tables(d, title):
     return lines
 
 
-def run_seuils(storage):
+def run_seuils(storage, version=None):
     from . import model_store
-    version = model_store.current_version(storage)
+    version = version or model_store.current_version(storage)
     booster, calib, _, meta = model_store.load_version(storage, version)
     feats = booster.feature_name()
     fdf = train.load_feature_frame(storage)
@@ -573,11 +573,11 @@ def run_seuils(storage):
 _RC = re.compile(r'_R(\d+)_(\d+)$')
 
 
-def _scored_with_odds(storage, min_runners=11):
+def _scored_with_odds(storage, min_runners=11, version=None):
     """Courses passées notées par le modèle en production, avec la cote
     (cote directe PMU, avant le départ) et le rapport placé réel."""
     from . import model_store, tables
-    version = model_store.current_version(storage)
+    version = version or model_store.current_version(storage)
     booster, calib, _, meta = model_store.load_version(storage, version)
     feats = booster.feature_name()
     d = train.load_feature_frame(storage).dropna(subset=['pa_num']).copy()
@@ -657,8 +657,8 @@ def _fmt(r):
             f"**{r['roi'] * 100:+.1f} €**")
 
 
-def run_rentabilite(storage):
-    d, version, cutoff = _scored_with_odds(storage)
+def run_rentabilite(storage, version=None):
+    d, version, cutoff = _scored_with_odds(storage, version=version)
     d = d[d['race_has_rap'] & d['cote'].notna()].copy()
     dates = sorted(d['date'].unique())
     mid = dates[len(dates) // 2] if dates else 0

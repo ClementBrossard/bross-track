@@ -14,6 +14,9 @@ on:
         type: choice
         options: [rentabilite, seuils, troncons, top3, confrontations, classe, adversaires, poids]
         default: rentabilite
+      version:
+        description: "Version du modèle pour seuils / rentabilité (vide = production)"
+        default: "v8"
 
 jobs:
   experiment:
@@ -32,4 +35,12 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-pipeline.txt
       - run: pip install -r requirements-pipeline.txt
-      - run: python -m galoptrack "experiment-${{ inputs.experience || 'rentabilite' }}"
+      - env:
+          EXP: ${{ inputs.experience || 'rentabilite' }}
+          VERSION: ${{ inputs.version || 'v8' }}
+        run: |
+          if [ "$EXP" = "seuils" ] || [ "$EXP" = "rentabilite" ]; then
+            python -m galoptrack "experiment-$EXP" ${VERSION:+--version "$VERSION"}
+          else
+            python -m galoptrack "experiment-$EXP"
+          fi
