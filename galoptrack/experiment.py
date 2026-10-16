@@ -13,6 +13,7 @@ Expérience « poids » :
 
 import logging
 import os
+import re
 
 import numpy as np
 import pandas as pd
@@ -564,6 +565,135 @@ def run_seuils(storage):
         after = d[d['date'] > trained]
         if after['race_id'].nunique() >= 30:
             md += _seuil_tables(after, f"Seulement les courses après son entraînement ({trained}), jamais vues du tout")
+    return _publish(md)
+
+
+# ── Rentabilité du simple placé (proba du modèle x cote) ────────────────────
+
+_RC = re.compile(r'_R(\d+)_(\d+)$')
+
+
+def _scored_with_odds(storage, min_runners=11):
+    """Courses passées notées par le modèle en production, avec la cote
+    (cote directe PMU, avant le départ) et le rapport placé réel."""
+    from . import model_store, tables
+    version = model_store.current_version(storage)
+    booster, calib, _, meta = model_store.load_version(storage, version)
+    feats = booster.feature_name()
+    d = train.load_feature_frame(storage).dropna(subset=['pa_num']).copy()
+    cutoff = int(meta.get('metrics', {}).get('cutoff') or 0)
+    d = d[d['date'] >= cutoff].copy()
+    d['pred'] = booster.predict(d[feats])
+    d['cal'] = calib.predict(d['pred'])
+    d['prob'] = d['cal'] / d.groupby('race_id')['cal'].transform('sum') * 100
+    d['n'] = d.groupby('race_id')['nom'].transform('size')
+    d = d[d['n'] >= min_runners].copy()
+    num = d['race_id'].str.extract(_RC)
+    d['num_course'] = pd.to_numeric(num[1], errors='coerce')
+    d['nom_u'] = d['nom'].astype(str).str.strip().str.upper()
+
+    ch = tables.read_table(storage, 'chevaux')
+    ch = ch.assign(date=pd.to_numeric(ch['date'], errors='coerce'),
+                   num_course=pd.to_numeric(ch['num_course'], errors='coerce'),
+                   nom_u=ch['nom_cheval'].astype(str).str.strip().str.upper(),
+                   cote=pd.to_numeric(ch['cote_directe'], errors='coerce'),
+                   npart_ch=pd.to_numeric(ch['numero_partant'], errors='coerce'))
+    ch = ch.drop_duplicates(['date', 'code_hippo', 'num_course', 'nom_u'])
+    d = d.merge(ch[['date', 'code_hippo', 'num_course', 'nom_u', 'cote', 'npart_ch']],
+                left_on=['date', 'hippo', 'num_course', 'nom_u'],
+                right_on=['date', 'code_hippo', 'num_course', 'nom_u'], how='left')
+    d['npart'] = pd.to_numeric(d['npart'], errors='coerce').fillna(d['npart_ch'])
+
+    rap = tables.read_table(storage, 'rapports')
+    rap = rap.assign(date=pd.to_numeric(rap['date'], errors='coerce'),
+                     num_course=pd.to_numeric(rap['num_course'], errors='coerce'),
+                     num_pmu=pd.to_numeric(rap['num_pmu'], errors='coerce'),
+                     rp=pd.to_numeric(rap['rapport_place'], errors='coerce') / 100)
+    has_rap = set(zip(rap.loc[rap['rp'].notna(), 'date'], rap.loc[rap['rp'].notna(), 'code_hippo'],
+                      rap.loc[rap['rp'].notna(), 'num_course']))
+    rap = rap.dropna(subset=['rp']).drop_duplicates(['date', 'code_hippo', 'num_course', 'num_pmu'])
+    d = d.merge(rap[['date', 'code_hippo', 'num_course', 'num_pmu', 'rp']].rename(columns={'code_hippo': 'hippo_r'}),
+                left_on=['date', 'hippo', 'num_course', 'npart'],
+                right_on=['date', 'hippo_r', 'num_course', 'num_pmu'], how='left')
+    d['race_has_rap'] = [k in has_rap for k in zip(d['date'], d['hippo'], d['num_course'])]
+    d['payout'] = d['rp'].fillna(0.0)
+    return d, version, cutoff
+
+
+def _strategy(d, mask):
+    x = d[mask]
+    if not len(x):
+        return None
+    paid = x['payout'] > 0
+    return {'n': len(x), 'races': x['race_id'].nunique(), 'pct': paid.mean(),
+            'avg': x.loc[paid, 'payout'].mean() if paid.any() else 0.0,
+            'roi': x['payout'].sum() / len(x) - 1}
+
+
+def _grid(d, min_bets):
+    rows = []
+    for pmin in (0, 5, 8, 10, 12, 15, 20, 25, 30):
+        for cmin in (1, 3, 5, 8, 10, 15, 20):
+            r = _strategy(d, (d['prob'] >= pmin) & (d['cote'] >= cmin))
+            if r and r['n'] >= min_bets:
+                rows.append({'regle': f"proba ≥ {pmin} % et cote ≥ {cmin}", 'pmin': pmin, 'cmin': cmin,
+                             'ev': None, **r})
+    for ev in (1.0, 1.2, 1.5, 2.0, 2.5, 3.0):
+        r = _strategy(d, d['prob'] / 100 * d['cote'] >= ev)
+        if r and r['n'] >= min_bets:
+            rows.append({'regle': f"proba x cote ≥ {ev}", 'pmin': None, 'cmin': None, 'ev': ev, **r})
+    return rows
+
+
+def _rule_mask(d, row):
+    if row['ev'] is not None:
+        return d['prob'] / 100 * d['cote'] >= row['ev']
+    return (d['prob'] >= row['pmin']) & (d['cote'] >= row['cmin'])
+
+
+def _fmt(r):
+    return (f"{r['n']} | {r['races']} | {r['pct']:.0%} | {r['avg']:.2f} € | "
+            f"**{r['roi'] * 100:+.1f} €**")
+
+
+def run_rentabilite(storage):
+    d, version, cutoff = _scored_with_odds(storage)
+    d = d[d['race_has_rap'] & d['cote'].notna()].copy()
+    dates = sorted(d['date'].unique())
+    mid = dates[len(dates) // 2] if dates else 0
+    A, B = d[d['date'] < mid], d[d['date'] >= mid]
+    md = [f"# Simple placé : quand jouer ? (modèle {version}, courses de 11 partants et plus)", "",
+          f"{d['race_id'].nunique()} courses depuis {cutoff}, avec cote et rapports connus. "
+          f"Mise : 1 € par cheval joué. Résultat = gain ou perte pour **100 € misés** "
+          f"(rapport placé réel PMU, mise perdue si non placé).", "",
+          f"Les seuils sont **choisis** sur la période 1 (avant {mid}) puis **vérifiés** sur la période 2 "
+          f"(à partir de {mid}), que le choix n'a pas vue.", "",
+          "| Joue… | Paris | Courses | % payés | Rapport moyen si payé | Pour 100 € |", "|---|---:|---:|---:|---:|---:|"]
+    for lab, m in (("tous les chevaux", d['prob'] >= 0),
+                   ("le n°1 du modèle", d.groupby('race_id')['prob'].rank(ascending=False, method='first') == 1),
+                   ("le favori du marché", d.groupby('race_id')['cote'].rank(method='first') == 1)):
+        r = _strategy(d, m)
+        md.append(f"| {lab} (toute la période) | {_fmt(r)} |")
+    md += ["", "### Les 10 meilleures règles sur la période 1 (au moins 100 paris), et ce qu'elles donnent ensuite", "",
+           "| Règle | Période 1 : paris | P1 : pour 100 € | **Période 2 : paris** | **P2 : % payés** | **P2 : pour 100 €** |",
+           "|---|---:|---:|---:|---:|---:|"]
+    gA = sorted(_grid(A, 100), key=lambda r: -r['roi'])[:10]
+    for r in gA:
+        rb = _strategy(B, _rule_mask(B, r))
+        b = f"{rb['n']} | {rb['pct']:.0%} | **{rb['roi'] * 100:+.1f} €**" if rb else "0 | — | —"
+        md.append(f"| {r['regle']} | {r['n']} | {r['roi'] * 100:+.1f} € | {b} |")
+    md += ["", "### Carte complète, toute la période : résultat pour 100 € selon proba minimum (lignes) et cote minimum (colonnes)", "",
+           "| Proba ≥ / cote ≥ | 1 | 3 | 5 | 8 | 10 | 15 | 20 |", "|---|---:|---:|---:|---:|---:|---:|---:|"]
+    for pmin in (0, 5, 8, 10, 12, 15, 20, 25, 30):
+        cells = []
+        for cmin in (1, 3, 5, 8, 10, 15, 20):
+            r = _strategy(d, (d['prob'] >= pmin) & (d['cote'] >= cmin))
+            cells.append(f"{r['roi'] * 100:+.0f} ({r['n']})" if r and r['n'] >= 30 else '—')
+        md.append(f"| {pmin} % | " + " | ".join(cells) + " |")
+    md += ["", "Entre parenthèses : nombre de paris. Moins de 30 paris : non affiché.", "",
+           "Rappels : la cote utilisée est la dernière cote PMU avant le départ (au moment du rafraîchissement "
+           "de midi, elle peut encore bouger) ; le prélèvement du PMU sur le placé est d'environ 15 à 20 %, "
+           "donc « jouer tout » perd mécaniquement.", ""]
     return _publish(md)
 
 
