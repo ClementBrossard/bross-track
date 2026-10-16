@@ -599,6 +599,7 @@ def _scored_with_odds(storage, min_runners=11):
                    cote=pd.to_numeric(ch['cote_directe'], errors='coerce'),
                    npart_ch=pd.to_numeric(ch['numero_partant'], errors='coerce'))
     ch = ch.drop_duplicates(['date', 'code_hippo', 'num_course', 'nom_u'])
+    d = d.drop(columns=['cote'], errors='ignore')   # cote du jour seulement, vide dans l'historique
     d = d.merge(ch[['date', 'code_hippo', 'num_course', 'nom_u', 'cote', 'npart_ch']],
                 left_on=['date', 'hippo', 'num_course', 'nom_u'],
                 right_on=['date', 'code_hippo', 'num_course', 'nom_u'], how='left')
