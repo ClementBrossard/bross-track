@@ -9,6 +9,9 @@ on:
         description: "Mettre la nouvelle version en production si elle passe le garde-fou"
         type: boolean
         default: true
+      version:
+        description: "Facultatif : ne pas réentraîner, mettre cette version en production (ex. v9, ou v8 pour revenir en arrière)"
+        default: ""
 
 concurrency:
   group: galoptrack-data
@@ -32,8 +35,12 @@ jobs:
           cache-dependency-path: requirements-pipeline.txt
       - run: pip install -r requirements-pipeline.txt
       - name: Entraînement
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
-          if [ "${{ inputs.promote }}" = "false" ]; then
+          if [ -n "$VERSION" ]; then
+            python -m galoptrack promote --version "$VERSION"
+          elif [ "${{ inputs.promote }}" = "false" ]; then
             python -m galoptrack train --no-promote
           else
             python -m galoptrack train

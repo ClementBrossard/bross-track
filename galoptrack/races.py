@@ -182,6 +182,7 @@ def build_races(tr, tc, ch):
             'cd': safe_int(r.get('corde')),
             'pd': safe_num(r.get('poids_kg'), 1),
             'mu': safe_str(r.get('musique')),
+            'ec': safe_str(r.get('ecart_precedent')),
             'oe': safe_str(r.get('oeilleres')),
             'nc': safe_int(r.get('nb_courses_carriere')),
             'nv': safe_int(r.get('nb_victoires_carriere')),

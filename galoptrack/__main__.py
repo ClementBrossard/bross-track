@@ -4,6 +4,7 @@
   collect --from --to   collecte / rattrapage d'une période
   dashboard             régénère le dashboard (cotes du jour à jour)
   train                 réentraîne le modèle (run mensuel)
+  promote --version vN  met une version déjà entraînée en production (ou revient en arrière)
   migrate               import unique de l'historique Drive (raw/)
   status                état des tables et du modèle
   backup [--label | --list]           sauvegarde des tables (backups/<nom>/)
@@ -18,7 +19,7 @@ import logging
 import sys
 from datetime import timedelta
 
-from . import audit, collect, config, dashboard, health, migrate, model_store, tables, train
+from . import audit, collect, config, experiment, dashboard, health, migrate, model_store, tables, train
 from .storage import get_storage
 
 
@@ -180,6 +181,47 @@ def cmd_audit_hippos(storage, args):
     print(audit.report(rows))
 
 
+def cmd_experiment(storage, args):
+    print(experiment.run(storage))
+
+
+def cmd_experiment_opp(storage, args):
+    print(experiment.run_opposition(storage))
+
+
+def cmd_experiment_classe(storage, args):
+    print(experiment.run_classe(storage))
+
+
+def cmd_experiment_confront(storage, args):
+    print(experiment.run_confront(storage))
+
+
+def cmd_experiment_top3(storage, args):
+    print(experiment.run_top3(storage))
+
+
+def cmd_experiment_troncons(storage, args):
+    print(experiment.run_troncons(storage))
+
+
+def cmd_experiment_seuils(storage, args):
+    print(experiment.run_seuils(storage, args.version))
+
+
+def cmd_experiment_rentabilite(storage, args):
+    print(experiment.run_rentabilite(storage, args.version))
+
+
+def cmd_promote(storage, args):
+    versions = model_store.list_versions(storage)
+    if args.version not in versions:
+        raise SystemExit(f"Version inconnue : {args.version} (disponibles : {', '.join(versions)})")
+    before = model_store.current_version(storage)
+    model_store.set_current(storage, args.version)
+    print(f"Modèle en production : {before} -> {args.version}")
+
+
 def cmd_train(storage, args):
     meta = train.run(storage, promote=not args.no_promote)
     print(json.dumps(meta, indent=1, default=str))
@@ -240,6 +282,29 @@ def main(argv=None):
     s.add_argument('--days', type=int, default=365)
     s.add_argument('--step', type=int, default=2)
     s.set_defaults(func=cmd_audit_hippos)
+
+    sub.add_parser('experiment-poids', help="compare le modèle avec / sans poids relatif (n'écrit rien)") \
+        .set_defaults(func=cmd_experiment)
+    sub.add_parser('experiment-adversaires', help="niveau des adversaires affrontés vs peloton du jour (n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_opp)
+    sub.add_parser('experiment-classe', help="note de classe turfiste (étape 1 du modèle Compétition, n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_classe)
+    sub.add_parser('experiment-confrontations', help="confrontations (étape 2 du modèle Compétition, n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_confront)
+    sub.add_parser('experiment-top3', help="objectif 3 premiers : modèle appris « gagnant » vs « top 3 » (n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_top3)
+    sub.add_parser('experiment-troncons', help="tronçons : vitesses relatives et scénario de course (n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_troncons)
+    for name, fn, hlp in (('experiment-seuils', cmd_experiment_seuils, "% de placés selon la proba du modèle"),
+                          ('experiment-rentabilite', cmd_experiment_rentabilite,
+                           "simple placé : seuils de proba et de cote rentables")):
+        s = sub.add_parser(name, help=hlp + " (n'écrit rien)")
+        s.add_argument('--version', default=None, help="version du modèle (défaut : celle en production)")
+        s.set_defaults(func=fn)
+
+    s = sub.add_parser('promote', help="met une version déjà entraînée en production (ex. v9)")
+    s.add_argument('--version', required=True)
+    s.set_defaults(func=cmd_promote)
 
     sub.add_parser('migrate').set_defaults(func=cmd_migrate)
     sub.add_parser('status').set_defaults(func=cmd_status)

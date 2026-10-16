@@ -62,6 +62,15 @@ def parse_participant(p):
             except (TypeError, ValueError):
                 pass
 
+    # Poids « handicap » (avant décharge du jockey) : même source que
+    # l'historique (collect.participant_row), pour comparer d'une course à l'autre
+    pdh = None
+    try:
+        v = float(p.get('handicapPoids'))
+        pdh = round(v / 10, 1) if v > 200 else round(v, 1)
+    except (TypeError, ValueError):
+        pass
+
     gains_obj = p.get('gainsParticipant') or {}
     gains = None
     if isinstance(gains_obj, dict) and gains_obj.get('gainsCarriere') is not None:
@@ -90,6 +99,7 @@ def parse_participant(p):
         'npart': si(p.get('numPmu')),
         'cd': si(p.get('placeCorde')),
         'pd': poids_kg,
+        'pdh': pdh,
         'mu': sn(p.get('musique')),
         'oe': sn(p.get('oeilleres')),
         'nc': si(p.get('nombreCourses')),
@@ -164,6 +174,43 @@ def add_today_races(races_list, day: date):
     return added
 
 
+def add_weight_info(races_list):
+    """Pour chaque cheval des courses du jour : poids, écart avec sa dernière
+    course de la même famille (plat / obstacles), écart avec la moyenne du
+    champ, décharge. Affichage seulement : le modèle n'utilise pas le poids."""
+    fam = lambda r: 'PLAT' if is_plat(r) else 'OBS'
+    hist = defaultdict(list)
+    for r in races_list:
+        if r.get('today'):
+            continue
+        for h in r['horses']:
+            if h.get('pd') is not None:
+                hist[(h['nom'], fam(r))].append((r['date'], float(h['pd'])))
+    n = 0
+    for r in races_list:
+        if not r.get('today'):
+            continue
+        poids = {h['nom']: h.get('pdh') if h.get('pdh') is not None else h.get('pd') for h in r['horses']}
+        vals = [float(v) for v in poids.values() if v is not None]
+        moyenne = sum(vals) / len(vals) if len(vals) > 1 else None
+        for h in r['horses']:
+            w = poids[h['nom']]
+            if w is None:
+                continue
+            info = {'kg': w}
+            prev = [x for x in hist.get((h['nom'], fam(r)), []) if x[0] < r['date']]
+            if prev:
+                last = max(prev)[1]
+                info.update(last=last, delta=round(w - last, 1))
+            if moyenne is not None:
+                info['field'] = round(w - moyenne, 1)
+            if h.get('pd') is not None and h.get('pdh') is not None and h['pdh'] - h['pd'] >= 0.5:
+                info['decharge'] = round(h['pdh'] - h['pd'], 1)
+            h['w'] = info
+            n += 1
+    return n
+
+
 # ── Cellule 6c : scoring des courses du jour ─────────────────────────────────
 
 LABEL_FR = {
@@ -185,6 +232,10 @@ LABEL_FR = {
     'cat': 'Catégorie', 'alloc': 'Allocation du jour', 'cd': 'Corde de départ',
     'win_rate_career': '% victoires carrière', 'place_rate_career': '% places carrière',
     'terrain': 'Terrain', 'piste': 'Piste', 'dist': 'Distance', 'ag': 'Âge', 'sx': 'Sexe', 'oe': 'Œillères',
+    'beaten_vs_field_90': 'Chevaux battus (3 mois) vs peloton du jour',
+    'beaten_vs_top3_90': 'Chevaux battus (3 mois) vs 3 meilleurs rivaux',
+    'field_below_bmax_90': 'Part du peloton sous son meilleur battu (3 mois)',
+    'field_below_bavg_90': 'Part du peloton déjà dépassée (3 mois)',
 }
 
 FEATURE_GROUPS = [
@@ -193,6 +244,8 @@ FEATURE_GROUPS = [
                                            'h2h_opp_met', 'last_race_opp_elo_ahead_avg',
                                            'last_race_opp_elo_ahead_max', 'last_race_opp_elo_beaten_avg',
                                            'last_race_opp_elo_beaten_max']),
+    ('Peloton du jour vs chevaux déjà battus', ['beaten_vs_field_90', 'beaten_vs_top3_90',
+                                                'field_below_bmax_90', 'field_below_bavg_90']),
     ('Tronçons (vitesses, tracking)', ['accel_roll5', 'gain_roll5', 'finish_kick_roll5']),
     ('Jockey & entraîneur', ['jk_prior_n', 'jk_prior_winrate', 'jk_prior_placerate',
                              'en_prior_n', 'en_prior_winrate', 'en_prior_placerate']),
@@ -202,13 +255,14 @@ FEATURE_GROUPS = [
 ]
 
 
-def model_meta(version):
+def model_meta(version, features=None):
+    features = features or FEATURES
     return {
         'version': version,
-        'n_features': len(FEATURES),
+        'n_features': len(features),
         'feature_groups': [
-            {'group': g, 'features': [{'key': f, 'label': LABEL_FR.get(f, f)} for f in feats if f in FEATURES]}
-            for g, feats in FEATURE_GROUPS
+            {'group': g, 'features': [{'key': f, 'label': LABEL_FR.get(f, f)} for f in feats if f in features]}
+            for g, feats in FEATURE_GROUPS if any(f in features for f in feats)
         ],
         'excluded': [
             "La cote n'est jamais utilisée comme feature d'entraînement : elle n'existe pas dans l'historique (disponible uniquement pour la course du jour), et l'objectif du modèle est justement de la comparer à sa propre estimation (colonne \"Écart\"), pas de la reproduire.",
@@ -225,6 +279,37 @@ def model_meta(version):
     }
 
 
+def _best_beaten_finder(fdf, days=90, top=2):
+    """Fonction (nom, date du jour) -> les `top` meilleurs chevaux (Elo avant la
+    course) battus par ce cheval dans les `days` jours précédents."""
+    past = fdf[fdf['pa_num'].notna()]
+    nom, rid = past['nom'].to_numpy(), past['race_id'].to_numpy()
+    date, pa = past['date'].to_numpy(), past['pa_num'].to_numpy()
+    elo, hippo = past['elo'].to_numpy(), past['hippo'].astype(str).to_numpy()
+    by_race = past.groupby('race_id', sort=False).indices
+    by_horse = past.groupby('nom', sort=False).indices
+
+    def find(name, day):
+        lo = int((pd.Timestamp(str(day)) - pd.Timedelta(days=days)).strftime('%Y%m%d'))
+        cands = {}
+        for i in by_horse.get(name, []):
+            if not (lo <= date[i] < day):
+                continue
+            for j in by_race[rid[i]]:
+                if pa[j] > pa[i] and (nom[j] not in cands or elo[j] > cands[nom[j]][0]):
+                    cands[nom[j]] = (elo[j], int(date[i]), hippo[i])
+        best = sorted(cands.items(), key=lambda kv: -kv[1][0])[:top]
+        return [{'nom': k, 'date': v[1], 'hippo': v[2]} for k, v in best]
+    return find
+
+
+def _opp_info(row, best):
+    def num(v, nd):
+        return None if pd.isna(v) else round(float(v), nd)
+    return {'pct': num(row.get('field_below_bavg_90'), 2), 'vs_top3': num(row.get('beaten_vs_top3_90'), 0),
+            'best': best}
+
+
 def score_today(races_list, labels_array, booster, calib):
     """Probabilité calibrée + détail SHAP pour chaque cheval des courses de
     plat du jour (le modèle n'a appris que le plat : les obstacles ne sont pas
@@ -235,7 +320,9 @@ def score_today(races_list, labels_array, booster, calib):
         return 0
     fdf = build_features(plat, labels_array)
     X = fdf[fdf['race_id'].isin(today_ids)].reset_index(drop=True)
-    X['pred'] = booster.predict(X[FEATURES])
+    # Variables du modèle chargé (v8 : 37, v9 : 41) — pas forcément FEATURES
+    feats = booster.feature_name()
+    X['pred'] = booster.predict(X[feats])
     X['calib'] = calib.predict(X['pred'])
     X['calib_norm'] = X.groupby('race_id')['calib'].transform(lambda s: s / s.sum())
     X['market_prob'] = 1 / pd.to_numeric(X['cote'], errors='coerce')
@@ -243,22 +330,24 @@ def score_today(races_list, labels_array, booster, calib):
         lambda s: s / s.sum() if s.notna().any() else s)
 
     # Valeurs SHAP (TreeSHAP natif LightGBM, identique à shap.TreeExplainer)
-    contrib = booster.predict(X[FEATURES], pred_contrib=True)
+    contrib = booster.predict(X[feats], pred_contrib=True)
     shap_vals, shap_base = contrib[:, :-1], contrib[:, -1]
 
     index = {r['id']: r for r in races_list}
+    best_beaten = _best_beaten_finder(fdf)
     n = 0
     for i in range(len(X)):
         row = X.iloc[i]
         horse = next((h for h in index[row['race_id']]['horses'] if h['nom'] == row['nom']), None)
         if horse is None:
             continue
+        horse['opp'] = _opp_info(row, best_beaten(row['nom'], int(row['date'])))
         vals = shap_vals[i]
         order = np.argsort(-np.abs(vals))[:8]
         horse['model_prob'] = None if pd.isna(row['calib_norm']) else round(float(row['calib_norm']) * 100, 2)
         horse['market_prob'] = None if pd.isna(row['market_prob']) else round(float(row['market_prob']) * 100, 2)
         horse['shap_base'] = round(float(shap_base[i]), 4)
-        horse['shap_top'] = [{'f': LABEL_FR.get(FEATURES[j], FEATURES[j]), 'v': round(float(vals[j]), 4)}
+        horse['shap_top'] = [{'f': LABEL_FR.get(feats[j], feats[j]), 'v': round(float(vals[j]), 4)}
                              for j in order]
         n += 1
     return n
@@ -475,6 +564,7 @@ def build(storage, day=None, with_today=True):
 
     stats['races_today'] = add_today_races(races_list, day) if with_today else 0
     stats['races_today_plat'] = sum(1 for r in races_list if r.get('today') and is_plat(r))
+    add_weight_info(races_list)
 
     version = model_store.current_version(storage)
     backtest, meta = None, None
@@ -482,7 +572,7 @@ def build(storage, day=None, with_today=True):
     if version:
         booster, calib, backtest, _ = model_store.load_version(storage, version)
         stats['horses_scored'] = score_today(races_list, labels_array, booster, calib)
-        meta = model_meta(version)
+        meta = model_meta(version, booster.feature_name())
     else:
         log.warning("Aucun modèle en production (model/current.json absent) : onglet Modèle vide")
 

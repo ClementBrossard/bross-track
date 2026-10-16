@@ -1911,9 +1911,18 @@ function renderBacktestKpis(races){
   const moyTop3 = races.reduce((s,r)=>s+r.nb_pred_top5_in_real_top3,0) / n;
   const pctAu2 = races.filter(r=>r.nb_pred_top5_in_real_top3>=2).length / n;
   const pctAu3 = races.filter(r=>r.nb_pred_top5_in_real_top3>=3).length / n;
+  // Objectif « 3 premiers » : top 3 du modèle vs vrai top 3
+  const t3 = r => { const real = r.real_top5.slice(0,3).map(bhName);
+    return predTop5(r).slice(0,3).map(bhName).filter(x => real.includes(x)).length; };
+  const moyT3 = races.reduce((s,r)=>s+t3(r),0) / n;
+  const pctTrio = races.filter(r=>t3(r)===3).length / n;
+  const pctT3x2 = races.filter(r=>t3(r)>=2).length / n;
 
   kpiEl.innerHTML = `
     <div class="kpi"><div class="label">Courses (filtre actif)</div><div class="val">${n.toLocaleString('fr-FR')}</div></div>
+    <div class="kpi"><div class="label">Top 3 du modèle dans le vrai top 3</div><div class="val">${moyT3.toFixed(2)} / 3</div></div>
+    <div class="kpi"><div class="label">Au moins 2 des 3 premiers</div><div class="val">${(pctT3x2*100).toFixed(1)}%</div></div>
+    <div class="kpi"><div class="label">Trio complet (3/3)</div><div class="val">${(pctTrio*100).toFixed(1)}%</div></div>
     <div class="kpi"><div class="label">Hit-rate top-1 (vainqueur)</div><div class="val">${(hitTop1*100).toFixed(1)}%</div></div>
     <div class="kpi"><div class="label">Moy. top5 prédit dans le vrai top3</div><div class="val">${moyTop3.toFixed(2)} / 5</div></div>
     <div class="kpi"><div class="label">Au moins 2/5 dans le top3</div><div class="val">${(pctAu2*100).toFixed(1)}%</div></div>
@@ -3402,6 +3411,8 @@ function renderModele(){
       <td style="padding:7px 10px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--ink-soft);">${h.npart ?? '—'}</td>
       <td style="padding:7px 10px;font-size:13px;font-weight:600;"><span class="horse-link">${h.nom}</span></td>
       <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;">${h.cote ? h.cote.toFixed(1) : '—'}</td>
+      <td style="padding:7px 10px;text-align:right;white-space:nowrap;">${weightCell(h)}</td>
+      <td style="padding:7px 10px;">${oppCell(h)}</td>
       <td style="padding:7px 10px;min-width:170px;">
         <div style="background:#ece6d4;border-radius:3px;height:13px;margin-bottom:2px;">
           <div style="background:var(--green);height:13px;border-radius:3px;width:${wModel}%;"></div>
@@ -3441,7 +3452,7 @@ function renderModele(){
   }).join('');
 
   container.innerHTML = `
-    <p class="count">Probabilités calibrées du modèle vs probabilité implicite du marché (1/cote).</p>
+    <p class="count">Probabilités calibrées du modèle vs probabilité implicite du marché (1/cote). Poids : le modèle ne l'utilise pas ; écart avec la dernière course (même discipline) et avec la moyenne du champ, décharge du jockey. Sur l'historique, un cheval allégé ou plus léger que le champ gagne en moyenne moins souvent : le poids suit le handicap, donc la forme et la classe. Peloton déjà dépassé : part des rivaux du jour moins bien notés que les chevaux qu'il a battus ces 3 derniers mois, avec ses meilleures victimes (80-100 % : 14,9 % de victoires sur l'historique, contre 7,9 % sous 20 %).</p>
     <table style="width:100%;border-collapse:collapse;background:var(--paper);border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-bottom:26px;">
       <thead>
         <tr style="text-align:left;border-bottom:2px solid var(--green);background:var(--green);">
@@ -3449,6 +3460,8 @@ function renderModele(){
           <th style="padding:8px 10px;font-size:12px;color:var(--paper);text-align:center;">N°</th>
           <th style="padding:8px 10px;font-size:12px;color:var(--paper);">Cheval</th>
           <th style="padding:8px 10px;font-size:12px;color:var(--paper);text-align:right;">Cote</th>
+          <th style="padding:8px 10px;font-size:12px;color:var(--paper);text-align:right;">Poids</th>
+          <th style="padding:8px 10px;font-size:12px;color:var(--paper);">Peloton déjà dépassé</th>
           <th style="padding:8px 10px;font-size:12px;color:var(--paper);">Proba modèle</th>
           <th style="padding:8px 10px;font-size:12px;color:var(--paper);">Proba marché</th>
           <th style="padding:8px 10px;font-size:12px;color:var(--paper);text-align:right;">Écart</th>
@@ -3475,6 +3488,32 @@ function renderModele(){
   container.querySelectorAll('[data-toggle-shap]').forEach(el=>{
     el.addEventListener('click', ()=> toggleShapPanel(parseInt(el.dataset.toggleShap,10)));
   });
+}
+
+function oppCell(h){
+  const o = h.opp;
+  if(!o || o.pct === null || o.pct === undefined) return '<span style="color:var(--ink-soft);font-size:11px;">aucun cheval battu en 3 mois</span>';
+  const pct = Math.round(o.pct * 100);
+  const color = pct >= 80 ? 'var(--green)' : (pct < 20 ? '#a8402c' : 'var(--ink)');
+  const d = v => { const s = String(v); return s.slice(6, 8) + '/' + s.slice(4, 6); };
+  const names = (o.best || []).map(b => `${b.nom} <span style="color:var(--ink-soft);">(${b.hippo} ${d(b.date)})</span>`).join('<br>');
+  return `<div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:${color};">${pct} %</div>`
+    + (names ? `<div style="font-size:10.5px;line-height:1.35;">a battu ${names}</div>` : '');
+}
+
+function weightCell(h){
+  const w = h.w;
+  if(!w) return '<span style="color:var(--ink-soft);">—</span>';
+  const num = v => String(v).replace('.', ',');
+  const sign = v => (v > 0 ? '+' : '') + num(v);
+  // Couleur neutre : sur l'historique, plus léger ne veut pas dire plus de
+  // chances (le poids suit le handicap, donc la forme et la classe).
+  const lines = [];
+  if(w.delta !== undefined) lines.push(`${sign(w.delta)} vs dern.`);
+  if(w.field !== undefined) lines.push(`${sign(w.field)} vs moy.`);
+  if(w.decharge) lines.push(`déch. ${num(w.decharge)}`);
+  return `<div style="font-family:'JetBrains Mono',monospace;font-size:13px;">${num(w.kg)} kg</div>`
+    + `<div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--ink-soft);line-height:1.35;">${lines.join('<br>')}</div>`;
 }
 
 function toggleShapPanel(idx){

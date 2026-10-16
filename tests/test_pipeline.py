@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 
 from galoptrack import dashboard, migrate, model_store, pmu, tables, train
-from galoptrack.features import FEATURES, build_features
+from galoptrack.features import BASE_FEATURES, FEATURES, FIELD_FEATURES, build_features, opposition_features
 from galoptrack.races import build_races, is_plat
 from galoptrack.storage import LocalStorage
 
@@ -49,7 +49,8 @@ def test_features_parity_with_notebook(built):
     new = new.sort_values(key).reset_index(drop=True)
     assert (ref[key].values == new[key].values).all()
     checked = 0
-    for f in FEATURES:
+    # Les 37 variables du notebook (les variables « peloton » de la v9 n'y existent pas)
+    for f in BASE_FEATURES:
         a, b = ref[f], new[f]
         if isinstance(a.dtype, pd.CategoricalDtype) or isinstance(b.dtype, pd.CategoricalDtype) or a.dtype == object:
             def norm(s):
@@ -60,7 +61,8 @@ def test_features_parity_with_notebook(built):
             np.testing.assert_allclose(a.astype(float).values, b.astype(float).values, rtol=1e-9,
                                        equal_nan=True, err_msg=f)
         checked += 1
-    assert checked == len(FEATURES)
+    assert checked == len(BASE_FEATURES)
+    assert all(new[f].notna().any() for f in FIELD_FEATURES)
     # Les features tronçons doivent être réellement calculées sur ces données
     assert new['accel_roll5'].notna().sum() > 100
     assert new['elo'].nunique() > 50
@@ -127,8 +129,14 @@ def test_train_and_dashboard_end_to_end(tmp_path, raw, monkeypatch):
     st = LocalStorage(tmp_path)
     _store_tables(st, raw)
     monkeypatch.setattr(train.config, 'MIN_HIT_RATE_TOP1', 0.0)
+    monkeypatch.setattr(train.config, 'MAX_DROP_VS_TEMOIN', 1.0)
+    # Modèle à 41 variables (37 + peloton) pour tester le témoin et le scoring mixte
+    monkeypatch.setattr(train, 'FEATURES', BASE_FEATURES + FIELD_FEATURES)
     meta = train.run(st)
     assert meta['promoted'] and model_store.current_version(st) == 'v1'
+    # Témoin v8 entraîné sur la même période, mesures « top 3 »
+    assert meta['temoin_v8']['n_valid_races'] == meta['metrics']['n_valid_races']
+    assert 0 <= meta['metrics']['top3_in_top3'] <= 3 and meta['metrics']['label_mode'] == 'top3'
     m = meta['metrics']
     assert m['n_valid_races'] > 20
     # Les chevaux ont une vraie « ability » cachée : le modèle doit battre le hasard
@@ -152,6 +160,15 @@ def test_train_and_dashboard_end_to_end(tmp_path, raw, monkeypatch):
     n = dashboard.score_today(races_list, labels_array, booster, calib)
     assert n == len(today['horses'])
     assert not any('model_prob' in h for h in obst['horses'])
+    # « Peloton déjà dépassé » renseigné, avec les meilleurs chevaux battus
+    assert any(h['opp']['pct'] is not None and h['opp']['best'] for h in today['horses'])
+    # Un modèle à 37 variables (v8) se score toujours avec ses propres variables
+    fdf_all = build_features([r for r in races_list if r.get('disc', 'PLAT') == 'PLAT'], labels_array)
+    m37, cal37, _, _ = train.train_model(fdf_all, features=BASE_FEATURES)
+    for h in today['horses']:
+        h.pop('model_prob', None)
+    assert dashboard.score_today(races_list, labels_array, m37, cal37) == len(today['horses'])
+    assert m37.feature_name() == BASE_FEATURES
     probs = [h['model_prob'] for h in today['horses']]
     assert abs(sum(probs) - 100) < 0.5
     assert all(len(h['shap_top']) == 8 for h in today['horses'])
@@ -438,3 +455,163 @@ def test_backup_and_restore_tables(tmp_path, raw):
     assert st.read_bytes(tables.table_key('chevaux')) == before
     with pytest.raises(SystemExit):
         cli.restore(st, 'inexistante')
+
+
+# ── Poids ───────────────────────────────────────────────────────────────────
+
+def test_weight_info_for_today_races():
+    hist = {'id': 'H', 'date': 20261001, 'hippo': 'CHA', 'horses': [{'nom': 'A', 'pd': 58}, {'nom': 'B', 'pd': 55}]}
+    obst = {'id': 'O', 'date': 20261005, 'hippo': 'AUT', 'disc': 'HAIES', 'horses': [{'nom': 'A', 'pd': 67}]}
+    today = {'id': 'T', 'date': 20261010, 'hippo': 'CHA', 'today': True, 'horses': [
+        {'nom': 'A', 'pd': 54, 'pdh': 56},   # décharge de 2 kg
+        {'nom': 'B', 'pd': 57, 'pdh': 57},
+        {'nom': 'C', 'pd': None, 'pdh': None},
+    ]}
+    assert dashboard.add_weight_info([hist, obst, today]) == 2
+    a, b, c = today['horses']
+    # Comparaison au plat (pas à la course d'obstacles), poids avant décharge
+    assert a['w'] == {'kg': 56, 'last': 58.0, 'delta': -2.0, 'field': -0.5, 'decharge': 2}
+    assert b['w'] == {'kg': 57, 'last': 55.0, 'delta': 2.0, 'field': 0.5}
+    assert 'w' not in c
+
+
+def test_weight_features_use_only_the_past(built):
+    from galoptrack import experiment
+    races_list, labels_array, _ = built
+    fdf = experiment.add_weight_features(build_features(copy.deepcopy(races_list), labels_array))
+    for f in experiment.WEIGHT_FEATURES:
+        assert f in fdf and fdf[f].notna().any()
+    # Écart avec la course précédente = différence de poids entre deux sorties consécutives
+    g = fdf[fdf['nom'] == fdf['nom'].iloc[-1]]
+    w = pd.to_numeric(g['pd'], errors='coerce').to_numpy()
+    np.testing.assert_allclose(g['pd_delta_last'].to_numpy()[1:], w[1:] - w[:-1])
+    # La course précédente d'un cheval n'est jamais celle du jour même
+    first = fdf.groupby('nom').head(1)
+    assert first['pd_delta_last'].isna().all() and first['last_race_beaten_pd_diff'].isna().all()
+
+
+def test_opposition_features_use_only_the_past(built):
+    from galoptrack import experiment
+    races_list, labels_array, _ = built
+    fdf = opposition_features(build_features(copy.deepcopy(races_list), labels_array))
+    extra = ['field_avg', 'field_max', 'field_top3', 'beaten_vs_field_90', 'beaten_vs_top3_90',
+             'field_below_bmax_90', 'field_below_bavg_90']
+    for f in experiment.opposition_set(90) + experiment.opposition_set(180) + extra:
+        assert f in fdf and fdf[f].notna().any(), f
+    # Première course d'un cheval : aucun historique d'adversaires
+    first = fdf.sort_values(['date', 'is_today']).groupby('nom').head(1)
+    assert first['opp_avg_90'].isna().all() and first['beaten_max_180'].isna().all()
+    # Peloton du jour : moyenne des Elo des rivaux (le cheval lui-même exclu)
+    r = fdf[fdf['race_id'] == fdf['race_id'].iloc[0]]
+    i = r.index[0]
+    assert np.isclose(fdf.at[i, 'field_avg'], r['elo'].drop(i).mean())
+    # 6 mois couvrent au moins autant de courses que 3 mois
+    assert fdf['opp_avg_180'].notna().sum() >= fdf['opp_avg_90'].notna().sum()
+    # Parts du peloton : entre 0 et 1, et « sous le meilleur battu » >= « sous la moyenne des battus »
+    both = fdf[['field_below_bmax_90', 'field_below_bavg_90']].dropna()
+    assert both.min().min() >= 0 and both.max().max() <= 1
+    assert (both['field_below_bmax_90'] >= both['field_below_bavg_90']).all()
+
+
+def test_promote_existing_version(tmp_path, capsys):
+    from galoptrack import __main__ as cli
+    st = LocalStorage(tmp_path)
+    for v in ('v8', 'v9'):
+        st.write_bytes(f'model/{v}/meta.json', b'{}')
+    model_store.set_current(st, 'v8')
+    cli.cmd_promote(st, type('A', (), {'version': 'v9'})())
+    assert model_store.current_version(st) == 'v9'
+    with pytest.raises(SystemExit):
+        cli.cmd_promote(st, type('A', (), {'version': 'v12'})())
+
+
+# ── Note de classe ──────────────────────────────────────────────────────────
+
+def _class_frame():
+    """A gagne une fois (allocation 20 000), B gagne trois fois ; ils se
+    retrouvent le 2025-03-01 avec C, débutant."""
+    rows = []
+    def race(rid, date, alloc, res):
+        for nom, pa in res:
+            rows.append({'race_id': rid, 'date': date, 'is_today': False, 'nom': nom,
+                         'alloc': alloc, 'pa_num': pa})
+    race('r1', 20250101, 20000, [('A', 1), ('X', 2)])
+    race('r2', 20250105, 20000, [('B', 1), ('Y', 2)])
+    race('r3', 20250110, 20000, [('B', 1), ('Y', 2)])
+    race('r4', 20250115, 20000, [('B', 1), ('X', 2)])
+    race('r5', 20250301, 30000, [('A', np.nan), ('B', np.nan), ('C', np.nan)])
+    return pd.DataFrame(rows)
+
+
+def test_class_note_accounts_for_experience():
+    from galoptrack.classe import class_features
+    raw = class_features(_class_frame(), prior_weight=0.0)
+    cor = class_features(_class_frame(), prior_weight=1.0)
+    get = lambda d, nom, col='classe': d[(d['race_id'] == 'r5') & (d['nom'] == nom)][col].iloc[0]
+    # Sans correction, 1 victoire = 3 victoires ; avec correction, l'expérience compte
+    assert np.isclose(get(raw, 'A'), get(raw, 'B'))
+    assert get(cor, 'B') > get(cor, 'A') > get(cor, 'C')
+    assert get(cor, 'A', 'classe_n12m') == 1 and get(cor, 'B', 'classe_n12m') == 3
+    # Débutant sans correction : pas de note ; rang 1 = meilleure note
+    assert np.isnan(get(raw, 'C'))
+    assert get(cor, 'B', 'classe_rank') == 1
+    # La course du jour (sans arrivée) ne sert jamais à sa propre note
+    first = cor[cor['race_id'] == 'r1']
+    assert (first['classe_n12m'] == 0).all()
+    # Valeur d'une performance : 2e d'une course à 20 000 = 8 000
+    from galoptrack.classe import performance_value
+    assert performance_value([20000], [2])[0] == 8000
+
+
+# ── Confrontations ──────────────────────────────────────────────────────────
+
+def test_parse_ecart():
+    from galoptrack.confront import parse_ecart
+    assert parse_ecart('Nez') == 0.05 and parse_ecart('Cte Tête') == 0.1 and parse_ecart('Tête') == 0.2
+    assert parse_ecart('1 L') == 1 and parse_ecart('3 L 1/2') == 3.5 and parse_ecart('1/2 L') == 0.5
+    assert parse_ecart('Loin') == 30 and np.isnan(parse_ecart(None)) and np.isnan(parse_ecart('?'))
+
+
+def test_confrontations_use_only_the_past():
+    from galoptrack.confront import confrontation_features
+    rows = []
+    def race(rid, date, alloc, res):
+        for nom, pa, ec in res:
+            rows.append({'race_id': rid, 'date': date, 'is_today': False, 'nom': nom,
+                         'alloc': alloc, 'pa_num': pa, 'ec': ec})
+    # CADOR gagne gros ; A finit 2e à une courte tête de CADOR ; FAIBLE bat B
+    race('r1', 20250101, 100000, [('CADOR', 1, None), ('Z', 2, '2 L')])
+    race('r2', 20250201, 20000, [('CADOR', 1, None), ('A', 2, 'Cte Tête'), ('Y', 3, '5 L')])
+    race('r3', 20250210, 4000, [('FAIBLE', 1, None), ('B', 2, '1 L')])
+    race('r4', 20250215, 20000, [('A', 1, None), ('B', 2, '3 L')])
+    race('r5', 20250301, 20000, [('A', np.nan, None), ('B', np.nan, None), ('FAIBLE', np.nan, None)])
+    fdf = confrontation_features(pd.DataFrame(rows))
+    get = lambda nom, col: fdf[(fdf['race_id'] == 'r5') & (fdf['nom'] == nom)][col].iloc[0]
+    # A a fini à une courte tête de CADOR : niveau « battu de peu » renseigné
+    assert not np.isnan(get('A', 'cf_close_vs_best'))
+    # B a été battu par FAIBLE, rival du jour moins bien noté que lui
+    assert get('B', 'cf_lost_to_weaker') == 1
+    # A a déjà battu B ; rencontres directes vides pour qui n'a jamais rencontré le mieux noté
+    assert get('A', 'cf_lost_to_weaker') == 0 or np.isnan(get('A', 'cf_lost_to_weaker'))
+    # Rien n'est calculé à partir de la course du jour elle-même
+    first = fdf[fdf['race_id'] == 'r1']
+    assert first['cf_niveau_vs_best'].isna().all() and first['cf_beat_top'].isna().all()
+
+
+def test_train_model_top3_labels(built):
+    races_list, labels_array, _ = built
+    fdf = build_features(copy.deepcopy(races_list), labels_array)
+    model, _, _, metrics = train.train_model(fdf, features=BASE_FEATURES, label_mode='top3')
+    assert metrics['n_valid_races'] > 0 and model.num_trees() > 0
+
+
+def test_tracking_features_use_only_the_past(built):
+    from galoptrack.troncons import TRACK_FEATURES, tracking_features
+    races_list, labels_array, _ = built
+    fdf = tracking_features(build_features(copy.deepcopy(races_list), labels_array))
+    for f in TRACK_FEATURES:
+        assert f in fdf, f
+    assert fdf['tk_fin600_mean'].notna().sum() > 100 and fdf['tk_style'].notna().sum() > 100
+    assert fdf['tk_fin600_mean'].dropna().between(0, 1).all()
+    first = fdf.sort_values(['date', 'is_today']).groupby('nom').head(1)
+    assert (first['tk_n'] == 0).all() and first['tk_fin600_mean'].isna().all()
