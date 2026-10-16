@@ -12,8 +12,8 @@ on:
       experience:
         description: "Expérience à lancer"
         type: choice
-        options: [troncons, top3, confrontations, classe, adversaires, poids]
-        default: troncons
+        options: [seuils, troncons, top3, confrontations, classe, adversaires, poids]
+        default: seuils
 
 jobs:
   experiment:
@@ -32,4 +32,4 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-pipeline.txt
       - run: pip install -r requirements-pipeline.txt
-      - run: python -m galoptrack "experiment-${{ inputs.experience || 'troncons' }}"
+      - run: python -m galoptrack "experiment-${{ inputs.experience || 'seuils' }}"

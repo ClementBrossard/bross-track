@@ -205,6 +205,10 @@ def cmd_experiment_troncons(storage, args):
     print(experiment.run_troncons(storage))
 
 
+def cmd_experiment_seuils(storage, args):
+    print(experiment.run_seuils(storage))
+
+
 def cmd_promote(storage, args):
     versions = model_store.list_versions(storage)
     if args.version not in versions:
@@ -287,6 +291,8 @@ def main(argv=None):
         .set_defaults(func=cmd_experiment_top3)
     sub.add_parser('experiment-troncons', help="tronçons : vitesses relatives et scénario de course (n'écrit rien)") \
         .set_defaults(func=cmd_experiment_troncons)
+    sub.add_parser('experiment-seuils', help="% de placés selon la proba du modèle en production (n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_seuils)
 
     s = sub.add_parser('promote', help="met une version déjà entraînée en production (ex. v9)")
     s.add_argument('--version', required=True)

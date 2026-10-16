@@ -507,6 +507,66 @@ def run_troncons(storage):
     return _publish(md)
 
 
+# ── Seuils de probabilité du modèle en production ──────────────────────────
+
+PROB_BINS = [0, 5, 10, 15, 20, 25, 30, 40, 50, 101]
+
+
+def _seuil_tables(d, title):
+    lines = [f"### {title}", "",
+             f"{d['race_id'].nunique()} courses, {len(d)} chevaux.", "",
+             "| Proba du modèle (dashboard) | Chevaux | % 1er | % dans les 3 premiers | Partants (moyenne) |",
+             "|---|---:|---:|---:|---:|"]
+    cut = pd.cut(d['prob'], PROB_BINS, right=False)
+    for b, g in d.groupby(cut, observed=True):
+        lab = f"{int(b.left)} à {int(b.right)} %" if b.right <= 100 else f"{int(b.left)} % et plus"
+        lines.append(f"| {lab} | {len(g)} | {g['win'].mean():.0%} | **{g['top3'].mean():.0%}** | {g['n'].mean():.1f} |")
+    lines += ["", "Cumulé : « au moins X % » ->", "",
+              "| Proba ≥ | Chevaux | Par course (moy.) | % dans les 3 premiers |", "|---|---:|---:|---:|"]
+    nr = d['race_id'].nunique()
+    for t in (10, 15, 20, 25, 30, 35, 40, 50):
+        g = d[d['prob'] >= t]
+        if len(g):
+            lines.append(f"| {t} % | {len(g)} | {len(g) / nr:.2f} | **{g['top3'].mean():.0%}** |")
+    lines += ["", "Selon la taille du peloton, pour les chevaux à 30 % ou plus :", "",
+              "| Partants | Chevaux | % dans les 3 premiers |", "|---|---:|---:|"]
+    g = d[d['prob'] >= 30]
+    for lab, m in (("jusqu'à 8", g['n'] <= 8), ("9 à 12", (g['n'] >= 9) & (g['n'] <= 12)), ("13 et plus", g['n'] >= 13)):
+        x = g[m]
+        if len(x):
+            lines.append(f"| {lab} | {len(x)} | {x['top3'].mean():.0%} |")
+    rank1 = d[d.groupby('race_id')['prob'].rank(ascending=False, method='first') == 1]
+    lines += ["", f"Le n°1 du modèle (quelle que soit sa proba) finit dans les 3 premiers dans "
+                  f"**{rank1['top3'].mean():.0%}** des courses.", ""]
+    return lines
+
+
+def run_seuils(storage):
+    from . import model_store
+    version = model_store.current_version(storage)
+    booster, calib, _, meta = model_store.load_version(storage, version)
+    feats = booster.feature_name()
+    fdf = train.load_feature_frame(storage)
+    d = fdf.dropna(subset=['pa_num']).copy()
+    cutoff = int(meta.get('metrics', {}).get('cutoff') or 0)
+    trained = int(str(meta.get('trained_at', ''))[:10].replace('-', '') or 0)
+    d = d[d['date'] >= cutoff].copy()
+    d['pred'] = booster.predict(d[feats])
+    d['cal'] = calib.predict(d['pred'])
+    d['prob'] = d['cal'] / d.groupby('race_id')['cal'].transform('sum') * 100
+    d['n'] = d.groupby('race_id')['nom'].transform('size')
+    d['top3'] = d['pa_num'] <= 3
+    md = [f"# Modèle {version} : à partir de quelle probabilité un cheval est-il quasi sûr d'être placé ?", "",
+          "Proba = celle affichée dans le dashboard (chance de GAGNER, calibrée, somme = 100 % par course). "
+          "« Placé » = dans les 3 premiers.", ""]
+    md += _seuil_tables(d, f"Toutes les courses depuis la coupure de {version} ({cutoff})")
+    if trained:
+        after = d[d['date'] > trained]
+        if after['race_id'].nunique() >= 30:
+            md += _seuil_tables(after, f"Seulement les courses après son entraînement ({trained}), jamais vues du tout")
+    return _publish(md)
+
+
 def run(storage):
     fdf = add_weight_features(train.load_feature_frame(storage))
     ready, cutoff = _split(fdf)
