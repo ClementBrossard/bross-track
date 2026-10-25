@@ -698,6 +698,39 @@ def run_rentabilite(storage, version=None):
     return _publish(md)
 
 
+# ── Chevaux battus, corrigés du poids et de la valeur handicap ──────────────
+
+def run_perf(storage):
+    from .perf import PERF_FEATURES, performance_ratings
+    fdf = performance_ratings(train.load_feature_frame(storage))
+    ready, cutoff = _split(fdf)
+    valid = ready[ready['date'] >= cutoff].copy()
+    cov = valid['pr_best'].notna().mean()
+    md = ["# Chevaux battus, corrigés du poids (valeur handicap)", "",
+          f"Validation : {valid['race_id'].nunique()} courses de plat depuis {cutoff}. "
+          f"{cov:.0%} des partants ont une performance démontrée (cheval battu avec valeur handicap et poids connus).", "",
+          "Performance = valeur handicap du cheval battu + (poids porté par lui-même - poids porté par le battu), "
+          "meilleure de ses 5 dernières courses (12 mois).", ""]
+
+    def quint(col, title, labels):
+        qs = np.unique(valid[col].quantile([0, .2, .4, .6, .8, 1]).to_numpy())
+        qs[0], qs[-1] = -np.inf, np.inf
+        return _bucket_table(valid, col, qs, list(labels)[:len(qs) - 1], title) + [""]
+
+    lv = ('bien en dessous', 'en dessous', 'proche', 'au-dessus', 'bien au-dessus')
+    md += quint('pr_vs_field_best', "1. Sa meilleure performance démontrée vs la meilleure de ses rivaux du jour", lv)
+    md += quint('pr_vs_hv', "2. Sa meilleure performance démontrée vs sa propre valeur handicap du jour", lv)
+    md += quint('pr_ceiling', "3. Plafond : le plus faible cheval qui l'a battu (corrigé du poids)",
+                ('très bas', 'bas', 'moyen', 'haut', 'très haut'))
+    md += ["### 4. Modèles, sur 4 périodes de test successives", ""]
+    md += _compare_folds_top3(fdf, {
+        'v8 (recette actuelle, appris « gagnant »)': (BASE_FEATURES, 'win'),
+        'v8 + chevaux battus corrigés du poids, « gagnant »': (BASE_FEATURES + PERF_FEATURES, 'win'),
+        'v8 + chevaux battus corrigés du poids, « top 3 »': (BASE_FEATURES + PERF_FEATURES, 'top3'),
+    })
+    return _publish(md)
+
+
 def run(storage):
     fdf = add_weight_features(train.load_feature_frame(storage))
     ready, cutoff = _split(fdf)

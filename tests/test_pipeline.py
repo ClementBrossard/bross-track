@@ -615,3 +615,21 @@ def test_tracking_features_use_only_the_past(built):
     assert fdf['tk_fin600_mean'].dropna().between(0, 1).all()
     first = fdf.sort_values(['date', 'is_today']).groupby('nom').head(1)
     assert (first['tk_n'] == 0).all() and first['tk_fin600_mean'].isna().all()
+
+
+def test_performance_ratings_weight_adjusted():
+    from galoptrack.perf import performance_ratings
+    rows = []
+    def race(rid, date, res):
+        for nom, pa, hv, pd_ in res:
+            rows.append({'race_id': rid, 'date': date, 'is_today': False, 'nom': nom,
+                         'pa_num': pa, 'hv': hv, 'pd': pd_})
+    # A bat B (valeur 40) en portant 2 kg de plus : performance 42 ; C (valeur 30) bat A en recevant 1 kg
+    race('r1', 20250101, [('C', 1, 30, 55), ('A', 2, 38, 56), ('B', 3, 40, 54)])
+    race('r2', 20250201, [('A', np.nan, 38, 56), ('B', np.nan, 40, 54), ('D', np.nan, 35, 55)])
+    fdf = performance_ratings(pd.DataFrame(rows))
+    get = lambda nom, col: fdf[(fdf['race_id'] == 'r2') & (fdf['nom'] == nom)][col].iloc[0]
+    assert get('A', 'pr_best') == 42 and get('A', 'pr_ceiling') == 31
+    assert get('A', 'pr_vs_hv') == 4
+    assert np.isnan(get('D', 'pr_best'))
+    assert fdf[fdf['race_id'] == 'r1']['pr_best'].isna().all()

@@ -205,6 +205,10 @@ def cmd_experiment_troncons(storage, args):
     print(experiment.run_troncons(storage))
 
 
+def cmd_experiment_perf(storage, args):
+    print(experiment.run_perf(storage))
+
+
 def cmd_experiment_seuils(storage, args):
     print(experiment.run_seuils(storage, args.version))
 
@@ -295,6 +299,8 @@ def main(argv=None):
         .set_defaults(func=cmd_experiment_top3)
     sub.add_parser('experiment-troncons', help="tronçons : vitesses relatives et scénario de course (n'écrit rien)") \
         .set_defaults(func=cmd_experiment_troncons)
+    sub.add_parser('experiment-perf', help="chevaux battus corrigés du poids et de la valeur handicap (n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_perf)
     for name, fn, hlp in (('experiment-seuils', cmd_experiment_seuils, "% de placés selon la proba du modèle"),
                           ('experiment-rentabilite', cmd_experiment_rentabilite,
                            "simple placé : seuils de proba et de cote rentables")):
