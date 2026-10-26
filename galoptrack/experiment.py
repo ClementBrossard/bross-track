@@ -592,9 +592,15 @@ def _attach_odds(storage, d):
                    npart_ch=pd.to_numeric(ch['numero_partant'], errors='coerce'))
     ch = ch.drop_duplicates(['date', 'code_hippo', 'num_course', 'nom_u'])
     d = d.drop(columns=['cote', 'npart_ch', 'code_hippo'], errors='ignore')   # cote : vide dans l'historique
-    return d.merge(ch[['date', 'code_hippo', 'num_course', 'nom_u', 'cote', 'npart_ch']],
-                   left_on=['date', 'hippo', 'num_course', 'nom_u'],
-                   right_on=['date', 'code_hippo', 'num_course', 'nom_u'], how='left')
+    dtypes = d.dtypes
+    d = d.merge(ch[['date', 'code_hippo', 'num_course', 'nom_u', 'cote', 'npart_ch']],
+                left_on=['date', 'hippo', 'num_course', 'nom_u'],
+                right_on=['date', 'code_hippo', 'num_course', 'nom_u'], how='left')
+    # la fusion transforme les clés catégorielles (hippo) en texte : on rétablit
+    for c, t in dtypes.items():
+        if isinstance(t, pd.CategoricalDtype) and d[c].dtype != t:
+            d[c] = d[c].astype(t)
+    return d
 
 
 def _scored_with_odds(storage, min_runners=11, version=None):
