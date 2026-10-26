@@ -27,7 +27,9 @@ LOOKBACK_DAYS = int(os.environ.get("GALOPTRACK_LOOKBACK_DAYS", "3"))
 MIN_HIT_RATE_TOP1 = float(os.environ.get("GALOPTRACK_MIN_HIT_RATE", "0.20"))
 # Ce que le modèle apprend : 'top3' (dans les 3 premiers = 1, objectif
 # « trouver les 3 premiers ») ou 'win' (gagnant 3 points, placé 1 — v1 à v8).
-LABEL_MODE = 'top3'
+# v10 : 'win' (avec les variables de performance, légèrement meilleur que
+# 'top3' sur le critère « 3 premiers » : 1,433 contre 1,429).
+LABEL_MODE = 'win'
 # Une nouvelle version n'est promue que si, sur la même période, elle ne fait
 # pas moins bien que le témoin (recette v8 : 37 variables, apprise « gagnant »)
 # en nombre moyen de chevaux de son top 3 finissant dans les 3 premiers.

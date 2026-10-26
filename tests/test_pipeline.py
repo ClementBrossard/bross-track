@@ -136,7 +136,7 @@ def test_train_and_dashboard_end_to_end(tmp_path, raw, monkeypatch):
     assert meta['promoted'] and model_store.current_version(st) == 'v1'
     # Témoin v8 entraîné sur la même période, mesures « top 3 »
     assert meta['temoin_v8']['n_valid_races'] == meta['metrics']['n_valid_races']
-    assert 0 <= meta['metrics']['top3_in_top3'] <= 3 and meta['metrics']['label_mode'] == 'top3'
+    assert 0 <= meta['metrics']['top3_in_top3'] <= 3 and meta['metrics']['label_mode'] == train.config.LABEL_MODE
     m = meta['metrics']
     assert m['n_valid_races'] > 20
     # Les chevaux ont une vraie « ability » cachée : le modèle doit battre le hasard

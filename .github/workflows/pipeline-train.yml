@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       promote:
-        description: "Mettre la nouvelle version en production si elle passe le garde-fou"
+        description: "Mettre la nouvelle version en production si elle passe le garde-fou (sinon : enregistrée seulement)"
         type: boolean
-        default: true
+        default: false
       version:
         description: "Facultatif : ne pas réentraîner, mettre cette version en production (ex. v9, ou v8 pour revenir en arrière)"
         default: ""
@@ -40,7 +40,9 @@ jobs:
         run: |
           if [ -n "$VERSION" ]; then
             python -m galoptrack promote --version "$VERSION"
-          elif [ "${{ inputs.promote }}" = "false" ]; then
+          elif [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.promote }}" = "false" ]; then
+            # Entraînement automatique du 1er du mois : enregistre la version
+            # sans la mettre en production (décision manuelle, champ « version »)
             python -m galoptrack train --no-promote
           else
             python -m galoptrack train

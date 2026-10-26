@@ -236,6 +236,13 @@ LABEL_FR = {
     'beaten_vs_top3_90': 'Chevaux battus (3 mois) vs 3 meilleurs rivaux',
     'field_below_bmax_90': 'Part du peloton sous son meilleur battu (3 mois)',
     'field_below_bavg_90': 'Part du peloton déjà dépassée (3 mois)',
+    'pr_best': 'Meilleur cheval battu (valeur handicap corrigée du poids)',
+    'pr_mean': 'Chevaux battus en moyenne (corrigé du poids)',
+    'pr_ceiling': 'Plus faible cheval qui l\'a battu (corrigé du poids)',
+    'pr_n': 'Courses récentes connues',
+    'pr_vs_hv': 'Meilleure perf. démontrée vs sa valeur handicap',
+    'pr_vs_field_best': 'Meilleure perf. démontrée vs meilleur rival',
+    'pr_vs_field_mean': 'Meilleure perf. démontrée vs peloton',
 }
 
 FEATURE_GROUPS = [
@@ -244,6 +251,8 @@ FEATURE_GROUPS = [
                                            'h2h_opp_met', 'last_race_opp_elo_ahead_avg',
                                            'last_race_opp_elo_ahead_max', 'last_race_opp_elo_beaten_avg',
                                            'last_race_opp_elo_beaten_max']),
+    ('Chevaux battus, corrigés du poids', ['pr_best', 'pr_mean', 'pr_ceiling', 'pr_n', 'pr_vs_hv',
+                                           'pr_vs_field_best', 'pr_vs_field_mean']),
     ('Peloton du jour vs chevaux déjà battus', ['beaten_vs_field_90', 'beaten_vs_top3_90',
                                                 'field_below_bmax_90', 'field_below_bavg_90']),
     ('Tronçons (vitesses, tracking)', ['accel_roll5', 'gain_roll5', 'finish_kick_roll5']),

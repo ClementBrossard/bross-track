@@ -34,6 +34,11 @@ BASE_FEATURES = list(FEATURES)
 # les ajouter un jour : FEATURES = BASE_FEATURES + FIELD_FEATURES (l'entraînement
 # compare alors automatiquement au témoin à 37 variables).
 FIELD_FEATURES = ['beaten_vs_field_90', 'beaten_vs_top3_90', 'field_below_bmax_90', 'field_below_bavg_90']
+# v10 : + chevaux battus (et qui l'ont battu) mesurés par leur valeur handicap,
+# corrigée du poids porté par chacun (perf.py). Testé sur 4 périodes : 4/4
+# meilleures que la recette v8 en « top 3 » (1,433 contre 1,413 sur 3).
+PERF_FEATURES = ['pr_best', 'pr_mean', 'pr_ceiling', 'pr_n', 'pr_vs_hv', 'pr_vs_field_best', 'pr_vs_field_mean']
+FEATURES = BASE_FEATURES + PERF_FEATURES
 CAT_COLS = ['sx', 'oe', 'cat', 'piste', 'terrain', 'hippo']
 
 SORT_CHRONO = ['date', 'is_today', 'race_id']
@@ -279,8 +284,10 @@ def build_features(races_list, labels_array):
     for c in CAT_COLS:
         fdf[c] = fdf[c].astype('category')
 
-    # Niveau des chevaux battus sur 3 mois vs peloton du jour
-    return opposition_features(fdf, windows=(90,))
+    # Niveau des chevaux battus sur 3 mois vs peloton du jour (affichage), puis
+    # performances démontrées corrigées du poids (variables du modèle v10)
+    from .perf import performance_ratings
+    return performance_ratings(opposition_features(fdf, windows=(90,)))
 
 
 # Idée : un cheval qui a déjà affronté (ou battu) de très bons chevaux ces

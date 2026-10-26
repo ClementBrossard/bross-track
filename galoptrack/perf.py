@@ -19,7 +19,7 @@ from collections import deque
 import numpy as np
 import pandas as pd
 
-PERF_FEATURES = ['pr_best', 'pr_mean', 'pr_ceiling', 'pr_n', 'pr_vs_hv', 'pr_vs_field_best', 'pr_vs_field_mean']
+PERF_FEATURES = ['pr_best', 'pr_mean', 'pr_ceiling', 'pr_n', 'pr_vs_hv', 'pr_vs_field_best', 'pr_vs_field_mean']  # = features.PERF_FEATURES
 
 
 def performance_ratings(fdf, n_last=5, window_days=365):
