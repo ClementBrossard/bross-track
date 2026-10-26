@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 
 from . import train
-from .features import BASE_FEATURES, FEATURES
+from .features import BASE_FEATURES, FEATURES, PERF_FEATURES
 
 log = logging.getLogger(__name__)
 
@@ -889,4 +889,75 @@ def run_sonde_cotes(storage):
             md.append("  - exemple : `" + json.dumps({k: ex.get(k) for k in ('nom', 'dernierRapportReference',
                                                                            'dernierRapportDirect')},
                                                     ensure_ascii=False) + "`")
+    return _publish(md)
+
+
+# ── Modèle challenger, étape 0 bis : la cote ~30 min avant le départ ────────
+
+MARKET_REF_FEATURES = ['mkr_prob', 'mkr_rank', 'mkr_logcote', 'mkr_prob_vs_best']
+MOVE_FEATURES = ['mv_log_ratio', 'mv_tendance']
+
+
+def _attach_hist_odds(storage, fdf):
+    """Ajoute la cote de référence (~30 min avant le départ, table cotes_hist)
+    et le mouvement jusqu'au départ (cote de référence -> cote directe)."""
+    from . import tables
+    h = tables.read_table(storage, 'cotes_hist')
+    h = h[h['nom_cheval'].fillna('') != ''].assign(
+        date=pd.to_numeric(h['date'], errors='coerce'),
+        num_course=pd.to_numeric(h['num_course'], errors='coerce'),
+        nom_u=h['nom_cheval'].astype(str).str.strip().str.upper(),
+        cote_ref=pd.to_numeric(h['cote_reference'], errors='coerce'),
+        cote_dir_h=pd.to_numeric(h['cote_directe'], errors='coerce'),
+        mv_tendance=pd.to_numeric(h['tendance_reference'], errors='coerce'),
+        avance_min=(pd.to_numeric(h['heure_directe'], errors='coerce')
+                    - pd.to_numeric(h['heure_reference'], errors='coerce')) / 60000)
+    h = h.drop_duplicates(['date', 'code_hippo', 'num_course', 'nom_u'])
+    fdf = _attach_odds(storage, fdf)
+    dtypes = fdf.dtypes
+    fdf = fdf.merge(h[['date', 'code_hippo', 'num_course', 'nom_u', 'cote_ref', 'cote_dir_h',
+                       'mv_tendance', 'avance_min']].rename(columns={'code_hippo': 'hippo_h'}),
+                    left_on=['date', 'hippo', 'num_course', 'nom_u'],
+                    right_on=['date', 'hippo_h', 'num_course', 'nom_u'], how='left')
+    for c, t in dtypes.items():
+        if isinstance(t, pd.CategoricalDtype) and fdf[c].dtype != t:
+            fdf[c] = fdf[c].astype(t)
+    c = fdf['cote_ref'].where(fdf['cote_ref'] > 1)
+    inv = 1 / c
+    fdf['mkr_prob'] = inv / inv.groupby(fdf['race_id']).transform('sum')
+    fdf['mkr_rank'] = c.groupby(fdf['race_id']).rank(method='min')
+    fdf['mkr_logcote'] = np.log(c)
+    fdf['mkr_prob_vs_best'] = fdf['mkr_prob'] - fdf.groupby('race_id')['mkr_prob'].transform('max')
+    fdf['mv_log_ratio'] = np.log(c / fdf['cote'].where(fdf['cote'] > 1))
+    return market_features(fdf)
+
+
+def run_marche_ref(storage):
+    fdf = _attach_hist_odds(storage, train.load_feature_frame(storage))
+    ready, cutoff = _split(fdf)
+    valid = ready[ready['date'] >= cutoff]
+    has = ready['cote_ref'].notna()
+    same_fav = (valid.groupby('race_id')['mkr_rank'].transform(lambda s: s == s.min())
+                & valid.groupby('race_id')['mk_rank'].transform(lambda s: s == s.min()))
+    n_same = valid[same_fav]['race_id'].nunique() / max(valid['race_id'].nunique(), 1)
+    md = ["# Modèle challenger — étape 0 bis : la cote ~30 min avant le départ", "",
+          f"Cote de référence connue pour **{has.mean():.0%}** des chevaux de plat "
+          f"(relevée en médiane **{ready['avance_min'].median():.0f} min** avant la cote finale).",
+          f"Le favori est le même à ce moment-là et au départ dans **{n_same:.0%}** des courses (depuis {cutoff}).", ""]
+    md += _bucket_table(valid, 'mv_log_ratio', [-np.inf, -0.3, -0.1, 0.1, 0.3, np.inf],
+                        ['cote qui monte fort (lâché)', 'monte un peu', 'stable', 'baisse un peu',
+                         'baisse fort (joué)'],
+                        "1. Mouvement de la cote dans les 30 dernières minutes → % victoire et top 3") + [""]
+    md += ["(log du rapport cote 30 min avant / cote finale : négatif = la cote a monté, positif = elle a baissé)", ""]
+    md += ["### 2. Modèles, sur 4 périodes de test successives", ""]
+    md += _compare_folds_top3(fdf, {
+        'v9 (champion, production)': (FEATURES, 'win'),
+        'Favoris au départ (cote finale)': (['mk_prob'], 'brut'),
+        'Favoris 30 min avant': (['mkr_prob'], 'brut'),
+        'Marché 30 min avant, appris « gagnant »': (MARKET_REF_FEATURES, 'win'),
+        'v9 + marché 30 min avant, « gagnant »': (FEATURES + MARKET_REF_FEATURES, 'win'),
+        'v9 + marché 30 min avant, « top 3 »': (FEATURES + MARKET_REF_FEATURES, 'top3'),
+        'Marché 30 min avant + chevaux battus (corrigés du poids)': (MARKET_REF_FEATURES + PERF_FEATURES, 'win'),
+        'Marché 30 min avant + mouvement (connu au départ seulement)': (MARKET_REF_FEATURES + MOVE_FEATURES, 'win'),
+    })
     return _publish(md)

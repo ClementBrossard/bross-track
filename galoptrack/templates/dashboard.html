@@ -3488,6 +3488,102 @@ function renderModele(){
   container.querySelectorAll('[data-toggle-shap]').forEach(el=>{
     el.addEventListener('click', ()=> toggleShapPanel(parseInt(el.dataset.toggleShap,10)));
   });
+  container.insertAdjacentHTML('afterbegin', '<div id="liveOdds" style="margin-bottom:26px;"></div>');
+  startLiveOdds(r);
+}
+
+/* =========================================================
+   COTES EN DIRECT (route /api/cotes du site)
+   Sur l'historique (5 292 courses), les 3 plus petites cotes au départ
+   placent 1,57 cheval sur 3 dans le top 3, contre 1,43 pour le modèle.
+   ========================================================= */
+
+let liveOddsTimer = null;
+
+function startLiveOdds(r){
+  if(liveOddsTimer) clearInterval(liveOddsTimer);
+  const load = ()=>{
+    const el = document.getElementById('liveOdds');
+    if(!el || state.currentRaceId !== r.id){ clearInterval(liveOddsTimer); liveOddsTimer = null; return; }
+    if(!el.innerHTML) el.innerHTML = '<div class="count">Chargement des cotes en direct…</div>';
+    fetch(`/api/cotes/${r.date}/${r.rnum}/${r.num}`, {credentials:'same-origin'})
+      .then(res => res.ok ? res.json() : res.json().then(j => Promise.reject(j.erreur || res.status)))
+      .then(data => { if(state.currentRaceId === r.id) renderLiveOdds(r, data); })
+      .catch(err => {
+        const e2 = document.getElementById('liveOdds');
+        if(e2) e2.innerHTML = `<div class="count">Cotes en direct indisponibles (${err}). Les cotes du tableau sont celles de la génération du dashboard.</div>`;
+      });
+  };
+  load();
+  liveOddsTimer = setInterval(load, 60000);
+}
+
+function moveLabel(matin, live){
+  if(!matin || !live) return {txt:'—', color:'var(--ink-soft)'};
+  const x = Math.log(matin / live);
+  if(x > 0.3)  return {txt:'▼ très joué', color:'var(--green)'};
+  if(x > 0.1)  return {txt:'▼ joué', color:'var(--green)'};
+  if(x < -0.3) return {txt:'▲ très lâché', color:'#a8402c'};
+  if(x < -0.1) return {txt:'▲ lâché', color:'#a8402c'};
+  return {txt:'= stable', color:'var(--ink-soft)'};
+}
+
+function renderLiveOdds(r, data){
+  const el = document.getElementById('liveOdds');
+  if(!el) return;
+  const byNum = {};
+  r.horses.forEach(h => { if(h.npart !== null && h.npart !== undefined) byNum[h.npart] = h; });
+  const rows = (data.partants || []).filter(p => !p.non_partant && p.cote);
+  const np = (data.partants || []).filter(p => p.non_partant).map(p => p.num);
+  if(!rows.length){
+    el.innerHTML = '<div class="count">Pas encore de cote en direct pour cette course (paris pas encore ouverts).</div>';
+    return;
+  }
+  const inv = rows.reduce((s, p) => s + 1 / p.cote, 0);
+  rows.sort((a, b) => a.cote - b.cote);
+  const hhmm = ms => { const d = new Date(ms); return d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}); };
+  const depart = data.depart ? ` · départ ${hhmm(data.depart)}` : '';
+  const lu = data.lu_a ? hhmm(data.lu_a) : '—';
+  const body = rows.map((p, i) => {
+    const h = byNum[p.num] || {};
+    const matin = h.cote_ref || h.cote || null;
+    const mv = moveLabel(matin, p.cote);
+    const top = i < 3;
+    return `<tr style="border-bottom:1px solid var(--line);${top ? 'background:#f1f6ef;' : ''}">
+      <td style="padding:6px 10px;font-weight:700;">${i+1}${top ? ' <span class="tag" style="font-size:9.5px;border-color:var(--green);color:var(--green);">top 3</span>' : ''}</td>
+      <td style="padding:6px 10px;text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--ink-soft);">${p.num ?? '—'}</td>
+      <td style="padding:6px 10px;font-weight:600;">${p.nom}</td>
+      <td style="padding:6px 10px;text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700;">${p.cote.toFixed(1)}</td>
+      <td style="padding:6px 10px;text-align:right;font-family:'JetBrains Mono',monospace;color:var(--ink-soft);">${matin ? matin.toFixed(1) : '—'}</td>
+      <td style="padding:6px 10px;font-size:12px;font-weight:600;color:${mv.color};white-space:nowrap;">${mv.txt}</td>
+      <td style="padding:6px 10px;text-align:right;font-family:'JetBrains Mono',monospace;">${(100 / p.cote / inv).toFixed(1)}%</td>
+      <td style="padding:6px 10px;text-align:right;font-family:'JetBrains Mono',monospace;color:var(--ink-soft);">${h.model_prob !== undefined && h.model_prob !== null ? h.model_prob.toFixed(1)+'%' : '—'}</td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `
+    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:8px;">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.3px;">Cotes en direct</div>
+      <span class="count" style="margin:0;">mises à jour ${lu}${depart} · actualisation automatique chaque minute</span>
+      <button class="btn" id="liveOddsRefresh" style="margin-left:auto;">Actualiser</button>
+    </div>
+    <p class="count">Classement par cote du moment. Sur l'historique, les 3 plus petites cotes <b>au départ</b> placent en moyenne 1,57 cheval sur 3 dans le top 3 (modèle seul : 1,43) : plus tu regardes près du départ, plus ce classement est fiable. Mouvement depuis la cote du matin : un cheval « joué » (cote qui baisse) finit plus souvent dans les 3 premiers, un cheval « lâché » beaucoup moins.${np.length ? ' Non-partants : n°' + np.join(', ') + '.' : ''}</p>
+    <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;background:var(--paper);border:1px solid var(--line);border-radius:6px;overflow:hidden;">
+      <thead><tr style="text-align:left;background:var(--gold);">
+        <th style="padding:7px 10px;font-size:12px;">#</th>
+        <th style="padding:7px 10px;font-size:12px;text-align:center;">N°</th>
+        <th style="padding:7px 10px;font-size:12px;">Cheval</th>
+        <th style="padding:7px 10px;font-size:12px;text-align:right;">Cote live</th>
+        <th style="padding:7px 10px;font-size:12px;text-align:right;">Matin</th>
+        <th style="padding:7px 10px;font-size:12px;">Mouvement</th>
+        <th style="padding:7px 10px;font-size:12px;text-align:right;">Proba marché</th>
+        <th style="padding:7px 10px;font-size:12px;text-align:right;">Proba modèle</th>
+      </tr></thead>
+      <tbody>${body}</tbody>
+    </table>
+    </div>`;
+  const btn = document.getElementById('liveOddsRefresh');
+  if(btn) btn.addEventListener('click', ()=> startLiveOdds(r));
 }
 
 function oppCell(h){

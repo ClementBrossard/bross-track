@@ -6,6 +6,8 @@ pipeline (GitHub Actions) et stockées sur Cloudflare R2 :
   /          -> /dashboard
   /dashboard    dashboard GalopTrack (dashboards/latest.html)
   /sante        contrôle de santé des données (dashboards/sante.html)
+  /api/cotes/<AAAAMMJJ>/<réunion>/<course>
+                cotes PMU en direct d'une course (JSON, mis en cache 20 s)
 
 Variables d'environnement : APP_PASSWORD, SECRET_KEY, R2_ACCOUNT_ID,
 R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET.
@@ -13,11 +15,13 @@ R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET.
 
 import gzip
 import hmac
+import json
 import os
 import time
+import urllib.request
 from functools import wraps
 
-from flask import Flask, redirect, request, session
+from flask import Flask, jsonify, redirect, request, session
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY") or os.urandom(32)
@@ -148,6 +152,77 @@ def dashboard_page():
 def sante_page():
     return _serve_generated("dashboards/sante.html",
                             "Contrôle de santé pas encore généré (voir le workflow GitHub « Pipeline — quotidien »).")
+
+
+PMU_LIVE = "https://online.turfinfo.api.pmu.fr/rest/client/61/programme"
+LIVE_CACHE_S = 20
+_live_cache = {}
+
+
+def _pmu_json(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 GalopTrack", "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=8) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def _rapport(p, field):
+    r = p.get(field) or {}
+    if r.get("typePari") != "SIMPLE_GAGNANT":
+        return None
+    try:
+        return float(r.get("rapport")) or None
+    except (TypeError, ValueError):
+        return None
+
+
+def live_odds(day, reunion, course):
+    """Cotes simple gagnant du moment pour une course (API PMU en ligne)."""
+    ddmmyyyy = f"{day[6:8]}{day[4:6]}{day[0:4]}"
+    base = f"{PMU_LIVE}/{ddmmyyyy}/R{reunion}/C{course}"
+    data = _pmu_json(f"{base}/participants")
+    partants = []
+    for p in data.get("participants") or []:
+        if not p.get("nom"):
+            continue
+        direct = p.get("dernierRapportDirect") or {}
+        partants.append({
+            "num": p.get("numPmu"),
+            "nom": p["nom"].strip().upper(),
+            "cote": _rapport(p, "dernierRapportDirect"),
+            "cote_ref": _rapport(p, "dernierRapportReference"),
+            "heure_cote": direct.get("dateRapport"),
+            "non_partant": p.get("statut") == "NON_PARTANT",
+        })
+    out = {"partants": partants, "lu_a": int(time.time() * 1000)}
+    try:  # heure de départ : facultative
+        info = _pmu_json(base)
+        out["depart"] = info.get("heureDepart")
+        out["statut"] = info.get("statut")
+    except Exception:
+        pass
+    return out
+
+
+@app.route("/api/cotes/<day>/<int:reunion>/<int:course>")
+def api_cotes(day, reunion, course):
+    if not session.get("authenticated"):
+        return jsonify({"erreur": "non connecté"}), 401
+    if not (len(day) == 8 and day.isdigit()):
+        return jsonify({"erreur": "date invalide"}), 400
+    key = (day, reunion, course)
+    hit = _live_cache.get(key)
+    if hit and time.time() - hit[0] < LIVE_CACHE_S:
+        return jsonify(hit[1])
+    try:
+        out = live_odds(day, reunion, course)
+    except Exception as e:
+        app.logger.warning("Cotes en direct %s indisponibles : %s", key, e)
+        return jsonify({"erreur": "API PMU indisponible"}), 502
+    _live_cache[key] = (time.time(), out)
+    if len(_live_cache) > 200:
+        for k in sorted(_live_cache, key=lambda k: _live_cache[k][0])[:100]:
+            _live_cache.pop(k, None)
+    return jsonify(out)
 
 
 @app.route("/healthz")

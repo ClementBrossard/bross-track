@@ -12,8 +12,8 @@ on:
       experience:
         description: "Expérience à lancer"
         type: choice
-        options: [sonde_cotes, marche, perf, rentabilite, seuils, troncons, top3, confrontations, classe, adversaires, poids]
-        default: sonde_cotes
+        options: [marche_ref, sonde_cotes, marche, perf, rentabilite, seuils, troncons, top3, confrontations, classe, adversaires, poids]
+        default: marche_ref
       version:
         description: "Version du modèle pour seuils / rentabilité (vide = production)"
         default: "v8"
@@ -36,7 +36,7 @@ jobs:
           cache-dependency-path: requirements-pipeline.txt
       - run: pip install -r requirements-pipeline.txt
       - env:
-          EXP: ${{ inputs.experience || 'sonde_cotes' }}
+          EXP: ${{ inputs.experience || 'marche_ref' }}
           VERSION: ${{ inputs.version || 'v8' }}
         run: |
           if [ "$EXP" = "seuils" ] || [ "$EXP" = "rentabilite" ]; then
