@@ -245,6 +245,47 @@ def cmd_models(storage, args):
               + (f"  top 3 {t3:.3f}/3" if t3 is not None else ''))
 
 
+def run_ops(storage, demande):
+    """Exécute une demande d'opérations (ops/demande.json), une seule fois :
+    la trace est gardée dans logs/ops/<id>.json. Étapes : renommer (de, vers),
+    entrainer (production true/false), mettre_en_production (version)."""
+    done_key = f"logs/ops/{demande['id']}.json"
+    if storage.exists(done_key):
+        print(f"Demande {demande['id']} déjà exécutée : rien à faire.")
+        return False
+    journal = []
+    for e in demande['etapes']:
+        a = e['action']
+        if a == 'renommer':
+            versions = model_store.list_versions(storage)
+            if e['de'] not in versions and e['vers'] in versions:
+                journal.append(f"renommer {e['de']} -> {e['vers']} : déjà fait")
+                continue
+            n = model_store.rename_version(storage, e['de'], e['vers'])
+            journal.append(f"renommer {e['de']} -> {e['vers']} : {n} fichiers")
+        elif a == 'entrainer':
+            meta = train.run(storage, promote=bool(e.get('production')))
+            journal.append(f"entrainer : {meta['version']} ({'EN PRODUCTION' if meta['promoted'] else 'pas en production'})")
+            print(json.dumps({k: meta[k] for k in ('version', 'metrics', 'temoin_v8', 'promoted') if k in meta},
+                             indent=1, default=str))
+        elif a == 'mettre_en_production':
+            model_store.set_current(storage, e['version'])
+            journal.append(f"mettre_en_production {e['version']}")
+        else:
+            raise SystemExit(f"Action inconnue : {a}")
+        print(journal[-1])
+    storage.write_bytes(done_key, json.dumps({'demande': demande, 'journal': journal,
+                                              'at': config.now_paris().isoformat(timespec='seconds')},
+                                             ensure_ascii=False, indent=1).encode('utf-8'),
+                        content_type='application/json')
+    return True
+
+
+def cmd_ops(storage, args):
+    with open(args.fichier, encoding='utf-8') as f:
+        run_ops(storage, json.load(f))
+
+
 def cmd_train(storage, args):
     meta = train.run(storage, promote=not args.no_promote)
     print(json.dumps(meta, indent=1, default=str))
@@ -332,6 +373,9 @@ def main(argv=None):
     s.add_argument('--to', dest='dst', required=True)
     s.set_defaults(func=cmd_rename_version)
     sub.add_parser('models', help="liste les versions de modèle").set_defaults(func=cmd_models)
+    s = sub.add_parser('ops', help="exécute une demande d'opérations (ops/demande.json), une seule fois")
+    s.add_argument('fichier', nargs='?', default='ops/demande.json')
+    s.set_defaults(func=cmd_ops)
 
     s = sub.add_parser('promote', help="met une version déjà entraînée en production (ex. v9)")
     s.add_argument('--version', required=True)

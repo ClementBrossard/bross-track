@@ -654,3 +654,20 @@ def test_version_naming_and_rename(tmp_path):
     assert model_store.next_version(st, 'v8') == 'v8_2'
     with pytest.raises(ValueError):
         model_store.rename_version(st, 'v8', 'v8_1')
+
+
+def test_ops_request_runs_once(tmp_path, monkeypatch):
+    from galoptrack import __main__ as cli
+    st = LocalStorage(tmp_path)
+    st.write_bytes('model/v9/meta.json', json.dumps({'version': 'v9', 'features': ['a']}).encode())
+    model_store.set_current(st, 'v9')
+    calls = []
+    monkeypatch.setattr(cli.train, 'run', lambda storage, promote: calls.append(promote) or
+                        {'version': 'v9', 'promoted': promote, 'metrics': {}})
+    demande = {'id': 't1', 'etapes': [{'action': 'renommer', 'de': 'v9', 'vers': 'v8_1'},
+                                      {'action': 'entrainer', 'production': False}]}
+    assert cli.run_ops(st, demande) is True
+    assert model_store.current_version(st) == 'v8_1' and calls == [False]
+    assert cli.run_ops(st, demande) is False and calls == [False]
+    # Rejouée sous un autre identifiant : le renommage déjà fait est ignoré
+    assert cli.run_ops(st, {**demande, 'id': 't2'}) is True
