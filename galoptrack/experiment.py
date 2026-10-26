@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 
 from . import train
-from .features import BASE_FEATURES, FEATURES
+from .features import BASE_FEATURES, FEATURES, PERF_FEATURES
 
 log = logging.getLogger(__name__)
 
@@ -957,6 +957,7 @@ def run_marche_ref(storage):
         'Marché 30 min avant, appris « gagnant »': (MARKET_REF_FEATURES, 'win'),
         'v9 + marché 30 min avant, « gagnant »': (FEATURES + MARKET_REF_FEATURES, 'win'),
         'v9 + marché 30 min avant, « top 3 »': (FEATURES + MARKET_REF_FEATURES, 'top3'),
+        'Marché 30 min avant + chevaux battus (corrigés du poids)': (MARKET_REF_FEATURES + PERF_FEATURES, 'win'),
         'Marché 30 min avant + mouvement (connu au départ seulement)': (MARKET_REF_FEATURES + MOVE_FEATURES, 'win'),
     })
     return _publish(md)
