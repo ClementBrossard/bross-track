@@ -961,3 +961,49 @@ def run_marche_ref(storage):
         'Marché 30 min avant + mouvement (connu au départ seulement)': (MARKET_REF_FEATURES + MOVE_FEATURES, 'win'),
     })
     return _publish(md)
+
+
+# ── Modèle challenger, étape 1 : les blocs des parieurs pros vs le marché ───
+
+SPEED_FEATURES = ['accel_roll5', 'gain_roll5', 'finish_kick_roll5']
+
+
+def run_blocs(storage):
+    from .blocs import CONDITION_FEATURES, ENTOURAGE_FEATURES, INTENT_FEATURES, all_blocks
+    from .troncons import TRACK_FEATURES, tracking_features
+    fdf = market_features(_attach_odds(storage, train.load_feature_frame(storage)))
+    fdf = all_blocks(tracking_features(fdf))
+    ready, cutoff = _split(fdf)
+    valid = ready[ready['date'] >= cutoff]
+    md = ["# Modèle challenger — étape 1 : les blocs des parieurs pros contre le marché", "",
+          "Référence : la cote au départ (ce que donnent les cotes en direct à 2 min de la course). "
+          "Chaque bloc est ajouté seul à la cote : il ne compte que s'il fait mieux que la cote seule.", "",
+          f"Signaux bruts, courses depuis {cutoff} :", ""]
+    md += _bucket_table(valid, 'it_oe_first', [-0.5, 0.5, 1.5], ['non', 'oui'],
+                        "Œillères mises pour la première fois") + [""]
+    md += _bucket_table(valid, 'it_jk_wr_delta', [-np.inf, -0.05, 0.05, np.inf],
+                        ['jockey moins bon que la fois d\'avant', 'niveau proche', 'jockey meilleur'],
+                        "Changement de niveau du jockey") + [""]
+    md += _bucket_table(valid, 'en_30_winrate', [-0.01, 0.05, 0.10, 0.20, 1.01],
+                        ['< 5 %', '5-10 %', '10-20 %', '≥ 20 %'],
+                        "Entraîneur : % de victoires sur ses 30 derniers jours") + [""]
+    md += _bucket_table(valid, 'cb_resid', [-np.inf, -0.05, 0.05, np.inf],
+                        ['corde défavorable', 'neutre', 'corde favorable'],
+                        "Corde, d'après l'historique de l'hippodrome à cette distance") + [""]
+    md += _bucket_table(valid, 'hz_surf_resid', [-np.inf, -0.1, 0.1, np.inf],
+                        ['moins bon que d\'habitude sur cette surface', 'neutre', 'meilleur sur cette surface'],
+                        "Préférence du cheval pour la surface du jour") + [""]
+    speed = SPEED_FEATURES + TRACK_FEATURES
+    allb = speed + INTENT_FEATURES + ENTOURAGE_FEATURES + CONDITION_FEATURES + PERF_FEATURES
+    md += ["### Modèles, sur 4 périodes de test successives", ""]
+    md += _compare_folds_top3(fdf, {
+        'Marché seul (cote au départ)': (MARKET_FEATURES, 'win'),
+        '+ vitesse (tronçons)': (MARKET_FEATURES + speed, 'win'),
+        '+ intention (jockey, œillères, distance…)': (MARKET_FEATURES + INTENT_FEATURES, 'win'),
+        '+ entourage (forme entraîneur / jockey 30 j, duo)': (MARKET_FEATURES + ENTOURAGE_FEATURES, 'win'),
+        '+ conditions (corde, surface, distance, hippodrome)': (MARKET_FEATURES + CONDITION_FEATURES, 'win'),
+        '+ chevaux battus (corrigés du poids)': (MARKET_FEATURES + PERF_FEATURES, 'win'),
+        '+ tous les blocs': (MARKET_FEATURES + allb, 'win'),
+        '+ tous les blocs, appris « top 3 »': (MARKET_FEATURES + allb, 'top3'),
+    })
+    return _publish(md)

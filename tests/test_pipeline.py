@@ -685,3 +685,28 @@ def test_append_rows_replaces_same_snapshot(tmp_path):
     df = tables.read_table(st, 'cotes')
     assert len(df) == 2
     assert sorted(df['cote_directe']) == [4.0, 5.0]
+
+
+def test_blocks_use_only_the_past():
+    from galoptrack.blocs import CONDITION_FEATURES, ENTOURAGE_FEATURES, INTENT_FEATURES, all_blocks
+    rng = np.random.default_rng(0)
+    rows = []
+    for k in range(60):
+        date = 20260101 + (k // 6) * 3 if (k // 6) * 3 < 28 else 20260201 + (k // 6) * 3 - 28
+        for i in range(6):
+            rows.append({'race_id': f'R{k}', 'date': date, 'is_today': False, 'nom': f'H{(k + i) % 15}',
+                         'pa_num': float(i + 1), 'jk': f'J{rng.integers(4)}', 'en': f'E{i % 3}',
+                         'oe': ['SANS_OEILLERES', 'OEILLERES_AUSTRALIENNES'][rng.integers(2)],
+                         'dist': float(1600 + 200 * (k % 3)), 'cat': 'A', 'hv': 30.0 + i, 'cd': float(i + 1),
+                         'hippo': 'LCH', 'terrain': 'Bon', 'piste': 'GAZON',
+                         'jk_prior_winrate': 0.1, 'en_prior_winrate': 0.1})
+    fdf = pd.DataFrame(rows)
+    feats = INTENT_FEATURES + ENTOURAGE_FEATURES + CONDITION_FEATURES
+    a = all_blocks(fdf).set_index(['race_id', 'nom'])
+    changed = fdf.copy()
+    last = changed['race_id'] == 'R59'
+    changed.loc[last, 'pa_num'] = changed.loc[last, 'pa_num'].to_numpy()[::-1]
+    b = all_blocks(changed).set_index(['race_id', 'nom'])
+    # le résultat d'une course ne change aucune variable de cette course ni des précédentes
+    pd.testing.assert_frame_equal(a.loc[:, feats].sort_index(), b.loc[:, feats].sort_index())
+    assert a[feats].notna().any().all()
