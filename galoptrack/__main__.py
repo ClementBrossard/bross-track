@@ -269,6 +269,8 @@ def run_ops(storage, demande):
             print(json.dumps({k: meta[k] for k in ('version', 'metrics', 'temoin_v8', 'promoted') if k in meta},
                              indent=1, default=str))
         elif a == 'mettre_en_production':
+            if e['version'] not in model_store.list_versions(storage):
+                raise SystemExit(f"Version inconnue : {e['version']}")
             model_store.set_current(storage, e['version'])
             journal.append(f"mettre_en_production {e['version']}")
         else:
