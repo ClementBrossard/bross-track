@@ -451,7 +451,7 @@ def test_backup_and_restore_tables(tmp_path, raw):
     name = cli.backup(st, 'test')
     assert cli.list_backups(st) == [name]
     tables.write_table(st, 'chevaux', raw['chevaux'].head(3))
-    assert cli.restore(st, name) >= len(tables.SCHEMAS)
+    assert cli.restore(st, name) >= len(tables.COLLECTED)
     assert st.read_bytes(tables.table_key('chevaux')) == before
     with pytest.raises(SystemExit):
         cli.restore(st, 'inexistante')
@@ -671,3 +671,17 @@ def test_ops_request_runs_once(tmp_path, monkeypatch):
     assert cli.run_ops(st, demande) is False and calls == [False]
     # Rejouée sous un autre identifiant : le renommage déjà fait est ignoré
     assert cli.run_ops(st, {**demande, 'id': 't2'}) is True
+
+
+def test_append_rows_replaces_same_snapshot(tmp_path):
+    st = LocalStorage(tmp_path)
+    row = {'date': 20261027, 'code_hippo': 'LCH', 'num_reunion': 1, 'num_course': 1, 'num_pmu': 3,
+           'nom_cheval': 'A', 'discipline': 'PLAT', 'releve': '2026-10-27T07:40',
+           'cote_directe': 5.0, 'cote_reference': 6.0}
+    keys = ['date', 'code_hippo', 'num_course', 'nom_cheval', 'releve']
+    tables.append_rows(st, 'cotes', [row], keys)
+    tables.append_rows(st, 'cotes', [{**row, 'cote_directe': 4.0}], keys)
+    tables.append_rows(st, 'cotes', [{**row, 'releve': '2026-10-27T12:40'}], keys)
+    df = tables.read_table(st, 'cotes')
+    assert len(df) == 2
+    assert sorted(df['cote_directe']) == [4.0, 5.0]
