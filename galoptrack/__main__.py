@@ -213,6 +213,10 @@ def cmd_experiment_marche(storage, args):
     print(experiment.run_marche(storage))
 
 
+def cmd_experiment_sonde_cotes(storage, args):
+    print(experiment.run_sonde_cotes(storage))
+
+
 def cmd_experiment_seuils(storage, args):
     print(experiment.run_seuils(storage, args.version))
 
@@ -365,6 +369,8 @@ def main(argv=None):
         .set_defaults(func=cmd_experiment_top3)
     sub.add_parser('experiment-troncons', help="tronçons : vitesses relatives et scénario de course (n'écrit rien)") \
         .set_defaults(func=cmd_experiment_troncons)
+    sub.add_parser('experiment-sonde_cotes', help="l'API PMU garde-t-elle la cote du matin des courses passées ?") \
+        .set_defaults(func=cmd_experiment_sonde_cotes)
     sub.add_parser('experiment-marche', help="challenger étape 0 : la cote seule, v9 + cote (n'écrit rien)") \
         .set_defaults(func=cmd_experiment_marche)
     sub.add_parser('experiment-perf', help="chevaux battus corrigés du poids et de la valeur handicap (n'écrit rien)") \

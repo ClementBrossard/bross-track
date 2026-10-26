@@ -101,6 +101,7 @@ def participant_row(d, course, p):
         'commentaire_course': (p.get('commentaireApresCourse') or {}).get('texte', ''),
         'cote_directe': pmu.cote_directe(p),
         'discipline': course.get('discipline', ''),
+        'cote_reference': pmu.cote_reference(p),
     }
 
 

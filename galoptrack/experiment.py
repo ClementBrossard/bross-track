@@ -853,3 +853,40 @@ def run_marche(storage):
                "plus tôt dans la journée, avec une cote qui peut encore bouger : un modèle avec la cote "
                "serait donc un peu moins bon en vrai que dans ce test.", ""]
     return _publish(md)
+
+
+def run_sonde_cotes(storage):
+    """L'API PMU garde-t-elle la cote de référence (matin) des courses passées ?"""
+    import json
+    from datetime import date, timedelta
+    from . import config, pmu
+    md = ["# Sonde : cotes disponibles dans l'API PMU pour des courses passées", ""]
+    days = [date(2023, 7, 1), date(2024, 6, 15), date(2025, 6, 15), date(2026, 3, 15),
+            config.today_paris() - timedelta(days=1)]
+    for d in days:
+        prog = pmu.fetch_programme(d) or {}
+        reus = [r for r in prog.get('programme', {}).get('reunions', [])
+                if (r.get('pays', {}) or {}).get('code', '').upper() == 'FRA']
+        found = None
+        for r in reus:
+            for c in r.get('courses', []):
+                if pmu.discipline_galop(c) == 'PLAT':
+                    found = (r['numOfficiel'], c.get('numOrdre'))
+                    break
+            if found:
+                break
+        if not found:
+            md.append(f"- {d} : aucune course de plat trouvée")
+            continue
+        parts = pmu.fetch_participants(d, *found)
+        n = len(parts)
+        ref = sum(1 for p in parts if pmu.cote_reference(p) not in ('', None))
+        dir_ = sum(1 for p in parts if pmu.cote_directe(p) not in ('', None))
+        ex = next((p for p in parts if p.get('dernierRapportReference')), {})
+        md.append(f"- {d} R{found[0]}C{found[1]} : {n} partants, cote directe {dir_}/{n}, "
+                  f"**cote de référence {ref}/{n}**")
+        if ex:
+            md.append("  - exemple : `" + json.dumps({k: ex.get(k) for k in ('nom', 'dernierRapportReference',
+                                                                           'dernierRapportDirect')},
+                                                    ensure_ascii=False) + "`")
+    return _publish(md)
