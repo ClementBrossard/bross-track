@@ -217,6 +217,10 @@ def cmd_cotes_hist(storage, args):
     print(cotes_hist.run(storage, max_minutes=args.max_minutes))
 
 
+def cmd_experiment_blocs_ref(storage, args):
+    print(experiment.run_blocs_ref(storage))
+
+
 def cmd_experiment_blocs(storage, args):
     print(experiment.run_blocs(storage))
 
@@ -384,6 +388,8 @@ def main(argv=None):
     s = sub.add_parser('cotes-hist', help="récupère la cote de référence et la cote directe des courses de plat passées (table cotes_hist)")
     s.add_argument('--max-minutes', type=int, default=330)
     s.set_defaults(func=cmd_cotes_hist)
+    sub.add_parser('experiment-blocs_ref', help="blocs ajoutés à la cote 30 min avant le départ (n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_blocs_ref)
     sub.add_parser('experiment-blocs', help="challenger étape 1 : chaque bloc d'info ajouté à la cote (n'écrit rien)") \
         .set_defaults(func=cmd_experiment_blocs)
     sub.add_parser('experiment-marche_ref', help="challenger : cote 30 min avant le départ, v9 + cette cote (n'écrit rien)") \

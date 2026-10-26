@@ -1007,3 +1007,28 @@ def run_blocs(storage):
         '+ tous les blocs, appris « top 3 »': (MARKET_FEATURES + allb, 'top3'),
     })
     return _publish(md)
+
+
+def run_blocs_ref(storage):
+    """Mêmes blocs, mais ajoutés à la cote ~30 min avant le départ (marché moins informé)."""
+    from .blocs import CONDITION_FEATURES, ENTOURAGE_FEATURES, INTENT_FEATURES, all_blocks
+    from .troncons import TRACK_FEATURES, tracking_features
+    fdf = all_blocks(tracking_features(_attach_hist_odds(storage, train.load_feature_frame(storage))))
+    speed = SPEED_FEATURES + TRACK_FEATURES
+    allb = speed + INTENT_FEATURES + ENTOURAGE_FEATURES + CONDITION_FEATURES + PERF_FEATURES
+    m = MARKET_REF_FEATURES
+    md = ["# Modèle challenger — étape 1 bis : les blocs contre la cote 30 min avant le départ", "",
+          "Même test que l'étape 1, mais la référence est la cote ~30 min avant le départ "
+          "(le marché n'a pas encore reçu l'argent de dernière minute).", "",
+          "### Modèles, sur 4 périodes de test successives", ""]
+    md += _compare_folds_top3(fdf, {
+        'Marché 30 min avant seul': (m, 'win'),
+        '+ vitesse (tronçons)': (m + speed, 'win'),
+        '+ intention': (m + INTENT_FEATURES, 'win'),
+        '+ entourage': (m + ENTOURAGE_FEATURES, 'win'),
+        '+ conditions': (m + CONDITION_FEATURES, 'win'),
+        '+ tous les blocs': (m + allb, 'win'),
+        '+ tous les blocs, appris « top 3 »': (m + allb, 'top3'),
+        'v9 + marché 30 min + tous les blocs, « top 3 »': (FEATURES + m + [f for f in allb if f not in FEATURES], 'top3'),
+    })
+    return _publish(md)
