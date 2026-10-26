@@ -70,9 +70,9 @@ def train_model(fdf, num_boost_round=500, early_stopping=30, features=None, trai
     log.info("Coupure temporelle : %s | train %d lignes | valid %d lignes", cutoff, len(train), len(valid))
 
     lgb_train = lgb.Dataset(train[features], label=train['label'], group=_groups(train),
-                            categorical_feature=CAT_COLS, free_raw_data=False)
+                            categorical_feature=[c for c in CAT_COLS if c in features], free_raw_data=False)
     lgb_valid = lgb.Dataset(valid[features], label=valid['label'], group=_groups(valid),
-                            categorical_feature=CAT_COLS, reference=lgb_train, free_raw_data=False)
+                            categorical_feature=[c for c in CAT_COLS if c in features], reference=lgb_train, free_raw_data=False)
     model = lgb.train(PARAMS, lgb_train, num_boost_round=num_boost_round, valid_sets=[lgb_valid],
                       callbacks=[lgb.early_stopping(early_stopping), lgb.log_evaluation(50)])
 

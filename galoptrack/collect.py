@@ -101,6 +101,7 @@ def participant_row(d, course, p):
         'commentaire_course': (p.get('commentaireApresCourse') or {}).get('texte', ''),
         'cote_directe': pmu.cote_directe(p),
         'discipline': course.get('discipline', ''),
+        'cote_reference': pmu.cote_reference(p),
     }
 
 
@@ -192,7 +193,7 @@ def collect_days(storage, days, what=('tracking', 'participants', 'rapports'), d
     obstacles, ou seulement `disciplines`), puis écrit chaque table une seule
     fois. Retourne un résumé."""
     what = set(what)
-    acc = {k: [] for k in tables.SCHEMAS}
+    acc = {k: [] for k in tables.COLLECTED}
     errors = []
     summary_days = {}
     for d in days:

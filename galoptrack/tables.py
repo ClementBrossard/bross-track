@@ -33,6 +33,15 @@ COLS_CHEVAUX = [
     'cote_directe',
     # PLAT / HAIES / STEEPLE / CROSS (vide dans l'historique = plat)
     'discipline',
+    # cote de référence PMU (cote du matin), depuis le 27/10/2026
+    'cote_reference',
+]
+
+# Relevés des cotes des courses du jour, un par génération du dashboard
+# (matin, midi…) : pour mesurer ce que vaut la cote au moment où on regarde.
+COLS_COTES = [
+    'date', 'code_hippo', 'num_reunion', 'num_course', 'num_pmu', 'nom_cheval', 'discipline',
+    'releve', 'cote_directe', 'cote_reference',
 ]
 
 COLS_RAPPORTS = [
@@ -47,13 +56,25 @@ COLS_COMBINES = [
     'dividende_pour_un_euro', 'dividende_pour_mise_base', 'mise_base', 'nombre_gagnants',
 ]
 
+# Historique des cotes (cotes_hist.py) : heures en millisecondes depuis 1970
+COLS_COTES_HIST = [
+    'date', 'code_hippo', 'num_reunion', 'num_course', 'num_pmu', 'nom_cheval',
+    'cote_reference', 'heure_reference', 'tendance_reference', 'favori_reference',
+    'cote_directe', 'heure_directe', 'grosse_prise',
+]
+
 SCHEMAS = {
     'tracking': COLS_MAIN + ['discipline'],
     'troncons': COLS_TRONC,
     'chevaux': COLS_CHEVAUX,
     'rapports': COLS_RAPPORTS,
     'rapports_combines': COLS_COMBINES,
+    'cotes': COLS_COTES,
+    'cotes_hist': COLS_COTES_HIST,
 }
+
+# Tables remplies par la collecte quotidienne (suivies par le bilan de santé)
+COLLECTED = ['tracking', 'troncons', 'chevaux', 'rapports', 'rapports_combines']
 
 RACE_KEY = ['date', 'code_hippo', 'num_reunion', 'num_course']
 
@@ -82,6 +103,20 @@ def read_table(storage, name):
 
 def write_table(storage, name, df):
     storage.write_bytes(table_key(name), to_csv_gz(df), content_type='application/gzip')
+
+
+def append_rows(storage, name, rows, keys):
+    """Ajoute des lignes à une table d'historique ; une ligne déjà présente
+    (mêmes `keys`) est remplacée."""
+    if not rows:
+        return 0
+    cols = SCHEMAS[name]
+    new = normalize(pd.DataFrame(rows, columns=cols))
+    old = read_table(storage, name)
+    merged = normalize(pd.concat([old[cols], new], ignore_index=True)) if len(old) else new
+    merged = merged.drop_duplicates(keys, keep='last').reset_index(drop=True)
+    write_table(storage, name, merged)
+    return len(new)
 
 
 def race_keys(df):

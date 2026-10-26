@@ -174,6 +174,23 @@ def add_today_races(races_list, day: date):
     return added
 
 
+def record_odds(storage, races_list, when):
+    """Garde les cotes des courses du jour telles qu'affichées à ce moment
+    (table cotes). Ne fait jamais échouer le dashboard."""
+    rows = [{'date': r['date'], 'code_hippo': r['hippo'], 'num_reunion': r['rnum'], 'num_course': r['num'],
+             'num_pmu': h.get('npart'), 'nom_cheval': h['nom'], 'discipline': r.get('disc'),
+             'releve': when, 'cote_directe': h.get('cote'), 'cote_reference': h.get('cote_ref')}
+            for r in races_list if r.get('today') for h in r['horses']]
+    try:
+        n = tables.append_rows(storage, 'cotes', rows,
+                               ['date', 'code_hippo', 'num_course', 'nom_cheval', 'releve'])
+        log.info("Cotes relevées à %s : %d chevaux", when, n)
+        return n
+    except Exception:
+        log.exception("Relevé des cotes impossible (dashboard non affecté)")
+        return 0
+
+
 def add_weight_info(races_list):
     """Pour chaque cheval des courses du jour : poids, écart avec sa dernière
     course de la même famille (plat / obstacles), écart avec la moyenne du
@@ -572,6 +589,9 @@ def build(storage, day=None, with_today=True):
     stats = {'day': config.yyyymmdd(day), 'races_history': len(races_list)}
 
     stats['races_today'] = add_today_races(races_list, day) if with_today else 0
+    if with_today:
+        stats['odds_recorded'] = record_odds(storage, races_list,
+                                             config.now_paris().strftime('%Y-%m-%dT%H:%M'))
     stats['races_today_plat'] = sum(1 for r in races_list if r.get('today') and is_plat(r))
     add_weight_info(races_list)
 

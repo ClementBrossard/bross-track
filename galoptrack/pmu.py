@@ -155,6 +155,14 @@ def fetch_rapports_definitifs(d: date, num_reunion, num_course):
     return get_json(f"{config.PMU_OFFLINE}/{date_pmu}/R{num_reunion}/C{num_course}/rapports-definitifs")
 
 
+def cote_reference(p):
+    """Cote de référence SIMPLE_GAGNANT (cote du matin), '' si absente."""
+    rapport = p.get('dernierRapportReference') or {}
+    if rapport.get('typePari') == 'SIMPLE_GAGNANT':
+        return rapport.get('rapport', '')
+    return ''
+
+
 def cote_directe(p):
     """Cote DIRECT SIMPLE_GAGNANT (la plus proche du départ), '' si absente
     — identique au notebook cotes."""

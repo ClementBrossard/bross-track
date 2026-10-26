@@ -397,6 +397,9 @@ def _compare_folds_top3(fdf, variants, folds=FOLDS):
         periods.append(f"{str(valid['date'].min())[4:6]}/{str(valid['date'].min())[2:4]}"
                        f"→{str(valid['date'].max())[4:6]}/{str(valid['date'].max())[2:4]}")
         for name, (feats, mode) in variants.items():
+            if mode == 'brut':   # pas de modèle : classement direct sur la variable
+                res[name].append(_hits(valid, valid[feats[0]].fillna(-1).to_numpy()))
+                continue
             model, _, _, _ = train.train_model(fdf, features=feats, train_frac=tf, valid_frac=vf, label_mode=mode)
             res[name].append(_hits(valid, model.predict(valid[feats])))
     names = list(variants)
@@ -573,6 +576,33 @@ def run_seuils(storage, version=None):
 _RC = re.compile(r'_R(\d+)_(\d+)$')
 
 
+def _attach_odds(storage, d):
+    """Ajoute à chaque cheval sa cote (`cote` : dernière cote PMU simple gagnant
+    avant le départ, table chevaux) et son numéro PMU (`npart_ch`)."""
+    from . import tables
+    d = d.copy()
+    num = d['race_id'].str.extract(_RC)
+    d['num_course'] = pd.to_numeric(num[1], errors='coerce')
+    d['nom_u'] = d['nom'].astype(str).str.strip().str.upper()
+    ch = tables.read_table(storage, 'chevaux')
+    ch = ch.assign(date=pd.to_numeric(ch['date'], errors='coerce'),
+                   num_course=pd.to_numeric(ch['num_course'], errors='coerce'),
+                   nom_u=ch['nom_cheval'].astype(str).str.strip().str.upper(),
+                   cote=pd.to_numeric(ch['cote_directe'], errors='coerce'),
+                   npart_ch=pd.to_numeric(ch['numero_partant'], errors='coerce'))
+    ch = ch.drop_duplicates(['date', 'code_hippo', 'num_course', 'nom_u'])
+    d = d.drop(columns=['cote', 'npart_ch', 'code_hippo'], errors='ignore')   # cote : vide dans l'historique
+    dtypes = d.dtypes
+    d = d.merge(ch[['date', 'code_hippo', 'num_course', 'nom_u', 'cote', 'npart_ch']],
+                left_on=['date', 'hippo', 'num_course', 'nom_u'],
+                right_on=['date', 'code_hippo', 'num_course', 'nom_u'], how='left')
+    # la fusion transforme les clés catégorielles (hippo) en texte : on rétablit
+    for c, t in dtypes.items():
+        if isinstance(t, pd.CategoricalDtype) and d[c].dtype != t:
+            d[c] = d[c].astype(t)
+    return d
+
+
 def _scored_with_odds(storage, min_runners=11, version=None):
     """Courses passées notées par le modèle en production, avec la cote
     (cote directe PMU, avant le départ) et le rapport placé réel."""
@@ -588,21 +618,7 @@ def _scored_with_odds(storage, min_runners=11, version=None):
     d['prob'] = d['cal'] / d.groupby('race_id')['cal'].transform('sum') * 100
     d['n'] = d.groupby('race_id')['nom'].transform('size')
     d = d[d['n'] >= min_runners].copy()
-    num = d['race_id'].str.extract(_RC)
-    d['num_course'] = pd.to_numeric(num[1], errors='coerce')
-    d['nom_u'] = d['nom'].astype(str).str.strip().str.upper()
-
-    ch = tables.read_table(storage, 'chevaux')
-    ch = ch.assign(date=pd.to_numeric(ch['date'], errors='coerce'),
-                   num_course=pd.to_numeric(ch['num_course'], errors='coerce'),
-                   nom_u=ch['nom_cheval'].astype(str).str.strip().str.upper(),
-                   cote=pd.to_numeric(ch['cote_directe'], errors='coerce'),
-                   npart_ch=pd.to_numeric(ch['numero_partant'], errors='coerce'))
-    ch = ch.drop_duplicates(['date', 'code_hippo', 'num_course', 'nom_u'])
-    d = d.drop(columns=['cote'], errors='ignore')   # cote du jour seulement, vide dans l'historique
-    d = d.merge(ch[['date', 'code_hippo', 'num_course', 'nom_u', 'cote', 'npart_ch']],
-                left_on=['date', 'hippo', 'num_course', 'nom_u'],
-                right_on=['date', 'code_hippo', 'num_course', 'nom_u'], how='left')
+    d = _attach_odds(storage, d)
     d['npart'] = pd.to_numeric(d['npart'], errors='coerce').fillna(d['npart_ch'])
 
     rap = tables.read_table(storage, 'rapports')
@@ -789,3 +805,88 @@ def run(storage):
         with open(summary, 'a', encoding='utf-8') as f:
             f.write(out + '\n')
     return out
+
+
+# ── Modèle challenger, étape 0 : le marché ──────────────────────────────────
+
+MARKET_FEATURES = ['mk_prob', 'mk_rank', 'mk_logcote', 'mk_prob_vs_best']
+
+
+def market_features(fdf):
+    """Probabilité implicite de la cote (1/cote, ramenée à 100 % sur la course
+    pour retirer la marge du PMU), rang de favori, log de la cote, écart avec le
+    favori. NaN quand la cote est inconnue."""
+    fdf = fdf.copy()
+    c = fdf['cote'].where(fdf['cote'] > 1)
+    inv = 1 / c
+    fdf['mk_prob'] = inv / inv.groupby(fdf['race_id']).transform('sum')
+    fdf['mk_rank'] = c.groupby(fdf['race_id']).rank(method='min')
+    fdf['mk_logcote'] = np.log(c)
+    fdf['mk_prob_vs_best'] = fdf['mk_prob'] - fdf.groupby('race_id')['mk_prob'].transform('max')
+    return fdf
+
+
+def run_marche(storage):
+    fdf = market_features(_attach_odds(storage, train.load_feature_frame(storage)))
+    ready, cutoff = _split(fdf)
+    ready = ready.assign(mois=(ready['date'] // 100).astype(int))
+    cov = ready.groupby('mois')['cote'].apply(lambda s: s.notna().mean())
+    valid = ready[ready['date'] >= cutoff]
+    md = ["# Modèle challenger — étape 0 : le marché (la cote)", "",
+          "Question : la cote PMU (dernière cote simple gagnant avant le départ) fait-elle mieux que la v9, "
+          "et la v9 + la cote fait-elle mieux que les deux ?", "",
+          f"Part des chevaux avec une cote connue : **{ready['cote'].notna().mean():.0%}** sur tout l'historique de plat "
+          f"(mois le plus faible : {cov.min():.0%} en {cov.idxmin()}, le plus fort : {cov.max():.0%}).", ""]
+    md += _bucket_table(valid, 'mk_rank', [0, 1, 2, 3, 5, 8, np.inf],
+                        ['favori', '2e favori', '3e favori', '4e-5e', '6e-8e', '9e et plus'],
+                        f"1. Rang dans les cotes → % de victoire et de top 3 (courses depuis {cutoff})") + [""]
+    md += ["### 2. Modèles, sur 4 périodes de test successives", "",
+           "« Favoris du marché » = pas de modèle : on prend simplement les 3 plus petites cotes.", ""]
+    md += _compare_folds_top3(fdf, {
+        'v9 (champion, production)': (FEATURES, 'win'),
+        'Favoris du marché (3 plus petites cotes)': (['mk_prob'], 'brut'),
+        'Marché seul, appris « gagnant »': (MARKET_FEATURES, 'win'),
+        'v9 + marché, appris « gagnant »': (FEATURES + MARKET_FEATURES, 'win'),
+        'v9 + marché, appris « top 3 »': (FEATURES + MARKET_FEATURES, 'top3'),
+    })
+    md += ["", "Attention : la cote historique est la **dernière avant le départ**. Le dashboard est calculé "
+               "plus tôt dans la journée, avec une cote qui peut encore bouger : un modèle avec la cote "
+               "serait donc un peu moins bon en vrai que dans ce test.", ""]
+    return _publish(md)
+
+
+def run_sonde_cotes(storage):
+    """L'API PMU garde-t-elle la cote de référence (matin) des courses passées ?"""
+    import json
+    from datetime import date, timedelta
+    from . import config, pmu
+    md = ["# Sonde : cotes disponibles dans l'API PMU pour des courses passées", ""]
+    days = [date(2023, 7, 1), date(2024, 6, 15), date(2025, 6, 15), date(2026, 3, 15),
+            config.today_paris() - timedelta(days=1)]
+    for d in days:
+        prog = pmu.fetch_programme(d) or {}
+        reus = [r for r in prog.get('programme', {}).get('reunions', [])
+                if (r.get('pays', {}) or {}).get('code', '').upper() == 'FRA']
+        found = None
+        for r in reus:
+            for c in r.get('courses', []):
+                if pmu.discipline_galop(c) == 'PLAT':
+                    found = (r['numOfficiel'], c.get('numOrdre'))
+                    break
+            if found:
+                break
+        if not found:
+            md.append(f"- {d} : aucune course de plat trouvée")
+            continue
+        parts = pmu.fetch_participants(d, *found)
+        n = len(parts)
+        ref = sum(1 for p in parts if pmu.cote_reference(p) not in ('', None))
+        dir_ = sum(1 for p in parts if pmu.cote_directe(p) not in ('', None))
+        ex = next((p for p in parts if p.get('dernierRapportReference')), {})
+        md.append(f"- {d} R{found[0]}C{found[1]} : {n} partants, cote directe {dir_}/{n}, "
+                  f"**cote de référence {ref}/{n}**")
+        if ex:
+            md.append("  - exemple : `" + json.dumps({k: ex.get(k) for k in ('nom', 'dernierRapportReference',
+                                                                           'dernierRapportDirect')},
+                                                    ensure_ascii=False) + "`")
+    return _publish(md)
