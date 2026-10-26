@@ -10,7 +10,7 @@ on:
         type: boolean
         default: false
       version:
-        description: "Facultatif : ne pas réentraîner, mettre cette version en production (ex. v9, ou v8 pour revenir en arrière)"
+        description: "Facultatif : ne pas réentraîner, mettre cette version en production (ex. v9, ou v8_1 pour revenir en arrière)"
         default: ""
 
 concurrency:

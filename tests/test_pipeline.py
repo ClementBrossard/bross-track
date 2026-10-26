@@ -133,7 +133,7 @@ def test_train_and_dashboard_end_to_end(tmp_path, raw, monkeypatch):
     # Modèle à 41 variables (37 + peloton) pour tester le témoin et le scoring mixte
     monkeypatch.setattr(train, 'FEATURES', BASE_FEATURES + FIELD_FEATURES)
     meta = train.run(st)
-    assert meta['promoted'] and model_store.current_version(st) == 'v1'
+    assert meta['promoted'] and model_store.current_version(st) == train.config.MODEL_RECIPE
     # Témoin v8 entraîné sur la même période, mesures « top 3 »
     assert meta['temoin_v8']['n_valid_races'] == meta['metrics']['n_valid_races']
     assert 0 <= meta['metrics']['top3_in_top3'] <= 3 and meta['metrics']['label_mode'] == train.config.LABEL_MODE
@@ -156,7 +156,7 @@ def test_train_and_dashboard_end_to_end(tmp_path, raw, monkeypatch):
     obst = copy.deepcopy(today)
     obst.update({'id': 'TODAY_AUT_R2_1', 'hippo': 'AUT', 'rnum': 2, 'disc': 'HAIES'})
     races_list.append(obst)
-    booster, calib, backtest, _ = model_store.load_version(st, 'v1')
+    booster, calib, backtest, _ = model_store.load_version(st, train.config.MODEL_RECIPE)
     n = dashboard.score_today(races_list, labels_array, booster, calib)
     assert n == len(today['horses'])
     assert not any('model_prob' in h for h in obst['horses'])
@@ -182,7 +182,7 @@ def test_train_and_dashboard_end_to_end(tmp_path, raw, monkeypatch):
     assert '__DATA_B64__' not in html
     b64 = re.search(r'const DATA_B64 = "([^"]+)"', html).group(1)
     data = json.loads(gzip.decompress(base64.b64decode(b64)))
-    assert data['model_meta']['version'] == 'v1'
+    assert data['model_meta']['version'] == train.config.MODEL_RECIPE
     assert data['backtest']['summary']['n_courses'] > 0
     assert len(data['races']) == stats['races_history']
 
@@ -633,3 +633,24 @@ def test_performance_ratings_weight_adjusted():
     assert get('A', 'pr_vs_hv') == 4
     assert np.isnan(get('D', 'pr_best'))
     assert fdf[fdf['race_id'] == 'r1']['pr_best'].isna().all()
+
+
+def test_version_naming_and_rename(tmp_path):
+    st = LocalStorage(tmp_path)
+    assert model_store.next_version(st, 'v9') == 'v9'
+    for v in ('v7', 'v8', 'v9', 'v10'):
+        st.write_bytes(f'model/{v}/meta.json', json.dumps({'version': v, 'features': ['a']}).encode())
+        st.write_bytes(f'model/{v}/race_model.txt', b'x')
+    model_store.set_current(st, 'v9')
+    assert model_store.list_versions(st) == ['v7', 'v8', 'v9', 'v10']
+    # v9 (même recette que v8) devient v8_1, toujours en production
+    assert model_store.rename_version(st, 'v9', 'v8_1') == 2
+    assert model_store.current_version(st) == 'v8_1'
+    assert model_store.list_versions(st) == ['v7', 'v8', 'v8_1', 'v10']
+    assert json.loads(st.read_bytes('model/v8_1/meta.json'))['version'] == 'v8_1'
+    assert not st.list('model/v9/')
+    # La nouvelle recette v9 démarre à « v9 », puis v9_1
+    assert model_store.next_version(st, 'v9') == 'v9'
+    assert model_store.next_version(st, 'v8') == 'v8_2'
+    with pytest.raises(ValueError):
+        model_store.rename_version(st, 'v8', 'v8_1')

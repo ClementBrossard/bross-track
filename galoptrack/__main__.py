@@ -226,6 +226,25 @@ def cmd_promote(storage, args):
     print(f"Modèle en production : {before} -> {args.version}")
 
 
+def cmd_rename_version(storage, args):
+    try:
+        n = model_store.rename_version(storage, args.src, args.dst)
+    except ValueError as e:
+        raise SystemExit(str(e))
+    print(f"{args.src} renommée en {args.dst} ({n} fichiers). En production : {model_store.current_version(storage)}")
+
+
+def cmd_models(storage, args):
+    cur = model_store.current_version(storage)
+    for v in model_store.list_versions(storage):
+        meta = model_store._j(storage, f"model/{v}/meta.json") if storage.exists(f"model/{v}/meta.json") else {}
+        m = meta.get('metrics', {})
+        t3 = m.get('top3_in_top3')
+        print(f"{v:8s} {'EN PRODUCTION' if v == cur else '':14s} entraîné {str(meta.get('trained_at', '?'))[:10]}"
+              f"  {len(meta.get('features', []))} variables  n°1 gagnant {m.get('hit_rate_top1') or 0:.1%}"
+              + (f"  top 3 {t3:.3f}/3" if t3 is not None else ''))
+
+
 def cmd_train(storage, args):
     meta = train.run(storage, promote=not args.no_promote)
     print(json.dumps(meta, indent=1, default=str))
@@ -307,6 +326,12 @@ def main(argv=None):
         s = sub.add_parser(name, help=hlp + " (n'écrit rien)")
         s.add_argument('--version', default=None, help="version du modèle (défaut : celle en production)")
         s.set_defaults(func=fn)
+
+    s = sub.add_parser('rename-version', help="renomme une version de modèle (ex. v9 -> v8_1)")
+    s.add_argument('--from', dest='src', required=True)
+    s.add_argument('--to', dest='dst', required=True)
+    s.set_defaults(func=cmd_rename_version)
+    sub.add_parser('models', help="liste les versions de modèle").set_defaults(func=cmd_models)
 
     s = sub.add_parser('promote', help="met une version déjà entraînée en production (ex. v9)")
     s.add_argument('--version', required=True)

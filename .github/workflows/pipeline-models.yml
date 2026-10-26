@@ -1,0 +1,54 @@
+name: Pipeline — modèles
+
+# Lister les versions du modèle, en renommer une (ex. v9 -> v8_1), ou en
+# mettre une en production (ex. v9, ou v8_1 pour revenir en arrière).
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "lister, renommer ou mettre en production"
+        type: choice
+        options: [lister, renommer, mettre_en_production]
+        default: lister
+      version:
+        description: "Version concernée (ex. v9)"
+        default: ""
+      nouveau_nom:
+        description: "Pour « renommer » : nouveau nom (ex. v8_1)"
+        default: ""
+
+concurrency:
+  group: galoptrack-data
+  cancel-in-progress: false
+
+jobs:
+  models:
+    runs-on: ubuntu-latest
+    env:
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      ACTION: ${{ inputs.action }}
+      VERSION: ${{ inputs.version }}
+      NEW: ${{ inputs.nouveau_nom }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-pipeline.txt
+      - run: pip install -r requirements-pipeline.txt
+      - name: Run
+        run: |
+          set -e
+          case "$ACTION" in
+            renommer)
+              python -m galoptrack rename-version --from "$VERSION" --to "$NEW"
+              python -m galoptrack dashboard ;;
+            mettre_en_production)
+              python -m galoptrack promote --version "$VERSION"
+              python -m galoptrack dashboard ;;
+          esac
+          python -m galoptrack models

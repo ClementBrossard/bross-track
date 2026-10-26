@@ -184,9 +184,15 @@ def run(storage, promote=True):
         _, _, _, bm = train_model(fdf, features=BASE_FEATURES, label_mode='win')
         base = {k: bm[k] for k in ('hit_rate_top1', 'top3_in_top3', 'pct_trio', 'ndcg@1', 'ndcg@3',
                                    'n_valid_races')}
-    version = model_store.next_version(storage)
+    # Garde-fou de nommage : une recette = une liste de variables
+    known = model_store.recipe_features(storage, config.MODEL_RECIPE)
+    if known is not None and list(known) != list(FEATURES):
+        raise SystemExit(f"Des versions {config.MODEL_RECIPE}* existent avec d'autres variables : renommer "
+                         f"(« Pipeline — modèles ») ou changer config.MODEL_RECIPE avant d'entraîner.")
+    version = model_store.next_version(storage, config.MODEL_RECIPE)
     previous = model_store.current_version(storage)
-    meta = {'version': version, 'trained_at': config.now_paris().isoformat(timespec='seconds'),
+    meta = {'version': version, 'recette': config.MODEL_RECIPE,
+            'trained_at': config.now_paris().isoformat(timespec='seconds'),
             'previous': previous, 'metrics': metrics, 'features': FEATURES,
             'temoin_v8': base}
     model_store.save_version(storage, version, model.model_to_string(), calib, backtest, meta)
