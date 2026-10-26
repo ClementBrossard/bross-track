@@ -1,0 +1,40 @@
+name: Pipeline — opérations
+
+# Exécute la demande écrite dans ops/demande.json dès qu'elle arrive sur main
+# (renommer une version, entraîner, mettre en production). Chaque demande
+# n'est exécutée qu'une fois (trace dans logs/ops/<id>.json sur R2).
+on:
+  push:
+    branches: [main]
+    paths: ["ops/demande.json"]
+  workflow_dispatch:
+
+concurrency:
+  group: galoptrack-data
+  cancel-in-progress: false
+
+jobs:
+  ops:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-pipeline.txt
+      - run: pip install -r requirements-pipeline.txt
+      - name: Demande
+        run: |
+          cat ops/demande.json
+          python -m galoptrack ops ops/demande.json
+      - name: Versions du modèle
+        run: python -m galoptrack models
+      - name: Dashboard à jour
+        run: python -m galoptrack dashboard

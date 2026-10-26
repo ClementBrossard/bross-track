@@ -43,6 +43,11 @@ class LocalStorage:
             if p.is_file() and str(p.relative_to(base)).replace(os.sep, "/").startswith(prefix)
         )
 
+    def delete(self, key):
+        p = self._p(key)
+        if p.exists():
+            p.unlink()
+
 
 class R2Storage:
     def __init__(self, bucket, account_id, access_key_id, secret_access_key):
@@ -86,6 +91,9 @@ class R2Storage:
         for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
             keys.extend(o["Key"] for o in page.get("Contents", []))
         return sorted(keys)
+
+    def delete(self, key):
+        self.s3.delete_object(Bucket=self.bucket, Key=key)
 
 
 def get_storage(kind=None):

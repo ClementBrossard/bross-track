@@ -4,6 +4,7 @@
   collect --from --to   collecte / rattrapage d'une période
   dashboard             régénère le dashboard (cotes du jour à jour)
   train                 réentraîne le modèle (run mensuel)
+  promote --version vN  met une version déjà entraînée en production (ou revient en arrière)
   migrate               import unique de l'historique Drive (raw/)
   status                état des tables et du modèle
   backup [--label | --list]           sauvegarde des tables (backups/<nom>/)
@@ -18,7 +19,7 @@ import logging
 import sys
 from datetime import timedelta
 
-from . import audit, collect, config, dashboard, health, migrate, model_store, tables, train
+from . import audit, collect, config, experiment, dashboard, health, migrate, model_store, tables, train
 from .storage import get_storage
 
 
@@ -180,6 +181,111 @@ def cmd_audit_hippos(storage, args):
     print(audit.report(rows))
 
 
+def cmd_experiment(storage, args):
+    print(experiment.run(storage))
+
+
+def cmd_experiment_opp(storage, args):
+    print(experiment.run_opposition(storage))
+
+
+def cmd_experiment_classe(storage, args):
+    print(experiment.run_classe(storage))
+
+
+def cmd_experiment_confront(storage, args):
+    print(experiment.run_confront(storage))
+
+
+def cmd_experiment_top3(storage, args):
+    print(experiment.run_top3(storage))
+
+
+def cmd_experiment_troncons(storage, args):
+    print(experiment.run_troncons(storage))
+
+
+def cmd_experiment_perf(storage, args):
+    print(experiment.run_perf(storage))
+
+
+def cmd_experiment_seuils(storage, args):
+    print(experiment.run_seuils(storage, args.version))
+
+
+def cmd_experiment_rentabilite(storage, args):
+    print(experiment.run_rentabilite(storage, args.version))
+
+
+def cmd_promote(storage, args):
+    versions = model_store.list_versions(storage)
+    if args.version not in versions:
+        raise SystemExit(f"Version inconnue : {args.version} (disponibles : {', '.join(versions)})")
+    before = model_store.current_version(storage)
+    model_store.set_current(storage, args.version)
+    print(f"Modèle en production : {before} -> {args.version}")
+
+
+def cmd_rename_version(storage, args):
+    try:
+        n = model_store.rename_version(storage, args.src, args.dst)
+    except ValueError as e:
+        raise SystemExit(str(e))
+    print(f"{args.src} renommée en {args.dst} ({n} fichiers). En production : {model_store.current_version(storage)}")
+
+
+def cmd_models(storage, args):
+    cur = model_store.current_version(storage)
+    for v in model_store.list_versions(storage):
+        meta = model_store._j(storage, f"model/{v}/meta.json") if storage.exists(f"model/{v}/meta.json") else {}
+        m = meta.get('metrics', {})
+        t3 = m.get('top3_in_top3')
+        print(f"{v:8s} {'EN PRODUCTION' if v == cur else '':14s} entraîné {str(meta.get('trained_at', '?'))[:10]}"
+              f"  {len(meta.get('features', []))} variables  n°1 gagnant {m.get('hit_rate_top1') or 0:.1%}"
+              + (f"  top 3 {t3:.3f}/3" if t3 is not None else ''))
+
+
+def run_ops(storage, demande):
+    """Exécute une demande d'opérations (ops/demande.json), une seule fois :
+    la trace est gardée dans logs/ops/<id>.json. Étapes : renommer (de, vers),
+    entrainer (production true/false), mettre_en_production (version)."""
+    done_key = f"logs/ops/{demande['id']}.json"
+    if storage.exists(done_key):
+        print(f"Demande {demande['id']} déjà exécutée : rien à faire.")
+        return False
+    journal = []
+    for e in demande['etapes']:
+        a = e['action']
+        if a == 'renommer':
+            versions = model_store.list_versions(storage)
+            if e['de'] not in versions and e['vers'] in versions:
+                journal.append(f"renommer {e['de']} -> {e['vers']} : déjà fait")
+                continue
+            n = model_store.rename_version(storage, e['de'], e['vers'])
+            journal.append(f"renommer {e['de']} -> {e['vers']} : {n} fichiers")
+        elif a == 'entrainer':
+            meta = train.run(storage, promote=bool(e.get('production')))
+            journal.append(f"entrainer : {meta['version']} ({'EN PRODUCTION' if meta['promoted'] else 'pas en production'})")
+            print(json.dumps({k: meta[k] for k in ('version', 'metrics', 'temoin_v8', 'promoted') if k in meta},
+                             indent=1, default=str))
+        elif a == 'mettre_en_production':
+            model_store.set_current(storage, e['version'])
+            journal.append(f"mettre_en_production {e['version']}")
+        else:
+            raise SystemExit(f"Action inconnue : {a}")
+        print(journal[-1])
+    storage.write_bytes(done_key, json.dumps({'demande': demande, 'journal': journal,
+                                              'at': config.now_paris().isoformat(timespec='seconds')},
+                                             ensure_ascii=False, indent=1).encode('utf-8'),
+                        content_type='application/json')
+    return True
+
+
+def cmd_ops(storage, args):
+    with open(args.fichier, encoding='utf-8') as f:
+        run_ops(storage, json.load(f))
+
+
 def cmd_train(storage, args):
     meta = train.run(storage, promote=not args.no_promote)
     print(json.dumps(meta, indent=1, default=str))
@@ -240,6 +346,40 @@ def main(argv=None):
     s.add_argument('--days', type=int, default=365)
     s.add_argument('--step', type=int, default=2)
     s.set_defaults(func=cmd_audit_hippos)
+
+    sub.add_parser('experiment-poids', help="compare le modèle avec / sans poids relatif (n'écrit rien)") \
+        .set_defaults(func=cmd_experiment)
+    sub.add_parser('experiment-adversaires', help="niveau des adversaires affrontés vs peloton du jour (n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_opp)
+    sub.add_parser('experiment-classe', help="note de classe turfiste (étape 1 du modèle Compétition, n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_classe)
+    sub.add_parser('experiment-confrontations', help="confrontations (étape 2 du modèle Compétition, n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_confront)
+    sub.add_parser('experiment-top3', help="objectif 3 premiers : modèle appris « gagnant » vs « top 3 » (n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_top3)
+    sub.add_parser('experiment-troncons', help="tronçons : vitesses relatives et scénario de course (n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_troncons)
+    sub.add_parser('experiment-perf', help="chevaux battus corrigés du poids et de la valeur handicap (n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_perf)
+    for name, fn, hlp in (('experiment-seuils', cmd_experiment_seuils, "% de placés selon la proba du modèle"),
+                          ('experiment-rentabilite', cmd_experiment_rentabilite,
+                           "simple placé : seuils de proba et de cote rentables")):
+        s = sub.add_parser(name, help=hlp + " (n'écrit rien)")
+        s.add_argument('--version', default=None, help="version du modèle (défaut : celle en production)")
+        s.set_defaults(func=fn)
+
+    s = sub.add_parser('rename-version', help="renomme une version de modèle (ex. v9 -> v8_1)")
+    s.add_argument('--from', dest='src', required=True)
+    s.add_argument('--to', dest='dst', required=True)
+    s.set_defaults(func=cmd_rename_version)
+    sub.add_parser('models', help="liste les versions de modèle").set_defaults(func=cmd_models)
+    s = sub.add_parser('ops', help="exécute une demande d'opérations (ops/demande.json), une seule fois")
+    s.add_argument('fichier', nargs='?', default='ops/demande.json')
+    s.set_defaults(func=cmd_ops)
+
+    s = sub.add_parser('promote', help="met une version déjà entraînée en production (ex. v9)")
+    s.add_argument('--version', required=True)
+    s.set_defaults(func=cmd_promote)
 
     sub.add_parser('migrate').set_defaults(func=cmd_migrate)
     sub.add_parser('status').set_defaults(func=cmd_status)

@@ -25,6 +25,19 @@ LOOKBACK_DAYS = int(os.environ.get("GALOPTRACK_LOOKBACK_DAYS", "3"))
 # Garde-fou : un modèle réentraîné n'est promu en production que si son
 # taux de réussite top-1 sur la validation atteint au moins ce seuil.
 MIN_HIT_RATE_TOP1 = float(os.environ.get("GALOPTRACK_MIN_HIT_RATE", "0.20"))
+# Ce que le modèle apprend : 'top3' (dans les 3 premiers = 1, objectif
+# « trouver les 3 premiers ») ou 'win' (gagnant 3 points, placé 1 — v1 à v8).
+# v10 : 'win' (avec les variables de performance, légèrement meilleur que
+# 'top3' sur le critère « 3 premiers » : 1,433 contre 1,429).
+LABEL_MODE = 'win'
+# Recette entraînée (= nom de la première version ; réentraînements : _1, _2...)
+#   v8 : 37 variables (features.BASE_FEATURES)
+#   v9 : v8 + chevaux battus corrigés du poids (features.PERF_FEATURES)
+MODEL_RECIPE = 'v9'
+# Une nouvelle version n'est promue que si, sur la même période, elle ne fait
+# pas moins bien que le témoin (recette v8 : 37 variables, apprise « gagnant »)
+# en nombre moyen de chevaux de son top 3 finissant dans les 3 premiers.
+MAX_DROP_VS_TEMOIN = 0.02
 
 
 def now_paris() -> datetime:

@@ -10,7 +10,7 @@ que la version d'entraînement."""
 
 import bisect
 import re
-from collections import defaultdict
+from collections import defaultdict, deque
 from datetime import datetime as _dt3
 
 import numpy as np
@@ -25,6 +25,20 @@ FEATURES = ['hv', 'ag', 'sx', 'oe', 'dist', 'alloc', 'cat', 'piste', 'terrain', 
             'elo', 'days_since_last', 'alloc_delta', 'alloc_ratio',
             'last_race_opp_elo_ahead_avg', 'last_race_opp_elo_ahead_max',
             'last_race_opp_elo_beaten_avg', 'last_race_opp_elo_beaten_max']
+BASE_FEATURES = list(FEATURES)
+# Niveau des chevaux battus sur 3 mois comparé au peloton du jour : calculées
+# (affichées dans l'onglet Modèle) mais PAS utilisées par le modèle. Testées
+# sur 4 périodes (expérience « adversaires ») : signal brut net (14,6 % de
+# victoires contre 6,2 %), mais aucun gain du modèle au-delà du bruit (24,8 %
+# contre 24,7 %), l'Elo et les face-à-face portant déjà l'information. Pour
+# les ajouter un jour : FEATURES = BASE_FEATURES + FIELD_FEATURES (l'entraînement
+# compare alors automatiquement au témoin à 37 variables).
+FIELD_FEATURES = ['beaten_vs_field_90', 'beaten_vs_top3_90', 'field_below_bmax_90', 'field_below_bavg_90']
+# v10 : + chevaux battus (et qui l'ont battu) mesurés par leur valeur handicap,
+# corrigée du poids porté par chacun (perf.py). Testé sur 4 périodes : 4/4
+# meilleures que la recette v8 en « top 3 » (1,433 contre 1,413 sur 3).
+PERF_FEATURES = ['pr_best', 'pr_mean', 'pr_ceiling', 'pr_n', 'pr_vs_hv', 'pr_vs_field_best', 'pr_vs_field_mean']
+FEATURES = BASE_FEATURES + PERF_FEATURES
 CAT_COLS = ['sx', 'oe', 'cat', 'piste', 'terrain', 'hippo']
 
 SORT_CHRONO = ['date', 'is_today', 'race_id']
@@ -64,7 +78,8 @@ def flatten(races_list):
                 'ag': h.get('ag'), 'sx': h.get('sx'),
                 'cd': h.get('cd'), 'pd': h.get('pd'), 'oe': h.get('oe'), 'nc': h.get('nc'), 'nv': h.get('nv'),
                 'np': h.get('np'), 'gc': h.get('gc'), 'hv': h.get('hv'), 'cote': h.get('cote'),
-                'mu': h.get('mu'), 'pa': h.get('pa'), 'tr': h.get('tr'),
+                'mu': h.get('mu'), 'pa': h.get('pa'), 'tr': h.get('tr'), 'ec': h.get('ec'),
+                't6': h.get('t6'), 't2f': h.get('t2f'), 'vm': h.get('vm'), 'vy': h.get('vy'),
             })
     return pd.DataFrame(rows)
 
@@ -268,4 +283,104 @@ def build_features(races_list, labels_array):
 
     for c in CAT_COLS:
         fdf[c] = fdf[c].astype('category')
+
+    # Niveau des chevaux battus sur 3 mois vs peloton du jour (affichage), puis
+    # performances démontrées corrigées du poids (variables du modèle v10)
+    from .perf import performance_ratings
+    return performance_ratings(opposition_features(fdf, windows=(90,)))
+
+
+# Idée : un cheval qui a déjà affronté (ou battu) de très bons chevaux ces
+# derniers mois et qui retrouve aujourd'hui un peloton plus faible. Le niveau
+# d'un cheval = son Elo juste avant la course concernée (aucune fuite).
+
+def opposition_features(fdf, windows=(90, 180)):
+    """Ajoute, pour chaque fenêtre de N jours (courses strictement antérieures) :
+      opp_avg_{N}        niveau moyen des pelotons affrontés
+      opp_max_{N}        meilleur adversaire affronté
+      beaten_max_{N}     meilleur cheval battu
+      beaten_avg_{N}     niveau moyen des chevaux battus
+      drop_avg_{N}       opp_avg_{N} - niveau moyen du peloton du jour (> 0 : il descend de niveau)
+      beaten_vs_top_{N}  beaten_max_{N} - meilleur rival du jour (> 0 : il a déjà battu mieux)
+    et le niveau du peloton du jour : field_avg, field_max (rivaux seulement)."""
+    fdf = fdf.copy()
+    elo = fdf['elo'].to_numpy(dtype=float)
+    pa = fdf['pa_num'].to_numpy(dtype=float)
+    n = len(fdf)
+    field_avg, field_max, field_top3 = np.full(n, np.nan), np.full(n, np.nan), np.full(n, np.nan)
+    r_beaten_max, r_beaten_avg = np.full(n, np.nan), np.full(n, np.nan)
+    r_beaten_sum, r_beaten_cnt = np.zeros(n), np.zeros(n)
+    for idx in fdf.groupby('race_id').indices.values():
+        e, p = elo[idx], pa[idx]
+        if len(idx) < 2:
+            continue
+        tot = e.sum()
+        for k, i in enumerate(idx):
+            others = np.delete(e, k)
+            field_avg[i] = (tot - e[k]) / (len(idx) - 1)
+            field_max[i] = others.max()
+            field_top3[i] = np.sort(others)[-3:].mean()
+            if not np.isnan(p[k]):
+                b = e[(p > p[k])]
+                if len(b):
+                    r_beaten_max[i], r_beaten_avg[i] = b.max(), b.mean()
+                    r_beaten_sum[i], r_beaten_cnt[i] = b.sum(), len(b)
+    fdf['field_avg'], fdf['field_max'], fdf['field_top3'] = field_avg, field_max, field_top3
+
+    dates = pd.to_datetime(fdf['date'].astype(int).astype(str), format='%Y%m%d').to_numpy()
+    out = {f'{c}_{w}': np.full(n, np.nan) for w in windows
+           for c in ('opp_avg', 'opp_max', 'beaten_max', 'beaten_avg', 'beaten_pool')}
+    order = np.lexsort((fdf['is_today'].to_numpy(), dates, fdf['nom'].to_numpy()))
+    noms = fdf['nom'].to_numpy()
+    start = 0
+    while start < n:
+        end = start
+        while end < n and noms[order[end]] == noms[order[start]]:
+            end += 1
+        rows = order[start:end]
+        for w in windows:
+            win = deque()
+            for i in rows:
+                lim = dates[i] - np.timedelta64(w, 'D')
+                while win and dates[win[0]] < lim:
+                    win.popleft()
+                past = [j for j in win if dates[j] < dates[i]]
+                if past:
+                    fa = field_avg[past]
+                    fm = field_max[past]
+                    bm = r_beaten_max[past]
+                    ba = r_beaten_avg[past]
+                    if not np.isnan(fa).all():
+                        out[f'opp_avg_{w}'][i] = np.nanmean(fa)
+                        out[f'opp_max_{w}'][i] = np.nanmax(fm)
+                    if not np.isnan(bm).all():
+                        out[f'beaten_max_{w}'][i] = np.nanmax(bm)
+                        out[f'beaten_avg_{w}'][i] = np.nanmean(ba)
+                        # tous les chevaux battus de la période, à poids égal
+                        out[f'beaten_pool_{w}'][i] = r_beaten_sum[past].sum() / r_beaten_cnt[past].sum()
+                win.append(i)
+        start = end
+    for k, v in out.items():
+        fdf[k] = v
+    for w in windows:
+        fdf[f'drop_avg_{w}'] = fdf[f'opp_avg_{w}'] - fdf['field_avg']
+        fdf[f'beaten_vs_top_{w}'] = fdf[f'beaten_max_{w}'] - fdf['field_max']
+        fdf[f'beaten_vs_field_{w}'] = fdf[f'beaten_pool_{w}'] - fdf['field_avg']
+        fdf[f'beaten_vs_top3_{w}'] = fdf[f'beaten_pool_{w}'] - fdf['field_top3']
+        # Part du peloton du jour moins bien notée que les chevaux qu'il a déjà
+        # battus (meilleur battu / moyenne des battus)
+        bmax, bpool = fdf[f'beaten_max_{w}'].to_numpy(), fdf[f'beaten_pool_{w}'].to_numpy()
+        f_max, f_avg = np.full(n, np.nan), np.full(n, np.nan)
+        for idx in fdf.groupby('race_id').indices.values():
+            if len(idx) < 2:
+                continue
+            e = elo[idx]
+            for k, i in enumerate(idx):
+                others = np.delete(e, k)
+                if not np.isnan(bmax[i]):
+                    f_max[i] = (others < bmax[i]).mean()
+                if not np.isnan(bpool[i]):
+                    f_avg[i] = (others < bpool[i]).mean()
+        fdf[f'field_below_bmax_{w}'], fdf[f'field_below_bavg_{w}'] = f_max, f_avg
     return fdf
+

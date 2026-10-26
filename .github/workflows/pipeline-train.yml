@@ -6,9 +6,12 @@ on:
   workflow_dispatch:
     inputs:
       promote:
-        description: "Mettre la nouvelle version en production si elle passe le garde-fou"
+        description: "Mettre la nouvelle version en production si elle passe le garde-fou (sinon : enregistrée seulement)"
         type: boolean
-        default: true
+        default: false
+      version:
+        description: "Facultatif : ne pas réentraîner, mettre cette version en production (ex. v9, ou v8_1 pour revenir en arrière)"
+        default: ""
 
 concurrency:
   group: galoptrack-data
@@ -32,8 +35,14 @@ jobs:
           cache-dependency-path: requirements-pipeline.txt
       - run: pip install -r requirements-pipeline.txt
       - name: Entraînement
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
-          if [ "${{ inputs.promote }}" = "false" ]; then
+          if [ -n "$VERSION" ]; then
+            python -m galoptrack promote --version "$VERSION"
+          elif [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.promote }}" = "false" ]; then
+            # Entraînement automatique du 1er du mois : enregistre la version
+            # sans la mettre en production (décision manuelle, champ « version »)
             python -m galoptrack train --no-promote
           else
             python -m galoptrack train

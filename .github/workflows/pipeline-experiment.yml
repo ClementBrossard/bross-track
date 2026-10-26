@@ -1,0 +1,46 @@
+name: Pipeline — expériences modèle
+
+# Compare le modèle de production et des variantes (poids relatif, niveau des
+# adversaires affrontés) sur les mêmes données. Lecture seule : aucun modèle enregistré, rien d'écrit dans R2.
+# Résultat dans le résumé du run.
+on:
+  push:
+    branches-ignore: [main]
+    paths: ["galoptrack/experiment.py", "galoptrack/classe.py", "galoptrack/confront.py", "galoptrack/troncons.py", "galoptrack/perf.py", "galoptrack/features.py", "galoptrack/train.py", ".github/workflows/pipeline-experiment.yml"]
+  workflow_dispatch:
+    inputs:
+      experience:
+        description: "Expérience à lancer"
+        type: choice
+        options: [perf, rentabilite, seuils, troncons, top3, confrontations, classe, adversaires, poids]
+        default: perf
+      version:
+        description: "Version du modèle pour seuils / rentabilité (vide = production)"
+        default: "v8"
+
+jobs:
+  experiment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-pipeline.txt
+      - run: pip install -r requirements-pipeline.txt
+      - env:
+          EXP: ${{ inputs.experience || 'perf' }}
+          VERSION: ${{ inputs.version || 'v8' }}
+        run: |
+          if [ "$EXP" = "seuils" ] || [ "$EXP" = "rentabilite" ]; then
+            python -m galoptrack "experiment-$EXP" ${VERSION:+--version "$VERSION"}
+          else
+            python -m galoptrack "experiment-$EXP"
+          fi
