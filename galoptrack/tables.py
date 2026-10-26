@@ -56,6 +56,13 @@ COLS_COMBINES = [
     'dividende_pour_un_euro', 'dividende_pour_mise_base', 'mise_base', 'nombre_gagnants',
 ]
 
+# Historique des cotes (cotes_hist.py) : heures en millisecondes depuis 1970
+COLS_COTES_HIST = [
+    'date', 'code_hippo', 'num_reunion', 'num_course', 'num_pmu', 'nom_cheval',
+    'cote_reference', 'heure_reference', 'tendance_reference', 'favori_reference',
+    'cote_directe', 'heure_directe', 'grosse_prise',
+]
+
 SCHEMAS = {
     'tracking': COLS_MAIN + ['discipline'],
     'troncons': COLS_TRONC,
@@ -63,7 +70,11 @@ SCHEMAS = {
     'rapports': COLS_RAPPORTS,
     'rapports_combines': COLS_COMBINES,
     'cotes': COLS_COTES,
+    'cotes_hist': COLS_COTES_HIST,
 }
+
+# Tables remplies par la collecte quotidienne (suivies par le bilan de santé)
+COLLECTED = ['tracking', 'troncons', 'chevaux', 'rapports', 'rapports_combines']
 
 RACE_KEY = ['date', 'code_hippo', 'num_reunion', 'num_course']
 

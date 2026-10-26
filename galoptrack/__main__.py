@@ -19,7 +19,7 @@ import logging
 import sys
 from datetime import timedelta
 
-from . import audit, collect, config, experiment, dashboard, health, migrate, model_store, tables, train
+from . import audit, collect, cotes_hist, config, experiment, dashboard, health, migrate, model_store, tables, train
 from .storage import get_storage
 
 
@@ -213,6 +213,10 @@ def cmd_experiment_marche(storage, args):
     print(experiment.run_marche(storage))
 
 
+def cmd_cotes_hist(storage, args):
+    print(cotes_hist.run(storage, max_minutes=args.max_minutes))
+
+
 def cmd_experiment_sonde_cotes(storage, args):
     print(experiment.run_sonde_cotes(storage))
 
@@ -369,6 +373,9 @@ def main(argv=None):
         .set_defaults(func=cmd_experiment_top3)
     sub.add_parser('experiment-troncons', help="tronçons : vitesses relatives et scénario de course (n'écrit rien)") \
         .set_defaults(func=cmd_experiment_troncons)
+    s = sub.add_parser('cotes-hist', help="récupère la cote de référence et la cote directe des courses de plat passées (table cotes_hist)")
+    s.add_argument('--max-minutes', type=int, default=330)
+    s.set_defaults(func=cmd_cotes_hist)
     sub.add_parser('experiment-sonde_cotes', help="l'API PMU garde-t-elle la cote du matin des courses passées ?") \
         .set_defaults(func=cmd_experiment_sonde_cotes)
     sub.add_parser('experiment-marche', help="challenger étape 0 : la cote seule, v9 + cote (n'écrit rien)") \

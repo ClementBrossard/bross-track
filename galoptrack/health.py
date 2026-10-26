@@ -55,7 +55,7 @@ def compute(storage, today=None, dashboard_stats=None):
     def alert(level, msg):
         alerts.append({'level': level, 'msg': msg})
 
-    t = {name: tables.read_table(storage, name) for name in tables.SCHEMAS}
+    t = {name: tables.read_table(storage, name) for name in tables.COLLECTED}
 
     # 1. Fraîcheur des tables
     fresh = {}
