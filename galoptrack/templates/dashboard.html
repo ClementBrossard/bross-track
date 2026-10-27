@@ -3546,6 +3546,47 @@ function oddsSpark(pts, w=120, h=28){
     + `<circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="2.2" fill="${color}"/></svg>`;
 }
 
+// Chemin de la cote en chiffres : début -> milieu de journée -> maintenant
+function oddsPath(pts){
+  if(!pts || pts.length < 2) return '';
+  const f = v => v.toFixed(1);
+  const a = pts[0][1], z = pts[pts.length-1][1];
+  if(pts.length < 3) return `${f(a)} → ${f(z)}`;
+  return `${f(a)} → ${f(pts[Math.floor((pts.length-1)/2)][1])} → ${f(z)}`;
+}
+
+// Grand graphique d'un cheval (ouvert d'un appui sur sa courbe) : heures en
+// abscisse, cote en ordonnée (échelle log, cote qui baisse = vers le haut),
+// et la liste des changements de cote avec l'heure.
+function oddsChart(pts){
+  if(!pts || pts.length < 2) return '<div class="count">Pas encore assez de relevés pour une courbe.</div>';
+  const W = 640, H = 170, L = 44, R = 12, T = 12, B = 26;
+  const t0 = pts[0][0], t1 = pts[pts.length-1][0], dt = (t1 - t0) || 1;
+  const ys = pts.map(p => Math.log(p[1]));
+  const lo = Math.min(...ys), hi = Math.max(...ys), span = (hi - lo) || 0.1;
+  const X = t => L + (t - t0) / dt * (W - L - R);
+  const Y = c => T + (Math.log(c) - lo) / span * (H - T - B);
+  const hhmm = ms => new Date(ms).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
+  const path = pts.map((p, i) => (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1)).join(' ');
+  const cMin = Math.exp(lo), cMax = Math.exp(hi);
+  const ticks = [cMin, Math.exp((lo + hi) / 2), cMax];
+  const xt = [t0, t0 + dt / 2, t1];
+  const color = pts[pts.length-1][1] <= pts[0][1] ? 'var(--green)' : '#a8402c';
+  const svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:auto;">`
+    + ticks.map(c => `<line x1="${L}" x2="${W-R}" y1="${Y(c).toFixed(1)}" y2="${Y(c).toFixed(1)}" stroke="var(--line)" stroke-dasharray="3 3"/>`
+      + `<text x="${L-6}" y="${(Y(c)+4).toFixed(1)}" text-anchor="end" font-size="11" fill="var(--ink-soft)" font-family="JetBrains Mono,monospace">${c.toFixed(1)}</text>`).join('')
+    + xt.map((t, i) => `<text x="${X(t).toFixed(1)}" y="${H-6}" text-anchor="${['start', 'middle', 'end'][i]}" font-size="11" fill="var(--ink-soft)">${hhmm(t)}</text>`).join('')
+    + `<path d="${path}" fill="none" stroke="${color}" stroke-width="2"/>`
+    + pts.map(p => `<circle cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="2.5" fill="${color}"/>`).join('')
+    + `</svg>`;
+  // Changements de cote seulement (un relevé identique au précédent n'apporte rien)
+  const changes = pts.filter((p, i) => i === 0 || i === pts.length - 1 || p[1] !== pts[i-1][1]);
+  const list = changes.map(p => `<span style="white-space:nowrap;"><b>${hhmm(p[0])}</b> ${p[1].toFixed(1)}</span>`).join(' → ');
+  return svg + `<div style="font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.7;margin-top:4px;">${list}</div>`;
+}
+
+const liveOddsOpen = new Set();
+
 // Mouvement récent : cote actuelle vs dernier relevé d'au moins `minutes` avant
 function recentMove(pts, minutes){
   if(!pts || pts.length < 2) return null;
@@ -3587,10 +3628,16 @@ function renderLiveOdds(r, data){
       <td style="padding:6px 10px;text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700;">${p.cote.toFixed(1)}</td>
       <td style="padding:6px 10px;text-align:right;font-family:'JetBrains Mono',monospace;color:var(--ink-soft);">${matin ? matin.toFixed(1) : '—'}</td>
       <td style="padding:6px 10px;font-size:12px;font-weight:600;color:${mv.color};white-space:nowrap;">${mv.txt}</td>
-      <td style="padding:6px 10px;">${oddsSpark(pts)}</td>
+      <td style="padding:6px 10px;cursor:pointer;" data-odds-detail="${p.num}" title="Appuie pour le détail">${oddsSpark(pts)}${hist.length ? `<div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-soft);white-space:nowrap;">${oddsPath(pts)}</div>` : ''}</td>
       <td style="padding:6px 10px;font-size:12px;font-weight:600;white-space:nowrap;color:${mv15 ? mv15.color : 'var(--ink-soft)'};">${mv15 ? mv15.txt : '—'}</td>
       <td style="padding:6px 10px;text-align:right;font-family:'JetBrains Mono',monospace;">${(100 / p.cote / inv).toFixed(1)}%</td>
       <td style="padding:6px 10px;text-align:right;font-family:'JetBrains Mono',monospace;color:var(--ink-soft);">${h.model_prob !== undefined && h.model_prob !== null ? h.model_prob.toFixed(1)+'%' : '—'}</td>
+    </tr>
+    <tr id="oddsDetail-${p.num}" style="display:${liveOddsOpen.has(String(p.num)) ? 'table-row' : 'none'};border-bottom:1px solid var(--line);">
+      <td colspan="10" style="padding:10px 14px 14px;background:var(--paper);">
+        <div style="font-weight:700;font-size:13px;margin-bottom:4px;">N°${p.num} ${p.nom} — cote au fil de la journée</div>
+        ${oddsChart(pts)}
+      </td>
     </tr>`;
   }).join('');
   el.innerHTML = `
@@ -3599,7 +3646,7 @@ function renderLiveOdds(r, data){
       <span class="count" style="margin:0;">mises à jour ${lu}${depart} · actualisation automatique chaque minute</span>
       <button class="btn" id="liveOddsRefresh" style="margin-left:auto;">Actualiser</button>
     </div>
-    <p class="count">Classement par cote du moment. Sur l'historique, les 3 plus petites cotes <b>au départ</b> placent en moyenne 1,57 cheval sur 3 dans le top 3 (modèle seul : 1,43) : plus tu regardes près du départ, plus ce classement est fiable. Mouvement : un cheval « joué » (cote qui baisse) finit plus souvent dans les 3 premiers, un cheval « lâché » beaucoup moins. Courbe : cote relevée toutes les 5 à 10 minutes depuis le matin (vers le haut = cote qui baisse, survole pour le détail).${np.length ? ' Non-partants : n°' + np.join(', ') + '.' : ''}</p>
+    <p class="count">Classement par cote du moment. Sur l'historique, les 3 plus petites cotes <b>au départ</b> placent en moyenne 1,57 cheval sur 3 dans le top 3 (modèle seul : 1,43) : plus tu regardes près du départ, plus ce classement est fiable. Mouvement : un cheval « joué » (cote qui baisse) finit plus souvent dans les 3 premiers, un cheval « lâché » beaucoup moins. Courbe : cote relevée toutes les 5 minutes depuis le matin (vers le haut = cote qui baisse), avec le chemin début → milieu de journée → maintenant ; appuie sur une courbe pour le détail heure par heure.${np.length ? ' Non-partants : n°' + np.join(', ') + '.' : ''}</p>
     <div style="overflow-x:auto;">
     <table style="width:100%;border-collapse:collapse;background:var(--paper);border:1px solid var(--line);border-radius:6px;overflow:hidden;">
       <thead><tr style="text-align:left;background:var(--gold);">
@@ -3619,6 +3666,13 @@ function renderLiveOdds(r, data){
     </div>`;
   const btn = document.getElementById('liveOddsRefresh');
   if(btn) btn.addEventListener('click', ()=> startLiveOdds(r));
+  el.querySelectorAll('[data-odds-detail]').forEach(td => td.addEventListener('click', ()=>{
+    const num = td.dataset.oddsDetail, row = document.getElementById('oddsDetail-' + num);
+    if(!row) return;
+    const open = row.style.display === 'none';
+    row.style.display = open ? 'table-row' : 'none';
+    if(open) liveOddsOpen.add(num); else liveOddsOpen.delete(num);
+  }));
 }
 
 function oppCell(h){
