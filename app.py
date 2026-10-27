@@ -7,21 +7,25 @@ pipeline (GitHub Actions) et stockées sur Cloudflare R2 :
   /dashboard    dashboard GalopTrack (dashboards/latest.html)
   /sante        contrôle de santé des données (dashboards/sante.html)
   /api/cotes/<AAAAMMJJ>/<réunion>/<course>
-                cotes PMU en direct d'une course (JSON, mis en cache 20 s)
+                cotes PMU en direct d'une course + relevés de la journée (JSON)
+  /api/releve-cotes?cle=…
+                relève les cotes de toutes les courses du jour (cron-job.org)
 
 Variables d'environnement : APP_PASSWORD, SECRET_KEY, R2_ACCOUNT_ID,
-R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET.
+R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, RELEVE_CLE (clé du relevé
+des cotes, la même que dans l'URL appelée par cron-job.org).
 """
 
 import gzip
 import hmac
-import json
 import os
+import threading
 import time
-import urllib.request
 from functools import wraps
 
 from flask import Flask, jsonify, redirect, request, session
+
+from galoptrack import live
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY") or os.urandom(32)
@@ -154,53 +158,28 @@ def sante_page():
                             "Contrôle de santé pas encore généré (voir le workflow GitHub « Pipeline — quotidien »).")
 
 
-PMU_LIVE = "https://online.turfinfo.api.pmu.fr/rest/client/61/programme"
 LIVE_CACHE_S = 20
+HIST_CACHE_S = 60
 _live_cache = {}
+_hist_cache = {}
+_releve = {"en_cours": False, "dernier": None}
+RELEVE_CLE = os.environ.get("RELEVE_CLE", "")
 
 
-def _pmu_json(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 GalopTrack", "Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=8) as r:
-        return json.loads(r.read().decode("utf-8"))
-
-
-def _rapport(p, field):
-    r = p.get(field) or {}
-    if r.get("typePari") != "SIMPLE_GAGNANT":
-        return None
+def _day_history(day):
+    """Relevés de cotes de la journée (cotes/live/AAAAMMJJ.json.gz), relus au plus chaque minute."""
+    hit = _hist_cache.get(day)
+    if hit and time.time() - hit[0] < HIST_CACHE_S:
+        return hit[1]
     try:
-        return float(r.get("rapport")) or None
-    except (TypeError, ValueError):
-        return None
-
-
-def live_odds(day, reunion, course):
-    """Cotes simple gagnant du moment pour une course (API PMU en ligne)."""
-    ddmmyyyy = f"{day[6:8]}{day[4:6]}{day[0:4]}"
-    base = f"{PMU_LIVE}/{ddmmyyyy}/R{reunion}/C{course}"
-    data = _pmu_json(f"{base}/participants")
-    partants = []
-    for p in data.get("participants") or []:
-        if not p.get("nom"):
-            continue
-        direct = p.get("dernierRapportDirect") or {}
-        partants.append({
-            "num": p.get("numPmu"),
-            "nom": p["nom"].strip().upper(),
-            "cote": _rapport(p, "dernierRapportDirect"),
-            "cote_ref": _rapport(p, "dernierRapportReference"),
-            "heure_cote": direct.get("dateRapport"),
-            "non_partant": p.get("statut") == "NON_PARTANT",
-        })
-    out = {"partants": partants, "lu_a": int(time.time() * 1000)}
-    try:  # heure de départ : facultative
-        info = _pmu_json(base)
-        out["depart"] = info.get("heureDepart")
-        out["statut"] = info.get("statut")
-    except Exception:
-        pass
-    return out
+        from galoptrack.storage import get_storage
+        data = live.load_day(get_storage(), day)
+    except Exception as e:
+        app.logger.warning("Relevés de cotes %s indisponibles : %s", day, e)
+        data = {"courses": {}}
+    _hist_cache.clear()
+    _hist_cache[day] = (time.time(), data)
+    return data
 
 
 @app.route("/api/cotes/<day>/<int:reunion>/<int:course>")
@@ -214,15 +193,42 @@ def api_cotes(day, reunion, course):
     if hit and time.time() - hit[0] < LIVE_CACHE_S:
         return jsonify(hit[1])
     try:
-        out = live_odds(day, reunion, course)
+        out = live.live_odds(day, reunion, course)
     except Exception as e:
         app.logger.warning("Cotes en direct %s indisponibles : %s", key, e)
         return jsonify({"erreur": "API PMU indisponible"}), 502
+    out["historique"] = live.history(_day_history(day), reunion, course)
     _live_cache[key] = (time.time(), out)
     if len(_live_cache) > 200:
         for k in sorted(_live_cache, key=lambda k: _live_cache[k][0])[:100]:
             _live_cache.pop(k, None)
     return jsonify(out)
+
+
+def _run_releve():
+    try:
+        from galoptrack.storage import get_storage
+        _releve["dernier"] = {**live.snapshot(get_storage()), "fini_a": int(time.time())}
+        _hist_cache.clear()
+    except Exception as e:
+        app.logger.warning("Relevé des cotes en échec : %s", e)
+        _releve["dernier"] = {"erreur": str(e), "fini_a": int(time.time())}
+    finally:
+        _releve["en_cours"] = False
+
+
+@app.route("/api/releve-cotes", methods=["GET", "POST"])
+def api_releve_cotes():
+    """Appelé par cron-job.org toutes les 5 à 10 minutes : relève les cotes
+    de toutes les courses du jour (en arrière-plan, réponse immédiate)."""
+    cle = request.args.get("cle") or request.headers.get("X-Releve-Cle") or ""
+    if not RELEVE_CLE or not hmac.compare_digest(cle.encode(), RELEVE_CLE.encode()):
+        return jsonify({"erreur": "clé absente ou incorrecte"}), 403
+    if _releve["en_cours"]:
+        return jsonify({"statut": "déjà en cours", "dernier": _releve["dernier"]}), 202
+    _releve["en_cours"] = True
+    threading.Thread(target=_run_releve, daemon=True).start()
+    return jsonify({"statut": "lancé", "dernier": _releve["dernier"]}), 202
 
 
 @app.route("/healthz")

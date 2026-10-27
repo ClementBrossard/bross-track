@@ -24,6 +24,7 @@ GitHub Actions ──(lit/écrit)──> Cloudflare R2 <──(lit)── App Re
 | `model/vN/` | `race_model.txt`, `calibration.json`, `backtest.json`, `meta.json` |
 | `dashboards/latest.html` | dernier dashboard généré |
 | `logs/` | résumé de chaque collecte, rapport de migration |
+| `cotes/live/AAAAMMJJ.json.gz` | cotes de la journée relevées toutes les 5 à 10 min (courbes du site) |
 
 ## Mise en place (une seule fois)
 
@@ -69,6 +70,21 @@ GitHub à l'heure dite (fuseau Europe/Paris, donc pas de décalage été/hiver).
 
 Les crons GitHub restent en secours : les créneaux du matin passent en
 `--if-needed` et ne font rien si la collecte du jour a déjà tourné.
+
+### 6. Relevé des cotes toutes les 5 à 10 minutes (cron-job.org → site Render)
+Le site relève lui-même les cotes de toutes les courses de galop du jour quand
+on appelle `/api/releve-cotes` (réponse immédiate, relevé en arrière-plan).
+Les courses qui partent dans plus de 3 h ne sont relevées que toutes les 30 min,
+et plus aucune 5 min après le départ.
+
+1. Choisir une clé : une longue suite de lettres et de chiffres au hasard.
+2. Render → service web → *Environment* → ajouter `RELEVE_CLE` = cette clé
+   (le service redémarre).
+3. cron-job.org → nouvelle tâche :
+   - URL : `https://<adresse du site>/api/releve-cotes?cle=<la clé>`
+   - méthode `GET`, aucun en-tête ni corps ;
+   - toutes les 5 minutes, de 10:00 à 21:55 (fuseau Europe/Paris).
+   Réponse attendue : `202` (`403` = clé absente ou différente de celle de Render).
 
 ## Commandes (aussi utilisables en local)
 

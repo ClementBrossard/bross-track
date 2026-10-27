@@ -961,3 +961,108 @@ def run_marche_ref(storage):
         'Marché 30 min avant + mouvement (connu au départ seulement)': (MARKET_REF_FEATURES + MOVE_FEATURES, 'win'),
     })
     return _publish(md)
+
+
+# ── Modèle challenger, étape 1 : les blocs des parieurs pros vs le marché ───
+
+SPEED_FEATURES = ['accel_roll5', 'gain_roll5', 'finish_kick_roll5']
+
+
+def run_blocs(storage):
+    from .blocs import CONDITION_FEATURES, ENTOURAGE_FEATURES, INTENT_FEATURES, all_blocks
+    from .troncons import TRACK_FEATURES, tracking_features
+    fdf = market_features(_attach_odds(storage, train.load_feature_frame(storage)))
+    fdf = all_blocks(tracking_features(fdf))
+    ready, cutoff = _split(fdf)
+    valid = ready[ready['date'] >= cutoff]
+    md = ["# Modèle challenger — étape 1 : les blocs des parieurs pros contre le marché", "",
+          "Référence : la cote au départ (ce que donnent les cotes en direct à 2 min de la course). "
+          "Chaque bloc est ajouté seul à la cote : il ne compte que s'il fait mieux que la cote seule.", "",
+          f"Signaux bruts, courses depuis {cutoff} :", ""]
+    md += _bucket_table(valid, 'it_oe_first', [-0.5, 0.5, 1.5], ['non', 'oui'],
+                        "Œillères mises pour la première fois") + [""]
+    md += _bucket_table(valid, 'it_jk_wr_delta', [-np.inf, -0.05, 0.05, np.inf],
+                        ['jockey moins bon que la fois d\'avant', 'niveau proche', 'jockey meilleur'],
+                        "Changement de niveau du jockey") + [""]
+    md += _bucket_table(valid, 'en_30_winrate', [-0.01, 0.05, 0.10, 0.20, 1.01],
+                        ['< 5 %', '5-10 %', '10-20 %', '≥ 20 %'],
+                        "Entraîneur : % de victoires sur ses 30 derniers jours") + [""]
+    md += _bucket_table(valid, 'cb_resid', [-np.inf, -0.05, 0.05, np.inf],
+                        ['corde défavorable', 'neutre', 'corde favorable'],
+                        "Corde, d'après l'historique de l'hippodrome à cette distance") + [""]
+    md += _bucket_table(valid, 'hz_surf_resid', [-np.inf, -0.1, 0.1, np.inf],
+                        ['moins bon que d\'habitude sur cette surface', 'neutre', 'meilleur sur cette surface'],
+                        "Préférence du cheval pour la surface du jour") + [""]
+    speed = SPEED_FEATURES + TRACK_FEATURES
+    allb = speed + INTENT_FEATURES + ENTOURAGE_FEATURES + CONDITION_FEATURES + PERF_FEATURES
+    md += ["### Modèles, sur 4 périodes de test successives", ""]
+    md += _compare_folds_top3(fdf, {
+        'Marché seul (cote au départ)': (MARKET_FEATURES, 'win'),
+        '+ vitesse (tronçons)': (MARKET_FEATURES + speed, 'win'),
+        '+ intention (jockey, œillères, distance…)': (MARKET_FEATURES + INTENT_FEATURES, 'win'),
+        '+ entourage (forme entraîneur / jockey 30 j, duo)': (MARKET_FEATURES + ENTOURAGE_FEATURES, 'win'),
+        '+ conditions (corde, surface, distance, hippodrome)': (MARKET_FEATURES + CONDITION_FEATURES, 'win'),
+        '+ chevaux battus (corrigés du poids)': (MARKET_FEATURES + PERF_FEATURES, 'win'),
+        '+ tous les blocs': (MARKET_FEATURES + allb, 'win'),
+        '+ tous les blocs, appris « top 3 »': (MARKET_FEATURES + allb, 'top3'),
+    })
+    return _publish(md)
+
+
+def run_blocs_ref(storage):
+    """Mêmes blocs, mais ajoutés à la cote ~30 min avant le départ (marché moins informé)."""
+    from .blocs import CONDITION_FEATURES, ENTOURAGE_FEATURES, INTENT_FEATURES, all_blocks
+    from .troncons import TRACK_FEATURES, tracking_features
+    fdf = all_blocks(tracking_features(_attach_hist_odds(storage, train.load_feature_frame(storage))))
+    speed = SPEED_FEATURES + TRACK_FEATURES
+    allb = speed + INTENT_FEATURES + ENTOURAGE_FEATURES + CONDITION_FEATURES + PERF_FEATURES
+    m = MARKET_REF_FEATURES
+    md = ["# Modèle challenger — étape 1 bis : les blocs contre la cote 30 min avant le départ", "",
+          "Même test que l'étape 1, mais la référence est la cote ~30 min avant le départ "
+          "(le marché n'a pas encore reçu l'argent de dernière minute).", "",
+          "### Modèles, sur 4 périodes de test successives", ""]
+    md += _compare_folds_top3(fdf, {
+        'Marché 30 min avant seul': (m, 'win'),
+        '+ vitesse (tronçons)': (m + speed, 'win'),
+        '+ intention': (m + INTENT_FEATURES, 'win'),
+        '+ entourage': (m + ENTOURAGE_FEATURES, 'win'),
+        '+ conditions': (m + CONDITION_FEATURES, 'win'),
+        '+ tous les blocs': (m + allb, 'win'),
+        '+ tous les blocs, appris « top 3 »': (m + allb, 'top3'),
+        'v9 + marché 30 min + tous les blocs, « top 3 »': (FEATURES + m + [f for f in allb if f not in FEATURES], 'top3'),
+    })
+    return _publish(md)
+
+
+def run_mouvement(storage):
+    """Le mouvement de la cote (30 min avant -> départ) apporte-t-il quelque
+    chose EN PLUS de la cote finale ?"""
+    fdf = _attach_hist_odds(storage, train.load_feature_frame(storage))
+    ready, cutoff = _split(fdf)
+    d = ready.dropna(subset=['cote', 'mv_log_ratio']).copy()
+    d['top3'] = (d['pa_num'] <= 3).astype(float)
+    d['mv'] = pd.cut(d['mv_log_ratio'], [-np.inf, -0.3, -0.1, 0.1, 0.3, np.inf],
+                     labels=['très lâché', 'lâché', 'stable', 'joué', 'très joué'])
+    bands = [(1, 3, 'cote < 3'), (3, 6, '3 à 6'), (6, 12, '6 à 12'), (12, 25, '12 à 25'), (25, 1e9, '25 et plus')]
+    md = ["# Le mouvement de la cote apporte-t-il quelque chose en plus de la cote finale ?", "",
+          f"{d['race_id'].nunique()} courses de plat avec la cote ~30 min avant et la cote finale. "
+          "À **cote finale égale**, % de chevaux dans les 3 premiers selon le mouvement des 30 dernières minutes "
+          "(entre parenthèses : nombre de chevaux).", "",
+          "| Cote finale | " + " | ".join(d['mv'].cat.categories) + " |", "|---|" + "---:|" * 5]
+    for lo, hi, lab in bands:
+        b = d[(d['cote'] >= lo) & (d['cote'] < hi)]
+        cells = []
+        for cat in d['mv'].cat.categories:
+            x = b[b['mv'] == cat]
+            cells.append(f"{x['top3'].mean():.0%} ({len(x)})" if len(x) >= 50 else '—')
+        md.append(f"| {lab} | " + " | ".join(cells) + " |")
+    md += ["", "Si, sur une même ligne, les % montent de gauche à droite, le marché n'a pas fini d'intégrer "
+               "l'argent de dernière minute : le mouvement est une information en plus de la cote.", "",
+           "### Modèles, sur 4 périodes de test successives", ""]
+    md += _compare_folds_top3(fdf, {
+        'Favoris au départ (3 plus petites cotes finales)': (['mk_prob'], 'brut'),
+        'Cote finale (modèle)': (MARKET_FEATURES, 'win'),
+        'Cote finale + mouvement des 30 dernières minutes': (MARKET_FEATURES + MOVE_FEATURES, 'win'),
+        'Cote finale + cote 30 min avant + mouvement, « top 3 »': (MARKET_FEATURES + MARKET_REF_FEATURES + MOVE_FEATURES, 'top3'),
+    })
+    return _publish(md)
