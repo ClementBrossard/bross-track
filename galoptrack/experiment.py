@@ -1032,3 +1032,37 @@ def run_blocs_ref(storage):
         'v9 + marché 30 min + tous les blocs, « top 3 »': (FEATURES + m + [f for f in allb if f not in FEATURES], 'top3'),
     })
     return _publish(md)
+
+
+def run_mouvement(storage):
+    """Le mouvement de la cote (30 min avant -> départ) apporte-t-il quelque
+    chose EN PLUS de la cote finale ?"""
+    fdf = _attach_hist_odds(storage, train.load_feature_frame(storage))
+    ready, cutoff = _split(fdf)
+    d = ready.dropna(subset=['cote', 'mv_log_ratio']).copy()
+    d['top3'] = (d['pa_num'] <= 3).astype(float)
+    d['mv'] = pd.cut(d['mv_log_ratio'], [-np.inf, -0.3, -0.1, 0.1, 0.3, np.inf],
+                     labels=['très lâché', 'lâché', 'stable', 'joué', 'très joué'])
+    bands = [(1, 3, 'cote < 3'), (3, 6, '3 à 6'), (6, 12, '6 à 12'), (12, 25, '12 à 25'), (25, 1e9, '25 et plus')]
+    md = ["# Le mouvement de la cote apporte-t-il quelque chose en plus de la cote finale ?", "",
+          f"{d['race_id'].nunique()} courses de plat avec la cote ~30 min avant et la cote finale. "
+          "À **cote finale égale**, % de chevaux dans les 3 premiers selon le mouvement des 30 dernières minutes "
+          "(entre parenthèses : nombre de chevaux).", "",
+          "| Cote finale | " + " | ".join(d['mv'].cat.categories) + " |", "|---|" + "---:|" * 5]
+    for lo, hi, lab in bands:
+        b = d[(d['cote'] >= lo) & (d['cote'] < hi)]
+        cells = []
+        for cat in d['mv'].cat.categories:
+            x = b[b['mv'] == cat]
+            cells.append(f"{x['top3'].mean():.0%} ({len(x)})" if len(x) >= 50 else '—')
+        md.append(f"| {lab} | " + " | ".join(cells) + " |")
+    md += ["", "Si, sur une même ligne, les % montent de gauche à droite, le marché n'a pas fini d'intégrer "
+               "l'argent de dernière minute : le mouvement est une information en plus de la cote.", "",
+           "### Modèles, sur 4 périodes de test successives", ""]
+    md += _compare_folds_top3(fdf, {
+        'Favoris au départ (3 plus petites cotes finales)': (['mk_prob'], 'brut'),
+        'Cote finale (modèle)': (MARKET_FEATURES, 'win'),
+        'Cote finale + mouvement des 30 dernières minutes': (MARKET_FEATURES + MOVE_FEATURES, 'win'),
+        'Cote finale + cote 30 min avant + mouvement, « top 3 »': (MARKET_FEATURES + MARKET_REF_FEATURES + MOVE_FEATURES, 'top3'),
+    })
+    return _publish(md)

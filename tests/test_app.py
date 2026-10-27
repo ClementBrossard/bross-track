@@ -30,12 +30,8 @@ def test_no_password_configured_blocks_login(monkeypatch, tmp_path):
     assert b"incorrect" in c.post("/login", data={"password": ""}).data
 
 
-def test_live_odds_api(monkeypatch, tmp_path):
-    c = _client(monkeypatch, tmp_path)
-    import app as app_module
-    calls = []
-
-    def fake(url):
+def _fake_pmu(calls):
+    def fake(url, timeout=8):
         calls.append(url)
         if url.endswith("/participants"):
             return {"participants": [
@@ -44,9 +40,20 @@ def test_live_odds_api(monkeypatch, tmp_path):
                  "dernierRapportReference": {"typePari": "SIMPLE_GAGNANT", "rapport": 5.0}},
                 {"nom": "Beta", "numPmu": 2, "statut": "NON_PARTANT"},
             ]}
-        return {"heureDepart": 1792929110000, "statut": "PROGRAMMEE"}
+        if url.endswith("/C3"):
+            return {"heureDepart": 1792929110000, "statut": "PROGRAMMEE"}
+        return {"programme": {"reunions": [{
+            "numOfficiel": 1, "pays": {"code": "FRA"}, "hippodrome": {"libelleLong": "CHANTILLY"},
+            "courses": [{"numOrdre": 3, "specialite": "PLAT", "heureDepart": 1792929110000},
+                        {"numOrdre": 4, "specialite": "TROT_ATTELE", "heureDepart": 1792929110000}]}]}}
+    return fake
 
-    monkeypatch.setattr(app_module, "_pmu_json", fake)
+
+def test_live_odds_api(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    from galoptrack import live
+    calls = []
+    monkeypatch.setattr(live, "_json", _fake_pmu(calls))
     assert c.get("/api/cotes/20261027/1/3").status_code == 401        # pas connecté
     c.post("/login", data={"password": "secret"})
     assert c.get("/api/cotes/2026-10-27/1/3").status_code == 400
@@ -55,7 +62,31 @@ def test_live_odds_api(monkeypatch, tmp_path):
     assert j["partants"][0] == {"num": 1, "nom": "ALPHA", "cote": 3.5, "cote_ref": 5.0, "heure_cote": 1,
                                 "non_partant": False}
     assert j["partants"][1]["non_partant"] and j["partants"][1]["cote"] is None
-    assert j["depart"] == 1792929110000
+    assert j["depart"] == 1792929110000 and j["historique"] == {}
     n = len(calls)
     c.get("/api/cotes/20261027/1/3")                                   # servi par le cache
     assert len(calls) == n
+
+
+def test_odds_snapshot(monkeypatch, tmp_path):
+    from galoptrack import live
+    from galoptrack.storage import LocalStorage
+    monkeypatch.setattr(live, "_json", _fake_pmu([]))
+    monkeypatch.setattr(live.time, "sleep", lambda s: None)
+    st = LocalStorage(tmp_path)
+    depart = 1792929110000
+    # 4 h avant : relevé ; 10 min plus tard : trop tôt (relevé espacé) ; 1 h avant : relevé
+    assert live.snapshot(st, now_ms=depart - 4 * 3600_000, day="20261025")["courses_relevees"] == 1
+    assert live.snapshot(st, now_ms=depart - 4 * 3600_000 + 600_000, day="20261025")["espacees"] == 1
+    assert live.snapshot(st, now_ms=depart - 3600_000, day="20261025")["courses_relevees"] == 1
+    # 10 min après le départ : plus de relevé
+    assert live.snapshot(st, now_ms=depart + 600_000, day="20261025")["courses_relevees"] == 0
+    h = live.history(live.load_day(st, "20261025"), 1, 3)
+    assert h == {"1": [[depart - 4 * 3600_000, 3.5], [depart - 3600_000, 3.5]]}
+
+
+def test_odds_snapshot_route_needs_key(monkeypatch, tmp_path):
+    monkeypatch.setenv("RELEVE_CLE", "abc")
+    c = _client(monkeypatch, tmp_path)
+    assert c.get("/api/releve-cotes").status_code == 403
+    assert c.get("/api/releve-cotes?cle=faux").status_code == 403
