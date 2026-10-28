@@ -8,7 +8,8 @@ seulement, ni pandas ni requests).
     {"courses": {"R1C3": {"hippo", "disc", "depart",
                           "releves": [[horodatage ms, {"n°": cote}], ...]}}}
   Courses qui partent dans plus de 3 h : un relevé toutes les 30 min
-  seulement ; plus de relevé 5 min après le départ."""
+  seulement ; plus aucun relevé une fois la course courue (statut PMU) ou
+  5 min après l'heure de départ."""
 
 import gzip
 import json
@@ -21,7 +22,16 @@ from .hippos import reunion_code_today
 
 AHEAD_MS = 3 * 3600 * 1000      # au-delà : relevé espacé
 SPACED_MS = 30 * 60 * 1000
-AFTER_START_MS = 5 * 60 * 1000
+AFTER_START_MS = 5 * 60 * 1000   # marge pour un départ retardé (cote finale)
+# Statuts PMU d'une course déjà courue (ou qui ne le sera pas) : cotes figées
+FINISHED = ("FIN_COURSE", "ARRIVEE", "ANNULEE", "COURSE_ARRETEE")
+
+
+def race_over(statut, depart, now_ms):
+    """Course partie : statut PMU de fin, ou 5 min après l'heure de départ."""
+    if any(s in str(statut or "").upper() for s in FINISHED):
+        return True
+    return bool(depart) and now_ms > depart + AFTER_START_MS
 
 
 def day_key(day):
@@ -75,6 +85,7 @@ def live_odds(day, reunion, course):
         out["statut"] = info.get("statut")
     except Exception:
         pass
+    out["terminee"] = race_over(out.get("statut"), out.get("depart"), out["lu_a"])
     return out
 
 
@@ -111,7 +122,7 @@ def snapshot(storage, now_ms=None, day=None):
             num_c, depart = c.get("numOrdre"), c.get("heureDepart")
             if disc is None or not num_c or not depart:
                 continue
-            if now_ms > depart + AFTER_START_MS:
+            if race_over(c.get("statut"), depart, now_ms):
                 continue
             key = f"R{reunion['numOfficiel']}C{num_c}"
             entry = data["courses"].setdefault(key, {"hippo": reunion_code_today(reunion), "disc": disc,

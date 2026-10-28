@@ -3508,7 +3508,11 @@ function startLiveOdds(r){
     if(!el.innerHTML) el.innerHTML = '<div class="count">Chargement des cotes en direct…</div>';
     fetch(`/api/cotes/${r.date}/${r.rnum}/${r.num}`, {credentials:'same-origin'})
       .then(res => res.ok ? res.json() : res.json().then(j => Promise.reject(j.erreur || res.status)))
-      .then(data => { if(state.currentRaceId === r.id) renderLiveOdds(r, data); })
+      .then(data => {
+        // Course partie : cotes figées, plus besoin d'interroger le PMU
+        if(data.terminee && liveOddsTimer){ clearInterval(liveOddsTimer); liveOddsTimer = null; }
+        if(state.currentRaceId === r.id) renderLiveOdds(r, data);
+      })
       .catch(err => {
         const e2 = document.getElementById('liveOdds');
         if(e2) e2.innerHTML = `<div class="count">Cotes en direct indisponibles (${err}). Les cotes du tableau sont celles de la génération du dashboard.</div>`;
@@ -3613,10 +3617,15 @@ function renderLiveOdds(r, data){
   const hhmm = ms => { const d = new Date(ms); return d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}); };
   const depart = data.depart ? ` · départ ${hhmm(data.depart)}` : '';
   const lu = data.lu_a ? hhmm(data.lu_a) : '—';
+  const etat = data.terminee
+    ? `course partie${data.depart ? ' à ' + hhmm(data.depart) : ''} — cotes figées (cote finale)`
+    : `mises à jour ${lu}${depart} · actualisation automatique chaque minute`;
   const body = rows.map((p, i) => {
     const h = byNum[p.num] || {};
     const hist = ((data.historique || {})[String(p.num)] || []).filter(q => q[1]);
-    const pts = hist.concat([[data.lu_a || Date.now(), p.cote]]);
+    // Course partie : le dernier point (cote finale) est placé à l'heure du départ
+    const tEnd = data.terminee && data.depart ? Math.min(data.lu_a || Date.now(), data.depart) : (data.lu_a || Date.now());
+    const pts = hist.filter(q => q[0] < tEnd).concat([[tEnd, p.cote]]);
     const matin = (hist.length ? hist[0][1] : null) || h.cote_ref || h.cote || null;
     const mv = moveLabel(matin, p.cote);
     const mv15 = recentMove(pts, 15);
@@ -3643,8 +3652,8 @@ function renderLiveOdds(r, data){
   el.innerHTML = `
     <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:8px;">
       <div style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.3px;">Cotes en direct</div>
-      <span class="count" style="margin:0;">mises à jour ${lu}${depart} · actualisation automatique chaque minute</span>
-      <button class="btn" id="liveOddsRefresh" style="margin-left:auto;">Actualiser</button>
+      <span class="count" style="margin:0;">${etat}</span>
+      ${data.terminee ? '' : '<button class="btn" id="liveOddsRefresh" style="margin-left:auto;">Actualiser</button>'}
     </div>
     <p class="count">Classement par cote du moment. Sur l'historique, les 3 plus petites cotes <b>au départ</b> placent en moyenne 1,57 cheval sur 3 dans le top 3 (modèle seul : 1,43) : plus tu regardes près du départ, plus ce classement est fiable. Mouvement : un cheval « joué » (cote qui baisse) finit plus souvent dans les 3 premiers, un cheval « lâché » beaucoup moins. Courbe : cote relevée toutes les 5 minutes depuis le matin (vers le haut = cote qui baisse), avec le chemin début → milieu de journée → maintenant ; appuie sur une courbe pour le détail heure par heure.${np.length ? ' Non-partants : n°' + np.join(', ') + '.' : ''}</p>
     <div style="overflow-x:auto;">
