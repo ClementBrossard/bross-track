@@ -1066,3 +1066,24 @@ def run_mouvement(storage):
         'Cote finale + cote 30 min avant + mouvement, « top 3 »': (MARKET_FEATURES + MARKET_REF_FEATURES + MOVE_FEATURES, 'top3'),
     })
     return _publish(md)
+
+
+def run_releves(storage, day=None):
+    """Résumé des relevés de cotes d'une journée (cotes/live/AAAAMMJJ.json.gz)."""
+    from datetime import datetime
+    from . import config, live
+    day = day or config.today_paris().strftime('%Y%m%d')
+    data = live.load_day(storage, day)
+    hm = lambda ms: datetime.fromtimestamp(ms / 1000, config.TZ).strftime('%H:%M')
+    courses = data.get('courses') or {}
+    md = [f"# Relevés de cotes du {day}", "",
+          f"{len(courses)} courses suivies, "
+          f"{sum(len(c.get('releves') or []) for c in courses.values())} relevés au total.", "",
+          "| Course | Hippo | Discipline | Départ | Relevés | 1er | Dernier | Écart max entre 2 relevés (min) |",
+          "|---|---|---|---|---:|---|---|---:|"]
+    for key, c in sorted(courses.items(), key=lambda kv: kv[1].get('depart') or 0):
+        ts = [r[0] for r in c.get('releves') or []]
+        gap = max((b - a for a, b in zip(ts, ts[1:])), default=0) / 60000
+        md.append(f"| {key} | {c.get('hippo')} | {c.get('disc')} | {hm(c['depart']) if c.get('depart') else '—'} | "
+                  f"{len(ts)} | {hm(ts[0]) if ts else '—'} | {hm(ts[-1]) if ts else '—'} | {gap:.0f} |")
+    return _publish(md)

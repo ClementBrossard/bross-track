@@ -190,8 +190,9 @@ def api_cotes(day, reunion, course):
         return jsonify({"erreur": "date invalide"}), 400
     key = (day, reunion, course)
     hit = _live_cache.get(key)
-    # Course partie : cotes figées, gardées une heure sans redemander au PMU
-    if hit and time.time() - hit[0] < (3600 if hit[1].get("terminee") else LIVE_CACHE_S):
+    # Course partie : cotes figées ; arrivée définitive : plus rien ne bouge
+    ttl = 3600 if hit and hit[1].get("arrivee_definitive") else (60 if hit and hit[1].get("terminee") else LIVE_CACHE_S)
+    if hit and time.time() - hit[0] < ttl:
         return jsonify(hit[1])
     try:
         out = live.live_odds(day, reunion, course)

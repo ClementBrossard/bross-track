@@ -217,6 +217,10 @@ def cmd_cotes_hist(storage, args):
     print(cotes_hist.run(storage, max_minutes=args.max_minutes))
 
 
+def cmd_experiment_releves(storage, args):
+    print(experiment.run_releves(storage))
+
+
 def cmd_experiment_mouvement(storage, args):
     print(experiment.run_mouvement(storage))
 
@@ -392,6 +396,8 @@ def main(argv=None):
     s = sub.add_parser('cotes-hist', help="récupère la cote de référence et la cote directe des courses de plat passées (table cotes_hist)")
     s.add_argument('--max-minutes', type=int, default=330)
     s.set_defaults(func=cmd_cotes_hist)
+    sub.add_parser('experiment-releves', help="résumé des relevés de cotes du jour (n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_releves)
     sub.add_parser('experiment-mouvement', help="le mouvement de la cote apporte-t-il plus que la cote finale ? (n'écrit rien)") \
         .set_defaults(func=cmd_experiment_mouvement)
     sub.add_parser('experiment-blocs_ref', help="blocs ajoutés à la cote 30 min avant le départ (n'écrit rien)") \
