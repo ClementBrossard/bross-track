@@ -311,6 +311,7 @@ tbody tr:last-child td{border-bottom:none;}
       </div>
     </div>
     <div class="hero" id="raceHero"></div>
+    <div id="raceResult"></div>
 
     <div class="subtabs">
       <button class="subtab" data-sub="modele">Modèle</button>
@@ -2402,6 +2403,8 @@ function openRace(raceId, navList){
     </div>
   `;
 
+  startRaceResult(r);
+
   const body = document.getElementById('raceTroncBody');
   // Pour les courses du jour : trier par numPmu (cd) = numéro officiel du programme PMU
   const horsesToShow = r.today
@@ -3499,6 +3502,67 @@ function renderModele(){
    ========================================================= */
 
 let liveOddsTimer = null;
+let raceResultTimer = null;
+
+/* Arrivée en haut de la page d'une course : courses passées depuis les
+   données du dashboard ; course du jour depuis /api/cotes, interrogé chaque
+   minute tant que l'arrivée n'est pas définitive. */
+function startRaceResult(r){
+  if(raceResultTimer){ clearTimeout(raceResultTimer); raceResultTimer = null; }
+  const el = document.getElementById('raceResult');
+  if(!el) return;
+  el.innerHTML = '';
+  if(!r.today){
+    const placed = r.horses.filter(h => h.pa !== null && h.pa !== undefined && !isNaN(parseInt(h.pa)))
+      .map(h => ({num: h.npart, nom: h.nom, place: parseInt(h.pa), cote: h.cote || null}));
+    if(placed.length) el.innerHTML = raceResultHtml(r, placed, 'Arrivée', null);
+    return;
+  }
+  const load = ()=>{
+    if(state.currentRaceId !== r.id) return;
+    fetch(`/api/cotes/${r.date}/${r.rnum}/${r.num}`, {credentials:'same-origin'})
+      .then(res => res.ok ? res.json() : Promise.reject(res.status))
+      .then(data => {
+        if(state.currentRaceId !== r.id) return;
+        const placed = (data.partants || []).filter(p => p.place)
+          .map(p => ({num: p.num, nom: p.nom, place: p.place, cote: p.cote}));
+        const e2 = document.getElementById('raceResult');
+        if(e2 && placed.length)
+          e2.innerHTML = raceResultHtml(r, placed, data.arrivee_definitive ? 'Arrivée définitive' : 'Arrivée provisoire', data.duree);
+        if(!data.arrivee_definitive) raceResultTimer = setTimeout(load, 60000);
+      })
+      .catch(()=>{ raceResultTimer = setTimeout(load, 120000); });
+  };
+  load();
+}
+
+function raceResultHtml(r, placed, titre, dureeMs){
+  placed = [...placed].sort((a, b) => a.place - b.place);
+  const top5 = placed.slice(0, 5);
+  const inTop3 = new Set(placed.filter(p => p.place <= 3).map(p => String(p.num)));
+  const hits = nums => nums.filter(n => inTop3.has(String(n))).length;
+  // Top 3 du modèle (probas du dashboard) et des cotes (finales)
+  const model = r.horses.filter(h => h.model_prob !== undefined && h.model_prob !== null)
+    .sort((a, b) => b.model_prob - a.model_prob).slice(0, 3).map(h => h.npart);
+  const market = placed.filter(p => p.cote).sort((a, b) => a.cote - b.cote).slice(0, 3).map(p => p.num);
+  const fmtDuree = ms => { const s = ms / 1000, m = Math.floor(s / 60); return `${m}'${(s - m*60).toFixed(2).padStart(5, '0').replace('.', '"')}`; };
+  const card = p => `<div style="background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-width:74px;text-align:center;">
+      <div style="font-size:11px;color:var(--ink-soft);">${p.place}${p.place === 1 ? 'er' : 'e'}</div>
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:30px;font-weight:800;line-height:1;color:var(--green);">${p.num ?? '—'}</div>
+      <div style="font-size:11px;font-weight:600;max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.nom}</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-soft);">${p.cote ? 'cote ' + p.cote.toFixed(1) : ''}</div>
+    </div>`;
+  const line = (lab, nums) => nums.length === 3
+    ? `<span><b>${lab}</b> ${nums.join('-')} → <b style="color:${hits(nums) >= 2 ? 'var(--green)' : 'var(--ink)'};">${hits(nums)}/3</b> dans les 3 premiers</span>` : '';
+  return `<div style="margin:10px 0 16px;padding:12px 14px;background:#f1f6ef;border:1px solid var(--line);border-left:4px solid var(--green);border-radius:8px;">
+    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:8px;">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;">${titre}</div>
+      ${dureeMs ? `<span style="font-family:'JetBrains Mono',monospace;color:var(--ink-soft);">${fmtDuree(dureeMs)}</span>` : ''}
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">${top5.map(card).join('')}</div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;">${line('Top 3 du modèle :', model)}${line('Top 3 des cotes :', market)}</div>
+  </div>`;
+}
 
 function startLiveOdds(r){
   if(liveOddsTimer) clearInterval(liveOddsTimer);

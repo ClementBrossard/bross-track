@@ -72,8 +72,16 @@ def participants(day, reunion, course):
             "cote_ref": _rapport(p, "dernierRapportReference"),
             "heure_cote": direct.get("dateRapport"),
             "non_partant": p.get("statut") == "NON_PARTANT",
+            "place": _place(p.get("ordreArrivee")),
         })
     return out
+
+
+def _place(v):
+    try:
+        return int(v) or None
+    except (TypeError, ValueError):
+        return None
 
 
 def live_odds(day, reunion, course):
@@ -83,8 +91,10 @@ def live_odds(day, reunion, course):
         info = _json(f"{config.PMU_ONLINE}/{_ddmmyyyy(day)}/R{reunion}/C{course}")
         out["depart"] = info.get("heureDepart")
         out["statut"] = info.get("statut")
+        out["duree"] = info.get("dureeCourse")
     except Exception:
         pass
+    out["arrivee_definitive"] = "DEFINITIVE" in str(out.get("statut") or "").upper()
     out["terminee"] = race_over(out.get("statut"), out.get("depart"), out["lu_a"])
     return out
 

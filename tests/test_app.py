@@ -35,13 +35,13 @@ def _fake_pmu(calls):
         calls.append(url)
         if url.endswith("/participants"):
             return {"participants": [
-                {"nom": "Alpha ", "numPmu": 1, "dernierRapportDirect": {"typePari": "SIMPLE_GAGNANT", "rapport": 3.5,
+                {"nom": "Alpha ", "numPmu": 1, "ordreArrivee": 2, "dernierRapportDirect": {"typePari": "SIMPLE_GAGNANT", "rapport": 3.5,
                                                                          "dateRapport": 1},
                  "dernierRapportReference": {"typePari": "SIMPLE_GAGNANT", "rapport": 5.0}},
                 {"nom": "Beta", "numPmu": 2, "statut": "NON_PARTANT"},
             ]}
         if url.endswith("/C3"):
-            return {"heureDepart": 1792929110000, "statut": "PROGRAMMEE"}
+            return {"heureDepart": 1792929110000, "statut": "ARRIVEE_DEFINITIVE"}
         return {"programme": {"reunions": [{
             "numOfficiel": 1, "pays": {"code": "FRA"}, "hippodrome": {"libelleLong": "CHANTILLY"},
             "courses": [{"numOrdre": 3, "specialite": "PLAT", "heureDepart": 1792929110000},
@@ -62,7 +62,8 @@ def test_live_odds_api(monkeypatch, tmp_path):
     j = c.get("/api/cotes/20261027/1/3").get_json()
     assert calls[0].endswith("/27102026/R1/C3/participants")
     assert j["partants"][0] == {"num": 1, "nom": "ALPHA", "cote": 3.5, "cote_ref": 5.0, "heure_cote": 1,
-                                "non_partant": False}
+                                "non_partant": False, "place": 2}
+    assert j["arrivee_definitive"]
     assert j["partants"][1]["non_partant"] and j["partants"][1]["cote"] is None
     assert j["depart"] == 1792929110000 and j["historique"] == {}
     assert j["terminee"]                                              # départ passé : cotes figées
