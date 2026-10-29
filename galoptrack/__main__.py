@@ -280,7 +280,8 @@ def cmd_models(storage, args):
 def run_ops(storage, demande):
     """Exécute une demande d'opérations (ops/demande.json), une seule fois :
     la trace est gardée dans logs/ops/<id>.json. Étapes : renommer (de, vers),
-    entrainer (production true/false), mettre_en_production (version)."""
+    entrainer (production true/false), mettre_en_production (version),
+    rafraichir_dashboard (le workflow régénère toujours le dashboard ensuite)."""
     done_key = f"logs/ops/{demande['id']}.json"
     if storage.exists(done_key):
         print(f"Demande {demande['id']} déjà exécutée : rien à faire.")
@@ -305,6 +306,9 @@ def run_ops(storage, demande):
                 raise SystemExit(f"Version inconnue : {e['version']}")
             model_store.set_current(storage, e['version'])
             journal.append(f"mettre_en_production {e['version']}")
+        elif a == 'rafraichir_dashboard':
+            # rien à faire ici : le workflow régénère le dashboard après la demande
+            journal.append("rafraichir_dashboard")
         else:
             raise SystemExit(f"Action inconnue : {a}")
         print(journal[-1])
