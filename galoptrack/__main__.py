@@ -230,6 +230,10 @@ def cmd_cotes_hist(storage, args):
     print(cotes_hist.run(storage, max_minutes=args.max_minutes))
 
 
+def cmd_experiment_bases(storage, args):
+    print(experiment.run_bases(storage))
+
+
 def cmd_experiment_combines(storage, args):
     print(experiment.run_combines(storage))
 
@@ -421,6 +425,8 @@ def main(argv=None):
     s = sub.add_parser('cotes-hist', help="récupère la cote de référence et la cote directe des courses de plat passées (table cotes_hist)")
     s.add_argument('--max-minutes', type=int, default=330)
     s.set_defaults(func=cmd_cotes_hist)
+    sub.add_parser('experiment-bases', help="champs réduits avec une base (1 avec 2-3-4-5), vrais rapports (n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_bases)
     sub.add_parser('experiment-combines', help="couplé gagnant / placé, 2sur4 : modèle + cotes, vrais rapports (n'écrit rien)") \
         .set_defaults(func=cmd_experiment_combines)
     sub.add_parser('experiment-strategie', help="stratégie de paris modèle + cotes + mouvement, vrais rapports (n'écrit rien)") \

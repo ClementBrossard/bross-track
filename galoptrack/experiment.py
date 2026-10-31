@@ -1277,8 +1277,8 @@ def _combine_payouts(storage):
     return out, counts
 
 
-def run_combines(storage):
-    from itertools import combinations
+def _combine_frame(storage):
+    """Prédictions hors échantillon + cotes + probabilité combinée (apprise sur la 1re moitié)."""
     from sklearn.linear_model import LogisticRegression
     fdf = _attach_hist_odds(storage, train.load_feature_frame(storage))
     d = _oos_predictions(fdf, FEATURES)
@@ -1304,6 +1304,12 @@ def run_combines(storage):
     d['p_mix'] = p / pd.Series(p, index=d.index).groupby(d['race_id']).transform('sum')
     d['neg_ref'], d['neg_fin'] = -d['cote_ref'], -d['cote']
 
+    return d, pays, counts, mid
+
+
+def run_combines(storage):
+    from itertools import combinations
+    d, pays, counts, mid = _combine_frame(storage)
     selecteurs = {'modèle v9': 'score', 'favoris 30 min avant': 'neg_ref', 'favoris au départ': 'neg_fin',
                   'marché + modèle + mouvement': 'p_mix'}
     rows = []
@@ -1379,4 +1385,93 @@ def run_combines(storage):
     md += ["", f"{len(cand)} stratégies avec au moins 150 courses sur A ; {pos_a} gagnantes sur A, "
                f"dont {pos_ab} encore gagnantes sur B.",
            "« Favoris au départ » et « + mouvement » supposent de jouer à la dernière minute (cote finale).", ""]
+    return _publish(md)
+
+
+def run_bases(storage):
+    """Champs réduits avec une base : « 1 avec 2-3-4-5 » (1 cheval de base
+    associé à k partenaires = k combinaisons)."""
+    d, pays, counts, mid = _combine_frame(storage)
+    src = {'v9': 'score', 'fav30': 'neg_ref', 'fav_départ': 'neg_fin', 'combi': 'p_mix'}
+    lab = {'v9': 'modèle v9', 'fav30': 'favoris 30 min avant', 'fav_départ': 'favoris au départ',
+           'combi': 'marché + modèle + mouvement'}
+    # (source de la base, source des partenaires)
+    plans = [(s, s) for s in src] + [('v9', 'fav30'), ('fav30', 'v9'), ('v9', 'fav_départ'), ('fav_départ', 'v9')]
+    rows = []
+    for rid, g in d.groupby('race_id', sort=False):
+        date, rnum, cnum = int(g['date'].iloc[0]), g['rnum'].iloc[0], g['cnum'].iloc[0]
+        if pd.isna(rnum) or pd.isna(cnum):
+            continue
+        rnum, cnum = int(rnum), int(cnum)
+        order = {s: [int(x) for x in g.sort_values(col, ascending=False)['npart']] for s, col in src.items()}
+        mix2 = g.sort_values('p_mix', ascending=False)['p_mix']
+        base_info = {'date': date, 'n': len(g), 'p_base': float(mix2.iloc[0]),
+                     'base_accord': order['v9'][0] == order['fav30'][0]}
+        for code in COMBINE_TYPES:
+            pay = pays.get((date, rnum, cnum, code))
+            if not pay:
+                continue
+            for sb, sp in plans:
+                base = order[sb][0]
+                partners = [x for x in order[sp] if x != base]
+                for k in (2, 3, 4, 5):
+                    if len(partners) < k:
+                        continue
+                    combs = [frozenset((base, x)) for x in partners[:k]]
+                    rows.append({**base_info, 'pari': code, 'plan': f"base {lab[sb]} · partenaires {lab[sp]}",
+                                 'k': k, 'mise': k, 'gain': sum(pay.get(c, 0.0) for c in combs),
+                                 'base_ok': any(base in c for c in pay)})
+    R = pd.DataFrame(rows)
+    R['periode'] = np.where(R['date'] < mid, 'A', 'B')
+
+    def res(x):
+        if not len(x):
+            return None
+        return {'courses': len(x), 'pct': (x['gain'] > 0).mean(), 'base': x['base_ok'].mean(),
+                'roi': x['gain'].sum() / x['mise'].sum() - 1}
+
+    fmt = lambda r: "— | — | —" if not r else f"{r['courses']} | {r['pct']:.0%} | **{r['roi'] * 100:+.1f} €**"
+    A, B = R[R['periode'] == 'A'], R[R['periode'] == 'B']
+    md = ["# Champs réduits avec une base : « 1 avec 2-3-4-5 » (couplé gagnant, couplé placé, 2sur4)", "",
+          f"Période A avant {mid} (choix), période B à partir de {mid} (vérification). 1 € par combinaison : "
+          "« base + 4 » = 4 combinaisons = 4 €. Résultat pour **100 € misés**.", "",
+          "### 1. Sans filtre, période B : meilleur nombre de partenaires pour chaque plan", "",
+          "| Pari | Plan | Partenaires | Courses | % gagnantes | Pour 100 € | Base dans le bon rang* |",
+          "|---|---|---:|---:|---:|---:|---:|"]
+    for code, (_, plab) in COMBINE_TYPES.items():
+        for plan in R['plan'].unique():
+            best = None
+            for k in (2, 3, 4, 5):
+                r = res(B[(B['pari'] == code) & (B['plan'] == plan) & (B['k'] == k)])
+                if r and (best is None or r['roi'] > best[1]['roi']):
+                    best = (k, r)
+            if best:
+                k, r = best
+                md.append(f"| {plab} | {plan} | {k} | {fmt(r)} | {r['base']:.0%} |")
+    md += ["", "*Part des courses où la base fait partie d'au moins une combinaison payée "
+               "(sans elle, toutes les combinaisons perdent).", ""]
+    filtres = {'aucun': lambda x: x['n'] > 0, 'base = n°1 du modèle ET favori 30 min': lambda x: x['base_accord'],
+               '≤ 9 partants': lambda x: x['n'] <= 9, '≥ 12 partants': lambda x: x['n'] >= 12}
+    for t in (0.25, 0.35, 0.45):
+        filtres[f'base très probable (≥ {t:.0%})'] = lambda x, t=t: x['p_base'] >= t
+    cand = []
+    for code, (_, plab) in COMBINE_TYPES.items():
+        for plan in R['plan'].unique():
+            for k in (2, 3, 4, 5):
+                ba = A[(A['pari'] == code) & (A['plan'] == plan) & (A['k'] == k)]
+                bb = B[(B['pari'] == code) & (B['plan'] == plan) & (B['k'] == k)]
+                for fl, f in filtres.items():
+                    ra = res(ba[f(ba)])
+                    if ra and ra['courses'] >= 150:
+                        cand.append((ra['roi'], f"{plab} · {plan} · base + {k} · {fl}", ra, res(bb[f(bb)])))
+    cand.sort(key=lambda t: -t[0])
+    md += ["### 2. Les 15 meilleures stratégies sur A (au moins 150 courses), et ce qu'elles donnent sur B", "",
+           "| Stratégie | A : courses | A : pour 100 € | **B : courses** | **B : % gagnantes** | **B : pour 100 €** |",
+           "|---|---:|---:|---:|---:|---:|"]
+    for roi_a, l, ra, rb in cand[:15]:
+        md.append(f"| {l} | {ra['courses']} | {roi_a * 100:+.1f} € | {fmt(rb)} |")
+    pos_a = sum(1 for c in cand if c[0] > 0)
+    pos_ab = sum(1 for c in cand if c[0] > 0 and c[3] and c[3]['roi'] > 0)
+    md += ["", f"{len(cand)} stratégies avec au moins 150 courses sur A ; {pos_a} gagnantes sur A, "
+               f"dont {pos_ab} encore gagnantes sur B.", ""]
     return _publish(md)
