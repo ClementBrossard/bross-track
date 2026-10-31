@@ -199,6 +199,7 @@ tbody tr:last-child td{border-bottom:none;}
     <button class="tab" data-tab="methodologie">Méthodologie</button>
     <button class="tab" data-tab="backtest">Résultats des tests</button>
     <button class="tab" data-tab="verifparis">Vérification paris</button>
+    <button class="tab" data-tab="suivi">Suivi stratégies</button>
   </div>
 
   <!-- ===================== VUE COURSES ===================== -->
@@ -299,6 +300,11 @@ tbody tr:last-child td{border-bottom:none;}
   <!-- ===================== VUE VERIFICATION PARIS ===================== -->
   <div class="view" id="view-verifparis">
     <div id="verifParisContainer"></div>
+  </div>
+
+  <!-- ===================== VUE SUIVI DES STRATEGIES ===================== -->
+  <div class="view" id="view-suivi">
+    <div id="suiviContainer"></div>
   </div>
 
   <!-- ===================== VUE COURSE (detail) ===================== -->
@@ -514,6 +520,7 @@ let RACE_BY_ID = {};
 let HORSE_INDEX = [];
 let MODEL_META = null;
 let BACKTEST_DATA = null;
+let SUIVI_DATA = null;
 
 function boot(){
   try{
@@ -529,6 +536,7 @@ function boot(){
     RACES = parsed.races;
     MODEL_META = parsed.model_meta || null;
     BACKTEST_DATA = parsed.backtest || null;
+    SUIVI_DATA = parsed.suivi || null;
     RACES.forEach(r => RACE_BY_ID[r.id] = r);
     buildHorseIndex();
     initApp();
@@ -898,6 +906,7 @@ function initApp(){
   renderMethodologie();
   renderBacktest();
   renderVerifParis();
+  renderSuivi();
   // Populate today metrics terrain filter with unique terrains from historical data
   // Chips terrain — même liste pour les 3 zones
   const allTerrains = [...new Set(RACES.filter(r=>!r.today).map(r=>r.terrain).filter(Boolean))].sort();
@@ -2269,6 +2278,50 @@ function renderVerifDetail(r){
 }
 
 
+
+/* Suivi « pour de faux » des stratégies candidates (paper.py) : aucun argent,
+   1 € fictif par pari en simple gagnant, rapports réels du PMU. */
+function renderSuivi(){
+  const el = document.getElementById('suiviContainer');
+  if(!el) return;
+  const S = SUIVI_DATA;
+  const intro = `<p class="count">Deux règles repérées sur l'historique (2025-2026) mais <b>non prouvées</b> : on les suit ici sans argent,
+    avec les cotes réellement visibles avant chaque course (relevé ~30 min et ~2 min avant le départ) et les vrais rapports
+    simple gagnant du PMU (1 € fictif par pari). Il faut plusieurs centaines de paris par règle avant de conclure :
+    sur peu de paris, un ou deux gros rapports suffisent à tout fausser.</p>`;
+  if(!S || !S.jours){
+    el.innerHTML = intro + '<div class="empty">Pas encore de résultat : le premier bilan arrive le lendemain d\'une journée suivie, après la collecte de 7h40.</div>';
+    return;
+  }
+  const fmtJ = d => d ? `${d.slice(6,8)}/${d.slice(4,6)}/${d.slice(0,4)}` : '—';
+  const rows = Object.entries(S.regles).map(([k, x]) => `<tr>
+      <td style="padding:7px 10px;font-weight:700;">${k}</td>
+      <td style="padding:7px 10px;">${x.libelle}</td>
+      <td style="padding:7px 10px;text-align:right;" class="mono">${x.paris}</td>
+      <td style="padding:7px 10px;text-align:right;" class="mono">${x.paris ? Math.round(100 * x.gagnes / x.paris) + ' %' : '—'}</td>
+      <td style="padding:7px 10px;text-align:right;" class="mono">${x.gains.toFixed(2)} €</td>
+      <td style="padding:7px 10px;text-align:right;font-weight:700;color:${x.roi === null ? 'var(--ink-soft)' : (x.roi >= 0 ? 'var(--green)' : '#a8402c')};" class="mono">${x.roi === null ? '—' : (x.roi >= 0 ? '+' : '') + x.roi.toFixed(1) + ' €'}</td>
+    </tr>`).join('');
+  const last = (S.derniers || []).map(b => `<tr>
+      <td style="padding:6px 10px;" class="mono">${fmtJ(b.jour)}${b.heure ? ' ' + b.heure : ''}</td>
+      <td style="padding:6px 10px;" class="mono">${b.hippo} ${b.course}</td>
+      <td style="padding:6px 10px;font-weight:700;">${b.regle}</td>
+      <td style="padding:6px 10px;">N°${b.num} ${b.nom}</td>
+      <td style="padding:6px 10px;text-align:right;" class="mono">${b.cote30.toFixed(1)} → ${b.cote2.toFixed(1)}</td>
+      <td style="padding:6px 10px;text-align:right;" class="mono">${b.rang_modele}</td>
+      <td style="padding:6px 10px;text-align:right;font-weight:700;color:${b.gain > 0 ? 'var(--green)' : 'var(--ink-soft)'};" class="mono">${b.gain > 0 ? b.gain.toFixed(2) + ' €' : '0'}</td>
+    </tr>`).join('');
+  const th = t => `<th style="padding:8px 10px;font-size:12px;color:var(--paper);">${t}</th>`;
+  el.innerHTML = intro + `
+    <p class="count">Suivi depuis le ${fmtJ(S.debut)} : ${S.jours} jour(s), ${S.courses} course(s) de plat évaluée(s).</p>
+    <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;background:var(--paper);border:1px solid var(--line);margin-bottom:24px;">
+      <thead><tr style="background:var(--green);text-align:left;">${th('Règle')}${th('Description')}${th('Paris')}${th('% gagnés')}${th('Rapports encaissés')}${th('Pour 100 € misés')}</tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    <div style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;color:var(--green);margin-bottom:8px;text-transform:uppercase;">Derniers paris fictifs</div>
+    ${last ? `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;background:var(--paper);border:1px solid var(--line);">
+      <thead><tr style="background:var(--green);text-align:left;">${th('Jour')}${th('Course')}${th('Règle')}${th('Cheval')}${th('Cote 30 min → 2 min')}${th('Rang modèle')}${th('Rapport (1 €)')}</tr></thead>
+      <tbody>${last}</tbody></table></div>` : '<div class="empty">Aucun pari déclenché pour l\'instant.</div>'}`;
+}
 
 function renderMethodologie(){
 

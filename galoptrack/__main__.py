@@ -19,7 +19,7 @@ import logging
 import sys
 from datetime import timedelta
 
-from . import audit, collect, cotes_hist, config, experiment, dashboard, health, migrate, model_store, tables, train
+from . import audit, collect, cotes_hist, paper, config, experiment, dashboard, health, migrate, model_store, tables, train
 from .storage import get_storage
 
 
@@ -129,6 +129,14 @@ def cmd_daily(storage, args):
     days = [today - timedelta(days=i) for i in range(config.LOOKBACK_DAYS, 0, -1)]
     summary = collect.collect_days(storage, days)
     print("Collecte :", json.dumps(summary['days']), "écrit :", json.dumps(summary['written']))
+    try:   # suivi des stratégies : rapports des jours collectés -> résultats
+        rap = tables.read_table(storage, 'rapports')
+        for d in days:
+            res = paper.evaluate(storage, config.yyyymmdd(d), rap)
+            if res:
+                print(f"Suivi stratégies {res['jour']} : {len(res['paris'])} paris sur {res['courses_evaluees']} courses")
+    except Exception as e:
+        print(f"Suivi stratégies en échec : {e}")
     storage.write_bytes(DAILY_MARKER, json.dumps({
         'day': today_i, 'finished_at': config.now_paris().isoformat(timespec='seconds')}).encode('utf-8'),
         content_type='application/json')
