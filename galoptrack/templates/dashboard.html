@@ -1295,6 +1295,7 @@ function renderToday(){
     const racesHtml = races.sort((a,b)=>a.num-b.num).map(r=>`
       <tr data-id="${r.id}" style="cursor:pointer;">
         <td class="mono">${r.rnum ? "R"+r.rnum+" " : ""}C${r.num}${discTag(r)}</td>
+        <td class="mono" style="font-weight:700;">${r.heure ?? '—'}</td>
         <td class="mono">${r.dist ?? '—'} m</td>
         <td>${r.terrain ?? '—'}${r.penetro ? ' ('+r.penetro+')' : ''}</td>
         <td><span class="tag ${catTagClass(r.cat)}">${catLabel(r.cat)}</span></td>
@@ -1314,7 +1315,7 @@ function renderToday(){
       <div class="today-card-body" id="todayBody-${key}">
         <table>
           <thead><tr>
-            <th>N.</th><th>Distance</th><th>Terrain</th><th>Categorie</th>
+            <th>N.</th><th>Heure</th><th>Distance</th><th>Terrain</th><th>Categorie</th>
             <th>Allocation</th><th>Partants</th><th>Profiles dispo</th>
           </tr></thead>
           <tbody>${racesHtml}</tbody>
@@ -2390,7 +2391,7 @@ function openRace(raceId, navList){
 
   document.getElementById('raceHero').innerHTML = `
     <div>
-      <h2>${r.hippo} — ${r.rnum ? "R"+r.rnum+" " : ""}C${r.num} — ${fmtDate(r.date)}${r.today ? ' <span class="badge-today">Aujourd&#39;hui</span>' : ''}</h2>
+      <h2>${r.hippo} — ${r.rnum ? "R"+r.rnum+" " : ""}C${r.num} — ${fmtDate(r.date)}${r.heure ? ' · ' + r.heure : ''}${r.today ? ' <span class="badge-today">Aujourd&#39;hui</span>' : ''}</h2>
       <div class="meta">
         ${discTag(r).trim()}
         <span class="tag">${r.dist ?? '—'} m</span>
@@ -3379,6 +3380,48 @@ function updateParis(){
    entraine hors-ligne. Rien n'est calcule cote client : on affiche ici les
    nombres deja calcules, cheval par cheval.
    ───────────────────────────────────────────────────────────────────────── */
+// Lignes du tableau du modèle ; `live` = {n°: cote du moment} ou rien
+function modelRowsHtml(sorted, live){
+  // Cote live (si disponible) sinon cote du matin ; proba marché recalculée
+  // sur les cotes live (1/cote ramenée à 100 % sur les partants)
+  const liveInv = live ? Object.values(live).reduce((a, c) => a + 1 / c, 0) : 0;
+  const mkt = h => live && live[String(h.npart)] ? 100 / live[String(h.npart)] / liveInv : h.market_prob;
+  const maxProb = Math.max(...sorted.map(h => Math.max(h.model_prob, mkt(h)||0)), 1);
+  return sorted.map((h, i)=>{
+    const lc = live ? live[String(h.npart)] : null;
+    const market = mkt(h);
+    const hasMarket = market !== undefined && market !== null;
+    const edge = hasMarket ? (h.model_prob - market) : null;
+    const edgeColor = edge===null ? 'var(--ink-soft)' : (edge>=0 ? 'var(--green)' : '#a8402c');
+    const edgeTxt = edge===null ? '—' : (edge>=0?'+':'')+edge.toFixed(1)+' pts';
+    const wModel = (h.model_prob/maxProb*100).toFixed(1);
+    const wMarket = hasMarket ? (market/maxProb*100).toFixed(1) : 0;
+    return `<tr class="modele-row" data-horse="${encodeURIComponent(h.nom)}" style="cursor:pointer;border-bottom:1px solid var(--line);">
+      <td style="padding:7px 10px;font-weight:700;font-size:13px;">${i+1}</td>
+      <td style="padding:7px 10px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--ink-soft);">${h.npart ?? '—'}</td>
+      <td style="padding:7px 10px;font-size:13px;font-weight:600;"><span class="horse-link">${h.nom}</span></td>
+      <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;white-space:nowrap;">${lc
+        ? `<b>${lc.toFixed(1)}</b><div style="font-size:10.5px;color:var(--ink-soft);">matin ${h.cote ? h.cote.toFixed(1) : '—'}</div>`
+        : (h.cote ? h.cote.toFixed(1) : '—')}</td>
+      <td style="padding:7px 10px;text-align:right;white-space:nowrap;">${weightCell(h)}</td>
+      <td style="padding:7px 10px;">${oppCell(h)}</td>
+      <td style="padding:7px 10px;min-width:170px;">
+        <div style="background:#ece6d4;border-radius:3px;height:13px;margin-bottom:2px;">
+          <div style="background:var(--green);height:13px;border-radius:3px;width:${wModel}%;"></div>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-soft);">${h.model_prob.toFixed(1)}%</span>
+      </td>
+      <td style="padding:7px 10px;min-width:170px;">
+        <div style="background:#ece6d4;border-radius:3px;height:13px;margin-bottom:2px;">
+          <div style="background:var(--gold);height:13px;border-radius:3px;width:${wMarket}%;"></div>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-soft);">${hasMarket ? market.toFixed(1)+'%' : '—'}</span>
+      </td>
+      <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:${edgeColor};">${edgeTxt}</td>
+    </tr>`;
+  }).join('');
+}
+
 function renderModele(){
   const r = RACE_BY_ID[state.currentRaceId];
   const container = document.getElementById('modeleContainer');
@@ -3400,37 +3443,7 @@ function renderModele(){
   }
 
   const sorted = [...horses].sort((a,b)=> b.model_prob - a.model_prob);
-  const maxProb = Math.max(...sorted.map(h => Math.max(h.model_prob, h.market_prob||0)), 1);
-
-  const rowsHtml = sorted.map((h, i)=>{
-    const hasMarket = h.market_prob !== undefined && h.market_prob !== null;
-    const edge = hasMarket ? (h.model_prob - h.market_prob) : null;
-    const edgeColor = edge===null ? 'var(--ink-soft)' : (edge>=0 ? 'var(--green)' : '#a8402c');
-    const edgeTxt = edge===null ? '—' : (edge>=0?'+':'')+edge.toFixed(1)+' pts';
-    const wModel = (h.model_prob/maxProb*100).toFixed(1);
-    const wMarket = hasMarket ? (h.market_prob/maxProb*100).toFixed(1) : 0;
-    return `<tr class="modele-row" data-horse="${encodeURIComponent(h.nom)}" style="cursor:pointer;border-bottom:1px solid var(--line);">
-      <td style="padding:7px 10px;font-weight:700;font-size:13px;">${i+1}</td>
-      <td style="padding:7px 10px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--ink-soft);">${h.npart ?? '—'}</td>
-      <td style="padding:7px 10px;font-size:13px;font-weight:600;"><span class="horse-link">${h.nom}</span></td>
-      <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;">${h.cote ? h.cote.toFixed(1) : '—'}</td>
-      <td style="padding:7px 10px;text-align:right;white-space:nowrap;">${weightCell(h)}</td>
-      <td style="padding:7px 10px;">${oppCell(h)}</td>
-      <td style="padding:7px 10px;min-width:170px;">
-        <div style="background:#ece6d4;border-radius:3px;height:13px;margin-bottom:2px;">
-          <div style="background:var(--green);height:13px;border-radius:3px;width:${wModel}%;"></div>
-        </div>
-        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-soft);">${h.model_prob.toFixed(1)}%</span>
-      </td>
-      <td style="padding:7px 10px;min-width:170px;">
-        <div style="background:#ece6d4;border-radius:3px;height:13px;margin-bottom:2px;">
-          <div style="background:var(--gold);height:13px;border-radius:3px;width:${wMarket}%;"></div>
-        </div>
-        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-soft);">${hasMarket ? h.market_prob.toFixed(1)+'%' : '—'}</span>
-      </td>
-      <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:${edgeColor};">${edgeTxt}</td>
-    </tr>`;
-  }).join('');
+  const rowsHtml = modelRowsHtml(sorted, liveCotes[r.id]);
 
   // Panneau SHAP pour CHAQUE cheval de la course (pas seulement un a la fois) :
   // replie par defaut sauf le favori du modele, pour rester lisible sur un
@@ -3462,7 +3475,7 @@ function renderModele(){
           <th style="padding:8px 10px;font-size:12px;color:var(--paper);">#</th>
           <th style="padding:8px 10px;font-size:12px;color:var(--paper);text-align:center;">N°</th>
           <th style="padding:8px 10px;font-size:12px;color:var(--paper);">Cheval</th>
-          <th style="padding:8px 10px;font-size:12px;color:var(--paper);text-align:right;">Cote</th>
+          <th style="padding:8px 10px;font-size:12px;color:var(--paper);text-align:right;">Cote<div style="font-size:9.5px;font-weight:400;opacity:.8;">live si dispo</div></th>
           <th style="padding:8px 10px;font-size:12px;color:var(--paper);text-align:right;">Poids</th>
           <th style="padding:8px 10px;font-size:12px;color:var(--paper);">Peloton déjà dépassé</th>
           <th style="padding:8px 10px;font-size:12px;color:var(--paper);">Proba modèle</th>
@@ -3470,7 +3483,7 @@ function renderModele(){
           <th style="padding:8px 10px;font-size:12px;color:var(--paper);text-align:right;">Écart</th>
         </tr>
       </thead>
-      <tbody>${rowsHtml}</tbody>
+      <tbody id="modelTbody">${rowsHtml}</tbody>
     </table>
     <div style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;color:var(--green);margin-bottom:10px;text-transform:uppercase;letter-spacing:.3px;">
       Détail SHAP — pourquoi le modèle note chaque cheval ainsi
@@ -3479,9 +3492,7 @@ function renderModele(){
   `;
 
   // Clic sur une ligne du tableau ou sur un nom dans le détail SHAP : fiche du cheval
-  container.querySelectorAll('.modele-row').forEach(row=>{
-    row.addEventListener('click', ()=> openHorse(decodeURIComponent(row.dataset.horse), r.id, 'race'));
-  });
+  bindModelRows(container, r);
   container.querySelectorAll('[data-open-horse]').forEach(el=>{
     el.addEventListener('click', ev=>{
       ev.stopPropagation();
@@ -3502,6 +3513,27 @@ function renderModele(){
    ========================================================= */
 
 let liveOddsTimer = null;
+const liveCotes = {};   // id de course -> {n°: cote du moment}
+
+function bindModelRows(el, r){
+  el.querySelectorAll('.modele-row').forEach(row=>{
+    row.addEventListener('click', ()=> openHorse(decodeURIComponent(row.dataset.horse), r.id, 'race'));
+  });
+}
+
+// Met le tableau du modèle à jour avec les cotes du moment
+function applyLiveToModel(r, data){
+  const live = {};
+  (data.partants || []).forEach(p => { if(p.cote && !p.non_partant) live[String(p.num)] = p.cote; });
+  if(!Object.keys(live).length) return;
+  liveCotes[r.id] = live;
+  const tb = document.getElementById('modelTbody');
+  if(!tb) return;
+  const horses = r.horses.filter(h => h.model_prob !== undefined && h.model_prob !== null)
+    .sort((a, b) => b.model_prob - a.model_prob);
+  tb.innerHTML = modelRowsHtml(horses, live);
+  bindModelRows(tb, r);
+}
 let raceResultTimer = null;
 
 /* Arrivée en haut de la page d'une course : courses passées depuis les
@@ -3575,7 +3607,7 @@ function startLiveOdds(r){
       .then(data => {
         // Course partie : cotes figées, plus besoin d'interroger le PMU
         if(data.terminee && liveOddsTimer){ clearInterval(liveOddsTimer); liveOddsTimer = null; }
-        if(state.currentRaceId === r.id) renderLiveOdds(r, data);
+        if(state.currentRaceId === r.id){ renderLiveOdds(r, data); applyLiveToModel(r, data); }
       })
       .catch(err => {
         const e2 = document.getElementById('liveOdds');

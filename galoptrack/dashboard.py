@@ -11,7 +11,7 @@ import gzip
 import json
 import logging
 from collections import Counter, defaultdict
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import numpy as np
@@ -155,6 +155,7 @@ def add_today_races(races_list, day: date):
             penetro_val = penetro.get('valeurMesure') or None
             piste = course.get('typePiste') or None
             cat = course.get('categorieParticularite') or None
+            depart = course.get('heureDepart')
             races_list.append({
                 'id': f'TODAY_{code_h}_R{num_r}_{num_c}',
                 'date': today_int, 'hippo': code_h, 'rnum': num_r, 'num': num_c,
@@ -166,6 +167,8 @@ def add_today_races(races_list, day: date):
                 'alloc': float(alloc) if alloc else None,
                 'cond_age': str(cond_age).strip() if cond_age else None,
                 'disc': disc,
+                'heure': (datetime.fromtimestamp(depart / 1000, config.TZ).strftime('%H:%M')
+                          if depart else None),
                 'today': True,
                 'horses': horses,
             })
