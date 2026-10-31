@@ -1,0 +1,40 @@
+name: Pipeline — relevé des cotes
+
+# Relève les cotes de toutes les courses de galop du jour toutes les 5 minutes
+# (courbes du site), en boucle pendant au plus ~6 h (limite d'un job GitHub).
+# Lancé par cron-job.org (appel de l'API GitHub, comme le quotidien), Paris :
+#   POST https://api.github.com/repos/ClementBrossard/bross-track/actions/workflows/pipeline-releve-cotes.yml/dispatches
+#   08:00 corps {"ref":"main","inputs":{"jusqua":"13:50"}}
+#   13:50 corps {"ref":"main","inputs":{"jusqua":"19:40"}}
+#   19:40 corps {"ref":"main","inputs":{"jusqua":"21:55"}}
+# Un nouveau lancement remplace celui en cours.
+on:
+  workflow_dispatch:
+    inputs:
+      jusqua:
+        description: "Heure de fin (Paris)"
+        default: "13:50"
+
+concurrency:
+  group: galoptrack-releve-cotes
+  cancel-in-progress: true
+
+jobs:
+  releve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 358
+    env:
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      # bibliothèque standard + boto3 seulement : installation rapide
+      - run: pip install boto3
+      - env:
+          JUSQUA: ${{ inputs.jusqua || '13:50' }}
+        run: python -c "import os; from galoptrack import live, storage; print(live.run_loop(storage.get_storage(), until=os.environ['JUSQUA']), 'relevés')"
