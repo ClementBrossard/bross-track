@@ -3547,7 +3547,8 @@ function startRaceResult(r){
   if(!r.today){
     const placed = r.horses.filter(h => h.pa !== null && h.pa !== undefined && !isNaN(parseInt(h.pa)))
       .map(h => ({num: h.npart, nom: h.nom, place: parseInt(h.pa), cote: h.cote || null}));
-    if(placed.length) el.innerHTML = raceResultHtml(r, placed, 'Arrivée', null);
+    const odds = r.horses.filter(h => h.cote).map(h => ({num: h.npart, cote: h.cote}));
+    if(placed.length) el.innerHTML = raceResultHtml(r, placed, 'Arrivée', null, odds);
     return;
   }
   const load = ()=>{
@@ -3558,9 +3559,11 @@ function startRaceResult(r){
         if(state.currentRaceId !== r.id) return;
         const placed = (data.partants || []).filter(p => p.place)
           .map(p => ({num: p.num, nom: p.nom, place: p.place, cote: p.cote}));
+        // top 3 des cotes : sur TOUS les partants (pas seulement les classés)
+        const odds = (data.partants || []).filter(p => p.cote && !p.non_partant).map(p => ({num: p.num, cote: p.cote}));
         const e2 = document.getElementById('raceResult');
         if(e2 && placed.length)
-          e2.innerHTML = raceResultHtml(r, placed, data.arrivee_definitive ? 'Arrivée définitive' : 'Arrivée provisoire', data.duree);
+          e2.innerHTML = raceResultHtml(r, placed, data.arrivee_definitive ? 'Arrivée définitive' : 'Arrivée provisoire', data.duree, odds);
         if(!data.arrivee_definitive) raceResultTimer = setTimeout(load, 60000);
       })
       .catch(()=>{ raceResultTimer = setTimeout(load, 120000); });
@@ -3568,7 +3571,7 @@ function startRaceResult(r){
   load();
 }
 
-function raceResultHtml(r, placed, titre, dureeMs){
+function raceResultHtml(r, placed, titre, dureeMs, odds){
   placed = [...placed].sort((a, b) => a.place - b.place);
   const top5 = placed.slice(0, 5);
   const inTop3 = new Set(placed.filter(p => p.place <= 3).map(p => String(p.num)));
@@ -3576,7 +3579,7 @@ function raceResultHtml(r, placed, titre, dureeMs){
   // Top 3 du modèle (probas du dashboard) et des cotes (finales)
   const model = r.horses.filter(h => h.model_prob !== undefined && h.model_prob !== null)
     .sort((a, b) => b.model_prob - a.model_prob).slice(0, 3).map(h => h.npart);
-  const market = placed.filter(p => p.cote).sort((a, b) => a.cote - b.cote).slice(0, 3).map(p => p.num);
+  const market = [...(odds || [])].sort((a, b) => a.cote - b.cote).slice(0, 3).map(p => p.num);
   const fmtDuree = ms => { const s = ms / 1000, m = Math.floor(s / 60); return `${m}'${(s - m*60).toFixed(2).padStart(5, '0').replace('.', '"')}`; };
   const card = p => `<div style="background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-width:74px;text-align:center;">
       <div style="font-size:11px;color:var(--ink-soft);">${p.place}${p.place === 1 ? 'er' : 'e'}</div>
