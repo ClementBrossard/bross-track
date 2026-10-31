@@ -102,3 +102,16 @@ def test_odds_snapshot_route_needs_key(monkeypatch, tmp_path):
     c = _client(monkeypatch, tmp_path)
     assert c.get("/api/releve-cotes").status_code == 403
     assert c.get("/api/releve-cotes?cle=faux").status_code == 403
+
+
+def test_snapshot_loop(monkeypatch):
+    from galoptrack import live
+    clock = {"t": 1_000_000.0}
+    calls = []
+    monkeypatch.setattr(live.time, "time", lambda: clock["t"])
+    monkeypatch.setattr(live.time, "sleep", lambda s: clock.__setitem__("t", clock["t"] + s))
+    monkeypatch.setattr(live, "snapshot", lambda st: calls.append(clock["t"]) or {"courses_relevees": 1})
+    n = live.run_loop(None, until="23:59", step_min=5, max_minutes=20, log=lambda m: None)
+    # un relevé tout de suite puis toutes les 5 min, arrêt au bout de 20 min
+    assert n == len(calls) and 4 <= n <= 5
+    assert all(abs((b - a) - 300) < 10 for a, b in zip(calls[1:], calls[2:]))

@@ -165,3 +165,27 @@ def history(data, reunion, course):
         for num, cote in cotes.items():
             out.setdefault(num, []).append([ts, cote])
     return out
+
+
+def run_loop(storage, until="21:55", step_min=5, max_minutes=350, log=print):
+    """Relève les cotes toutes les `step_min` minutes, à l'heure pile
+    (08:00, 08:05…), jusqu'à `until` (heure de Paris) ou `max_minutes` au plus
+    (limite d'un job GitHub : 6 h). Pour GitHub Actions, lancé par cron-job.org."""
+    start = time.time()
+    hh, mm = (int(x) for x in until.split(":"))
+    now = datetime.now(config.TZ)
+    end = min(now.replace(hour=hh, minute=mm, second=59, microsecond=0).timestamp(), start + max_minutes * 60)
+    n = 0
+    while time.time() <= end:
+        try:
+            res = snapshot(storage)
+            n += 1
+            log(f"{datetime.now(config.TZ):%H:%M} {res}")
+        except Exception as e:  # un relevé raté n'arrête pas la boucle
+            log(f"{datetime.now(config.TZ):%H:%M} relevé en échec : {e}")
+        step = step_min * 60
+        wait = step - (time.time() % step) + 5      # prochain multiple de 5 min (+5 s)
+        if time.time() + wait > end:
+            break
+        time.sleep(wait)
+    return n

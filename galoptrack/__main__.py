@@ -213,6 +213,11 @@ def cmd_experiment_marche(storage, args):
     print(experiment.run_marche(storage))
 
 
+def cmd_releve_cotes(storage, args):
+    from . import live
+    print(f"{live.run_loop(storage, until=args.jusqua, step_min=args.pas)} relevés")
+
+
 def cmd_cotes_hist(storage, args):
     print(cotes_hist.run(storage, max_minutes=args.max_minutes))
 
@@ -393,6 +398,10 @@ def main(argv=None):
         .set_defaults(func=cmd_experiment_top3)
     sub.add_parser('experiment-troncons', help="tronçons : vitesses relatives et scénario de course (n'écrit rien)") \
         .set_defaults(func=cmd_experiment_troncons)
+    s = sub.add_parser('releve-cotes', help="relève les cotes du jour toutes les N minutes jusqu'à une heure (boucle)")
+    s.add_argument('--jusqua', default='21:55', help="heure de fin (Paris), ex. 13:50")
+    s.add_argument('--pas', type=int, default=5, help="minutes entre deux relevés")
+    s.set_defaults(func=cmd_releve_cotes)
     s = sub.add_parser('cotes-hist', help="récupère la cote de référence et la cote directe des courses de plat passées (table cotes_hist)")
     s.add_argument('--max-minutes', type=int, default=330)
     s.set_defaults(func=cmd_cotes_hist)

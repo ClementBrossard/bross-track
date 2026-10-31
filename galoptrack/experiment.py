@@ -1068,11 +1068,20 @@ def run_mouvement(storage):
     return _publish(md)
 
 
-def run_releves(storage, day=None):
-    """Résumé des relevés de cotes d'une journée (cotes/live/AAAAMMJJ.json.gz)."""
+def run_releves(storage, days=4):
+    """Résumé des relevés de cotes des `days` derniers jours."""
+    from datetime import timedelta
+    from . import config
+    today = config.today_paris()
+    md = []
+    for k in range(days - 1, -1, -1):
+        md += _releves_day(storage, (today - timedelta(days=k)).strftime('%Y%m%d')) + [""]
+    return _publish(md)
+
+
+def _releves_day(storage, day):
     from datetime import datetime
     from . import config, live
-    day = day or config.today_paris().strftime('%Y%m%d')
     data = live.load_day(storage, day)
     hm = lambda ms: datetime.fromtimestamp(ms / 1000, config.TZ).strftime('%H:%M')
     courses = data.get('courses') or {}
@@ -1086,4 +1095,4 @@ def run_releves(storage, day=None):
         gap = max((b - a for a, b in zip(ts, ts[1:])), default=0) / 60000
         md.append(f"| {key} | {c.get('hippo')} | {c.get('disc')} | {hm(c['depart']) if c.get('depart') else '—'} | "
                   f"{len(ts)} | {hm(ts[0]) if ts else '—'} | {hm(ts[-1]) if ts else '—'} | {gap:.0f} |")
-    return _publish(md)
+    return md

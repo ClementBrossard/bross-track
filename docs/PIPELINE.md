@@ -71,20 +71,25 @@ GitHub à l'heure dite (fuseau Europe/Paris, donc pas de décalage été/hiver).
 Les crons GitHub restent en secours : les créneaux du matin passent en
 `--if-needed` et ne font rien si la collecte du jour a déjà tourné.
 
-### 6. Relevé des cotes toutes les 5 à 10 minutes (cron-job.org → site Render)
-Le site relève lui-même les cotes de toutes les courses de galop du jour quand
-on appelle `/api/releve-cotes` (réponse immédiate, relevé en arrière-plan).
-Les courses qui partent dans plus de 3 h ne sont relevées que toutes les 30 min,
-et plus aucune 5 min après le départ.
+### 6. Relevé des cotes toutes les 5 minutes (cron-job.org → GitHub)
+Le workflow **Pipeline — relevé des cotes** relève les cotes de toutes les
+courses de galop du jour toutes les 5 minutes, à l'heure pile, en boucle (au
+plus ~6 h par lancement, limite de GitHub). Il est lancé par cron-job.org, avec
+le même jeton et les mêmes en-têtes que la tâche du quotidien (§5) :
+`POST https://api.github.com/repos/ClementBrossard/bross-track/actions/workflows/pipeline-releve-cotes.yml/dispatches`
 
-1. Choisir une clé : une longue suite de lettres et de chiffres au hasard.
-2. Render → service web → *Environment* → ajouter `RELEVE_CLE` = cette clé
-   (le service redémarre).
-3. cron-job.org → nouvelle tâche :
-   - URL : `https://<adresse du site>/api/releve-cotes?cle=<la clé>`
-   - méthode `GET`, aucun en-tête ni corps ;
-   - toutes les 5 minutes, de 10:00 à 21:55 (fuseau Europe/Paris).
-   Réponse attendue : `202` (`403` = clé absente ou différente de celle de Render).
+| Heure (Paris) | Corps |
+|---|---|
+| 08:00 | `{"ref":"main","inputs":{"jusqua":"13:50"}}` |
+| 13:50 | `{"ref":"main","inputs":{"jusqua":"19:40"}}` |
+| 19:40 | `{"ref":"main","inputs":{"jusqua":"21:55"}}` |
+
+Réponse attendue : `204`. Les relevés sont dans `cotes/live/AAAAMMJJ.json.gz` ;
+le site les lit pour les courbes.
+
+(Ancienne méthode, abandonnée : cron-job.org appelait directement
+`/api/releve-cotes` sur Render, qui a fini par bloquer ces appels avec des
+erreurs 429. La route existe toujours, protégée par `RELEVE_CLE`.)
 
 ## Commandes (aussi utilisables en local)
 
