@@ -213,6 +213,11 @@ def cmd_experiment_troncons(storage, args):
     print(experiment.run_troncons(storage))
 
 
+def cmd_experiment_profil(storage, args):
+    from . import profil
+    print(profil.run_profil(storage))
+
+
 def cmd_experiment_perf(storage, args):
     print(experiment.run_perf(storage))
 
@@ -414,6 +419,8 @@ def main(argv=None):
         .set_defaults(func=cmd_experiment_top3)
     sub.add_parser('experiment-troncons', help="tronçons : vitesses relatives et scénario de course (n'écrit rien)") \
         .set_defaults(func=cmd_experiment_troncons)
+    sub.add_parser('experiment-profil', help="modèle Profil à part : tracking seul, chiffres de vitesse, gênes, scénario (n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_profil)
     s = sub.add_parser('releve-cotes', help="relève les cotes du jour toutes les N minutes jusqu'à une heure (boucle)")
     s.add_argument('--jusqua', default='21:55', help="heure de fin (Paris), ex. 13:50")
     s.add_argument('--pas', type=int, default=5, help="minutes entre deux relevés")

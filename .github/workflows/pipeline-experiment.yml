@@ -6,14 +6,14 @@ name: Pipeline — expériences modèle
 on:
   push:
     branches-ignore: [main]
-    paths: ["galoptrack/experiment.py", "galoptrack/blocs.py", "galoptrack/pmu.py", "galoptrack/classe.py", "galoptrack/confront.py", "galoptrack/troncons.py", "galoptrack/perf.py", "galoptrack/features.py", "galoptrack/train.py", ".github/workflows/pipeline-experiment.yml"]
+    paths: ["galoptrack/experiment.py", "galoptrack/blocs.py", "galoptrack/pmu.py", "galoptrack/classe.py", "galoptrack/confront.py", "galoptrack/troncons.py", "galoptrack/profil.py", "galoptrack/perf.py", "galoptrack/features.py", "galoptrack/train.py", ".github/workflows/pipeline-experiment.yml"]
   workflow_dispatch:
     inputs:
       experience:
         description: "Expérience à lancer"
         type: choice
-        options: [combines, strategie, releves, mouvement, blocs_ref, blocs, marche_ref, sonde_cotes, marche, perf, rentabilite, seuils, troncons, top3, confrontations, classe, adversaires, poids]
-        default: combines
+        options: [profil, combines, strategie, releves, mouvement, blocs_ref, blocs, marche_ref, sonde_cotes, marche, perf, rentabilite, seuils, troncons, top3, confrontations, classe, adversaires, poids]
+        default: profil
       version:
         description: "Version du modèle pour seuils / rentabilité (vide = production)"
         default: "v8"
@@ -36,7 +36,7 @@ jobs:
           cache-dependency-path: requirements-pipeline.txt
       - run: pip install -r requirements-pipeline.txt
       - env:
-          EXP: ${{ inputs.experience || 'combines' }}
+          EXP: ${{ inputs.experience || 'profil' }}
           VERSION: ${{ inputs.version || 'v8' }}
         run: |
           if [ "$EXP" = "seuils" ] || [ "$EXP" = "rentabilite" ]; then
