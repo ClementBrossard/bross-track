@@ -1250,3 +1250,133 @@ def run_strategie(storage):
            "Rappels : prélèvement PMU d'environ 15 à 25 % selon le pari ; le mouvement « joué » n'est connu "
            "qu'au dernier moment (cote finale) : il suppose de jouer à la toute dernière minute.", ""]
     return _publish(md)
+
+
+# ── Paris combinés : couplé gagnant, couplé placé, 2sur4 ─────────────────────
+
+COMBINE_TYPES = {'CG': ('COUPLE_GAGNANT', 'Couplé gagnant'), 'CP': ('COUPLE_PLACE', 'Couplé placé'),
+                 '2S4': ('DEUX_SUR_QUATRE', '2sur4')}
+
+
+def _combine_payouts(storage):
+    """{(date, réunion, course, code): {frozenset(n°): rapport pour 1 €}} ; une
+    course présente = rapports connus pour ce pari (combinaison absente = perdu)."""
+    from . import tables
+    comb = tables.read_table(storage, 'rapports_combines')
+    counts = comb['type_pari'].value_counts().to_dict()
+    want = {t: code for code, (t, _) in COMBINE_TYPES.items()}
+    out = {}
+    for row in comb[comb['type_pari'].isin(want)].itertuples():
+        try:
+            key = (int(row.date), int(row.num_reunion), int(row.num_course), want[row.type_pari])
+            nums = frozenset(int(x) for x in str(row.combinaison).replace(' ', '').split('-') if x)
+            div = float(row.dividende_pour_un_euro) / 100
+        except (TypeError, ValueError):
+            continue
+        out.setdefault(key, {})[nums] = div
+    return out, counts
+
+
+def run_combines(storage):
+    from itertools import combinations
+    from sklearn.linear_model import LogisticRegression
+    fdf = _attach_hist_odds(storage, train.load_feature_frame(storage))
+    d = _oos_predictions(fdf, FEATURES)
+    d = d[d['cote'].notna() & d['cote_ref'].notna()].copy()
+    d['npart'] = pd.to_numeric(d['npart'], errors='coerce').fillna(d['npart_ch'])
+    d = d[d['npart'].notna()].copy()
+    d['n'] = d.groupby('race_id')['nom'].transform('size')
+    d = d[d['n'] >= 4].copy()
+    rc = d['race_id'].str.extract(_RC)
+    d['rnum'], d['cnum'] = pd.to_numeric(rc[0], errors='coerce'), pd.to_numeric(rc[1], errors='coerce')
+    e = np.exp(d['score'] - d.groupby('race_id')['score'].transform('max'))
+    d['p_model'] = e / e.groupby(d['race_id']).transform('sum')
+    d['x_mkt'] = np.log(d['mkr_prob'].clip(1e-4))
+    d['x_mod'] = np.log(d['p_model'].clip(1e-4))
+    d['x_mv'] = d['mv_log_ratio'].fillna(0)
+
+    pays, counts = _combine_payouts(storage)
+    dates = sorted(d['date'].unique())
+    mid = dates[len(dates) // 2]
+    A = d[d['date'] < mid]
+    lr = LogisticRegression(C=1.0, max_iter=1000).fit(A[['x_mkt', 'x_mod', 'x_mv']], (A['pa_num'] == 1).astype(int))
+    p = lr.predict_proba(d[['x_mkt', 'x_mod', 'x_mv']])[:, 1]
+    d['p_mix'] = p / pd.Series(p, index=d.index).groupby(d['race_id']).transform('sum')
+    d['neg_ref'], d['neg_fin'] = -d['cote_ref'], -d['cote']
+
+    selecteurs = {'modèle v9': 'score', 'favoris 30 min avant': 'neg_ref', 'favoris au départ': 'neg_fin',
+                  'marché + modèle + mouvement': 'p_mix'}
+    rows = []
+    for rid, g in d.groupby('race_id', sort=False):
+        date, rnum, cnum = int(g['date'].iloc[0]), g['rnum'].iloc[0], g['cnum'].iloc[0]
+        if pd.isna(rnum) or pd.isna(cnum):
+            continue
+        rnum, cnum = int(rnum), int(cnum)
+        top = {s: [int(x) for x in g.sort_values(col, ascending=False)['npart'].head(3)]
+               for s, col in selecteurs.items()}
+        mix2 = g.sort_values('p_mix', ascending=False)['p_mix'].head(2)
+        base = {'date': date, 'n': len(g), 'p_top2': float(mix2.sum()),
+                'accord': set(top['modèle v9'][:2]) == set(top['favoris 30 min avant'][:2])}
+        for code in COMBINE_TYPES:
+            pay = pays.get((date, rnum, cnum, code))
+            if not pay:
+                continue
+            for s, t in top.items():
+                for k in (2, 3):
+                    combs = [frozenset(c) for c in combinations(t[:k], 2)]
+                    rows.append({**base, 'pari': code, 'sel': s, 'k': k, 'mise': len(combs),
+                                 'gain': sum(pay.get(c, 0.0) for c in combs)})
+    R = pd.DataFrame(rows)
+    md = ["# Couplé gagnant, couplé placé, 2sur4 : modèle v9 + cotes + mouvement, vrais rapports PMU", "",
+          "Types de paris combinés présents dans l'historique : "
+          + ", ".join(f"{k} ({v})" for k, v in sorted(counts.items(), key=lambda kv: -kv[1])[:12]), ""]
+    if R.empty:
+        return _publish(md + ["Aucun rapport de couplé / 2sur4 rapproché des courses : vérifier les types ci-dessus."])
+    R['periode'] = np.where(R['date'] < mid, 'A', 'B')
+
+    def res(x):
+        if not len(x):
+            return None
+        return {'courses': len(x), 'mise': x['mise'].sum(), 'pct': (x['gain'] > 0).mean(),
+                'roi': x['gain'].sum() / x['mise'].sum() - 1}
+
+    fmt = lambda r: "— | — | —" if not r else f"{r['courses']} | {r['pct']:.0%} | **{r['roi'] * 100:+.1f} €**"
+    md += [f"{R[R['periode'] == 'B']['date'].nunique()} jours en période B (à partir de {mid}). Mise : 1 € par combinaison ; "
+           "« top 2 » = 1 combinaison, « top 3 » = 3 combinaisons (les 3 paires). Résultat pour **100 € misés**.", "",
+           "### 1. Sans filtre, période B", "",
+           "| Pari | Chevaux choisis par | Jeu | Courses | % de courses gagnantes | Pour 100 € |", "|---|---|---|---:|---:|---:|"]
+    B = R[R['periode'] == 'B']
+    for code, (_, lab) in COMBINE_TYPES.items():
+        for s in selecteurs:
+            for k in (2, 3):
+                md.append(f"| {lab} | {s} | top {k} | {fmt(res(B[(B['pari'] == code) & (B['sel'] == s) & (B['k'] == k)]))} |")
+    filtres = {'aucun': lambda x: x['n'] > 0, 'accord modèle / marché sur le top 2': lambda x: x['accord'],
+               'désaccord modèle / marché': lambda x: ~x['accord'],
+               '≤ 9 partants': lambda x: x['n'] <= 9, '10-13 partants': lambda x: (x['n'] >= 10) & (x['n'] <= 13),
+               '≥ 14 partants': lambda x: x['n'] >= 14}
+    for t in (0.3, 0.4, 0.5, 0.6):
+        filtres[f'confiance top 2 ≥ {t:.0%}'] = lambda x, t=t: x['p_top2'] >= t
+        filtres[f'confiance top 2 < {t:.0%}'] = lambda x, t=t: x['p_top2'] < t
+    cand = []
+    A_ = R[R['periode'] == 'A']
+    for code, (_, lab) in COMBINE_TYPES.items():
+        for s in selecteurs:
+            for k in (2, 3):
+                base_a = A_[(A_['pari'] == code) & (A_['sel'] == s) & (A_['k'] == k)]
+                base_b = B[(B['pari'] == code) & (B['sel'] == s) & (B['k'] == k)]
+                for fl, f in filtres.items():
+                    ra = res(base_a[f(base_a)])
+                    if ra and ra['courses'] >= 150:
+                        cand.append((ra['roi'], f"{lab} · {s} · top {k} · {fl}", ra, res(base_b[f(base_b)])))
+    cand.sort(key=lambda t: -t[0])
+    md += ["", "### 2. Les 15 meilleures combinaisons sur A (au moins 150 courses), et ce qu'elles donnent sur B", "",
+           "| Stratégie | A : courses | A : pour 100 € | **B : courses** | **B : % gagnantes** | **B : pour 100 €** |",
+           "|---|---:|---:|---:|---:|---:|"]
+    for roi_a, lab, ra, rb in cand[:15]:
+        md.append(f"| {lab} | {ra['courses']} | {roi_a * 100:+.1f} € | {fmt(rb)} |")
+    pos_a = sum(1 for c in cand if c[0] > 0)
+    pos_ab = sum(1 for c in cand if c[0] > 0 and c[3] and c[3]['roi'] > 0)
+    md += ["", f"{len(cand)} stratégies avec au moins 150 courses sur A ; {pos_a} gagnantes sur A, "
+               f"dont {pos_ab} encore gagnantes sur B.",
+           "« Favoris au départ » et « + mouvement » supposent de jouer à la dernière minute (cote finale).", ""]
+    return _publish(md)
