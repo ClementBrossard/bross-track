@@ -19,7 +19,7 @@ import logging
 import sys
 from datetime import timedelta
 
-from . import audit, collect, cotes_hist, config, experiment, dashboard, health, migrate, model_store, tables, train
+from . import audit, collect, cotes_hist, paper, config, experiment, dashboard, health, migrate, model_store, tables, train
 from .storage import get_storage
 
 
@@ -129,6 +129,14 @@ def cmd_daily(storage, args):
     days = [today - timedelta(days=i) for i in range(config.LOOKBACK_DAYS, 0, -1)]
     summary = collect.collect_days(storage, days)
     print("Collecte :", json.dumps(summary['days']), "écrit :", json.dumps(summary['written']))
+    try:   # suivi des stratégies : rapports des jours collectés -> résultats
+        rap = tables.read_table(storage, 'rapports')
+        for d in days:
+            res = paper.evaluate(storage, config.yyyymmdd(d), rap)
+            if res:
+                print(f"Suivi stratégies {res['jour']} : {len(res['paris'])} paris sur {res['courses_evaluees']} courses")
+    except Exception as e:
+        print(f"Suivi stratégies en échec : {e}")
     storage.write_bytes(DAILY_MARKER, json.dumps({
         'day': today_i, 'finished_at': config.now_paris().isoformat(timespec='seconds')}).encode('utf-8'),
         content_type='application/json')
@@ -220,6 +228,14 @@ def cmd_releve_cotes(storage, args):
 
 def cmd_cotes_hist(storage, args):
     print(cotes_hist.run(storage, max_minutes=args.max_minutes))
+
+
+def cmd_experiment_combines(storage, args):
+    print(experiment.run_combines(storage))
+
+
+def cmd_experiment_strategie(storage, args):
+    print(experiment.run_strategie(storage))
 
 
 def cmd_experiment_releves(storage, args):
@@ -405,6 +421,10 @@ def main(argv=None):
     s = sub.add_parser('cotes-hist', help="récupère la cote de référence et la cote directe des courses de plat passées (table cotes_hist)")
     s.add_argument('--max-minutes', type=int, default=330)
     s.set_defaults(func=cmd_cotes_hist)
+    sub.add_parser('experiment-combines', help="couplé gagnant / placé, 2sur4 : modèle + cotes, vrais rapports (n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_combines)
+    sub.add_parser('experiment-strategie', help="stratégie de paris modèle + cotes + mouvement, vrais rapports (n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_strategie)
     sub.add_parser('experiment-releves', help="résumé des relevés de cotes du jour (n'écrit rien)") \
         .set_defaults(func=cmd_experiment_releves)
     sub.add_parser('experiment-mouvement', help="le mouvement de la cote apporte-t-il plus que la cote finale ? (n'écrit rien)") \

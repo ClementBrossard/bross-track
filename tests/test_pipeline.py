@@ -710,3 +710,28 @@ def test_blocks_use_only_the_past():
     # le résultat d'une course ne change aucune variable de cette course ni des précédentes
     pd.testing.assert_frame_equal(a.loc[:, feats].sort_index(), b.loc[:, feats].sort_index())
     assert a[feats].notna().any().all()
+
+
+def test_paper_strategies(tmp_path):
+    import gzip as _gz
+    from galoptrack import live, paper
+    st = LocalStorage(tmp_path)
+    depart = 1_800_000_000_000
+    # n°1 : favori stable ; n°2 : outsider très joué, top 3 du modèle ; n°3 et 4 : neutres
+    st.write_bytes(paper.pronos_key('20261101'), json.dumps({'R1C2': {'hippo': 'CHA', 'heure': '14:00', 'chevaux': {
+        '1': {'nom': 'A', 'prob': 30, 'rang': 1}, '2': {'nom': 'B', 'prob': 20, 'rang': 2},
+        '3': {'nom': 'C', 'prob': 10, 'rang': 3}, '4': {'nom': 'D', 'prob': 5, 'rang': 4}}}}).encode())
+    rel = [[depart - 31 * 60_000, {'1': 2.5, '2': 20.0, '3': 6.0, '4': 9.0}],
+           [depart - 3 * 60_000, {'1': 2.6, '2': 11.0, '3': 6.5, '4': 10.0}]]
+    st.write_bytes(live.day_key('20261101'), _gz.compress(json.dumps(
+        {'courses': {'R1C2': {'hippo': 'CHA', 'disc': 'PLAT', 'depart': depart, 'releves': rel}}}).encode()))
+    rap = pd.DataFrame([{'date': 20261101, 'code_hippo': 'CHA', 'num_reunion': 1, 'num_course': 2,
+                         'nom_cheval': 'B', 'num_pmu': 2, 'rapport_gagnant': 1150, 'nb_gagnants_gagnant': 1,
+                         'rapport_place': 310, 'nb_gagnants_place': 1}])
+    res = paper.evaluate(st, '20261101', rap)
+    r2 = [b for b in res['paris'] if b['regle'] == 'R2']
+    assert res['courses_evaluees'] == 1 and len(r2) == 1 and r2[0]['num'] == 2 and r2[0]['gain'] == 11.5
+    s = paper.summary(st)
+    assert s['jours'] == 1 and s['regles']['R2']['paris'] == 1 and s['regles']['R2']['roi'] == 1050.0
+    # relevé trop ancien avant le départ : course non évaluée
+    assert paper.race_bets({'chevaux': {}}, [[depart - 90 * 60_000, {'1': 2.0}]], depart) is None

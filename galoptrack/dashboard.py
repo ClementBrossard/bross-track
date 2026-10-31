@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import config, model_store, pmu, tables
+from . import config, model_store, paper, pmu, tables
 from .features import FEATURES, build_features
 from .hippos import reunion_code_today
 from .races import build_races, is_plat
@@ -604,6 +604,11 @@ def build(storage, day=None, with_today=True):
     if version:
         booster, calib, backtest, _ = model_store.load_version(storage, version)
         stats['horses_scored'] = score_today(races_list, labels_array, booster, calib)
+        if with_today:
+            try:   # pronostics gardés pour le suivi des stratégies (paper.py)
+                stats['pronos_courses'] = paper.save_pronos(storage, races_list, config.yyyymmdd(day))
+            except Exception:
+                log.exception("Pronostics du jour non sauvegardés (dashboard non affecté)")
         meta = model_meta(version, booster.feature_name())
     else:
         log.warning("Aucun modèle en production (model/current.json absent) : onglet Modèle vide")
@@ -618,6 +623,10 @@ def build(storage, day=None, with_today=True):
         output['model_meta'] = meta
     if backtest is not None:
         output['backtest'] = backtest
+    try:
+        output['suivi'] = paper.summary(storage)
+    except Exception:
+        log.exception("Bilan du suivi des stratégies indisponible")
     html = render(output)
     stats['html_mb'] = round(len(html) / 1e6, 1)
     return html, stats
