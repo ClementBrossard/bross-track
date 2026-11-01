@@ -113,7 +113,10 @@ PROFILE_FEATURES = ['pf_n', 'pf_days_last', 'pf_fig_last', 'pf_fig_best3', 'pf_f
                     'pf_entry_mean', 'pf_gain600_mean', 'pf_escape', 'pf_hold_front', 'pf_lost_mid_mean',
                     'pf_bloque_last', 'pf_bloque_rate',
                     # chiffres fiabilisés
-                    'pf_figpa_wmean', 'pf_figpa_best3', 'pf_close_wmean', 'pf_close_best3']
+                    'pf_figpa_wmean', 'pf_figpa_best3', 'pf_close_wmean', 'pf_close_best3',
+                    # terrain
+                    'pf_n_surf', 'pf_surf_gap', 'pf_fig_going', 'pf_n_going', 'pf_going_gap',
+                    'pf_psf_vs_herbe', 'pf_heavy_vs_good', 'pf_fig_pen_near', 'pf_n_pen_near']
 FIELD_FEATURES = ['fv_best_vs_field', 'fv_wmean_vs_field', 'fv_rank', 'fv_cov', 'fv_n',
                   'fl_fig_mean', 'fl_hv_mean',
                   'sc_leaders', 'sc_style_vs_field', 'sc_fin_vs_field', 'sc_entry_vs_field',
@@ -126,7 +129,10 @@ OPP_FEATURES = ['elo', 'elo_vs_field', 'elo_rank',
 # variable faisait apprendre du bruit (expérience : 1,322 sans contre 1,296 avec).
 JOCKEY_FEATURES = ['jt_n', 'jt_gene_rate', 'jt_bloque_rate', 'jt_escape', 'jt_lost_mid', 'jt_plusvalue',
                    'jt_tactic', 'jt_plusvalue_vs_field', 'jt_escape_vs_field']
-CONTEXT_FEATURES = ['dist', 'piste', 'terrain', 'alloc', 'cat']
+CONTEXT_FEATURES = ['dist', 'piste', 'terrain', 'alloc', 'cat', 'pen_today']
+TERRAIN_FEATURES = ['pf_n_surf', 'pf_surf_gap', 'pf_fig_going', 'pf_n_going', 'pf_going_gap',
+                    'pf_psf_vs_herbe', 'pf_heavy_vs_good', 'pf_fig_pen_near', 'pf_n_pen_near', 'pen_today']
+PEN_NEAR = 0.4           # pénétromètre « proche » : à 0,4 près
 POSITION_FEATURES = ['pf_entry_mean', 'pf_gain600_mean', 'pf_escape', 'pf_hold_front', 'pf_lost_mid_mean',
                      'pf_bloque_last', 'pf_bloque_rate', 'sc_entry_vs_field']
 ALLOC_BINS = (12000, 18000, 25000, 35000, 50000, 80000, 150000, 400000)
@@ -147,6 +153,35 @@ def _num(fdf, c):
 def _surfaces(fdf):
     return np.array([_classify_surface(t, p) for t, p in
                      zip(fdf['terrain'].astype(object), fdf['piste'].astype(object))], dtype=object)
+
+
+GOING_BON = ('Bon', 'Bon léger')
+GOING_SOUPLE = ('Bon souple', 'Souple')
+GOING_LOURD = ('Très souple', 'Collant', 'Lourd', 'Très lourd')
+
+
+def _going(terrain, piste):
+    """Terrain plus fin que la surface : PSF / BON / SOUPLE / LOURD / AUTRE."""
+    t = str(terrain).strip() if terrain is not None and not (isinstance(terrain, float) and np.isnan(terrain)) else ''
+    if t.upper().startswith('PSF') or piste == 'PSF':
+        return 'PSF'
+    if t in GOING_BON:
+        return 'BON'
+    if t in GOING_SOUPLE:
+        return 'SOUPLE'
+    if t in GOING_LOURD:
+        return 'LOURD'
+    return 'AUTRE'
+
+
+def _penetro(fdf):
+    """Pénétromètre en nombre (herbe seulement ; NaN sur PSF ou inconnu)."""
+    if 'penetro' not in fdf:
+        return np.full(len(fdf), np.nan)
+    v = pd.to_numeric(fdf['penetro'].astype(str).str.replace(',', '.', regex=False).str.strip(), errors='coerce')
+    v = v.where((v > 1) & (v < 8))
+    psf = np.array([_going(t, p) == 'PSF' for t, p in zip(fdf['terrain'].astype(object), fdf['piste'].astype(object))])
+    return np.where(psf, np.nan, v.to_numpy(dtype=float))
 
 
 def _d100(d):
@@ -379,6 +414,10 @@ def profile_features(fdf, window_days=WINDOW_DAYS, half_life=HALF_LIFE_DAYS):
     entry, gain6 = fdf['pf_entry'].to_numpy(dtype=float), fdf['pf_gain600'].to_numpy(dtype=float)
     lmid, blq = fdf['pf_lost_mid'].to_numpy(dtype=float), fdf['pf_bloque'].to_numpy(dtype=float)
     figpa, clos = fdf['pf_fig_pa'].to_numpy(dtype=float), fdf['pf_close'].to_numpy(dtype=float)
+    going = np.array([_going(t, p) for t, p in zip(fdf['terrain'].astype(object), fdf['piste'].astype(object))],
+                     dtype=object)
+    pen = _penetro(fdf)
+    out['pen_today'] = pen
     poids = _num(fdf, 'pd')
     la = np.log(np.where(_num(fdf, 'alloc') > 0, _num(fdf, 'alloc'), np.nan))
     has = ~np.isnan(figa)
@@ -413,8 +452,28 @@ def profile_features(fdf, window_days=WINDOW_DAYS, half_life=HALF_LIFE_DAYS):
                     if not np.isnan(dist[best]):
                         out['pf_dist_gap'][i] = dist[i] - dist[best]
                 same = surf[p] == surf[i]
+                out['pf_n_surf'][i] = float(same.sum())
+                wall = np.sum(fa * w) / np.sum(w)
                 if same.any():
                     out['pf_fig_surf'][i] = np.sum(fa[same] * w[same]) / np.sum(w[same])
+                    # spécialiste ? niveau sur la surface du jour moins niveau général
+                    out['pf_surf_gap'][i] = (out['pf_fig_surf'][i] - wall) * same.sum() / (same.sum() + 1)
+                sg = going[p] == going[i]
+                out['pf_n_going'][i] = float(sg.sum())
+                if sg.any():
+                    out['pf_fig_going'][i] = np.sum(fa[sg] * w[sg]) / np.sum(w[sg])
+                    out['pf_going_gap'][i] = (out['pf_fig_going'][i] - wall) * sg.sum() / (sg.sum() + 1)
+                for a_, b_, col in (('PSF', None, 'pf_psf_vs_herbe'), ('LOURD', 'BON', 'pf_heavy_vs_good')):
+                    ma = going[p] == a_
+                    mb = (going[p] != 'PSF') & (going[p] != 'AUTRE') if b_ is None else going[p] == b_
+                    if ma.any() and mb.any():
+                        k = min(ma.sum(), mb.sum())
+                        out[col][i] = (fa[ma].mean() - fa[mb].mean()) * k / (k + 1)
+                if not np.isnan(pen[i]):
+                    near = ~np.isnan(pen[p]) & (np.abs(np.nan_to_num(pen[p], nan=99) - pen[i]) <= PEN_NEAR)
+                    out['pf_n_pen_near'][i] = float(near.sum())
+                    if near.any():
+                        out['pf_fig_pen_near'][i] = np.sum(fa[near] * w[near]) / np.sum(w[near])
                 st = style[p[-5:]]
                 st = st[~np.isnan(st)]
                 if len(st):
@@ -893,6 +952,17 @@ def run_profil(storage):
                          'nettement plus'],
                         "Jockey : ce qu'il tire de ses chevaux par rapport à leur niveau habituel, comparé "
                         "aux autres jockeys de la course") + [""]
+    md += _bucket_table(recent, 'pf_surf_gap', [-np.inf, -0.8, -0.3, 0.3, 0.8, np.inf],
+                        ['nettement moins bon sur cette surface', 'un peu moins bon', 'pareil',
+                         'un peu meilleur', 'spécialiste (nettement meilleur)'],
+                        "Surface du jour (PSF / herbe) : son niveau dessus comparé à son niveau général") + [""]
+    md += _bucket_table(recent, 'pf_going_gap', [-np.inf, -0.8, -0.3, 0.3, 0.8, np.inf],
+                        ['nettement moins bon sur ce terrain', 'un peu moins bon', 'pareil',
+                         'un peu meilleur', 'spécialiste (nettement meilleur)'],
+                        "Terrain du jour (bon / souple / lourd / PSF) : son niveau dessus comparé à son niveau "
+                        "général") + [""]
+    md += _bucket_table(recent, 'pf_n_going', [-0.5, 0.5, 2.5, np.inf], ['jamais couru sur ce terrain',
+                        '1 ou 2 courses', '3 courses ou plus'], "Expérience du terrain du jour (courses trackées)") + [""]
     md += _bucket_table(recent, 'pf_class_gap', [-np.inf, -0.4, -0.1, 0.1, 0.4, np.inf],
                         ['descend nettement (allocation < 2/3)', 'descend un peu', 'même niveau', 'monte un peu',
                          'monte nettement (allocation > 1,5x)'],
@@ -914,8 +984,7 @@ def run_profil(storage):
     # « sans Elo » mesure ce que le Profil vaut sans l'Elo de la production.
     variants = {'v9 (production)': FEATURES, 'Profil seul': PROFIL_FEATURES,
                 'v9 + Profil (pour info)': FEATURES + [f for f in PROFIL_FEATURES if f not in FEATURES],
-                'Profil sans jockey': [f for f in PROFIL_FEATURES if f not in JOCKEY_FEATURES],
-                'Profil sans chiffres fiabilisés': [f for f in PROFIL_FEATURES if f not in NEW_FIG_FEATURES]}
+                'Profil sans terrain fin': [f for f in PROFIL_FEATURES if f not in TERRAIN_FEATURES]}
     d, imp = _oos(fdf, variants, FOLDS)
     d = _attach_payouts(storage, d)
     names = list(variants)
