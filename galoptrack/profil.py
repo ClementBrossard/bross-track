@@ -604,8 +604,12 @@ def run_profil(storage):
                          '0,5 à 2 kg de plus', '> 2 kg de plus'], "Poids comparé au peloton") + [""]
     md += _draw_style_table(recent) + [""]
 
+    # « sans hippodrome » : la variable hippodrome pèse lourd dans le modèle
+    # Profil (le parcours est déjà neutralisé dans les chiffres) -> vérifier
+    # qu'elle ne fait pas apprendre du bruit.
     variants = {'v9 (production)': FEATURES, 'Profil seul': PROFIL_FEATURES,
-                'v9 + Profil (pour info)': FEATURES + [f for f in PROFIL_FEATURES if f not in FEATURES]}
+                'v9 + Profil (pour info)': FEATURES + [f for f in PROFIL_FEATURES if f not in FEATURES],
+                'Profil sans hippodrome': [f for f in PROFIL_FEATURES if f != 'hippo']}
     d, imp = _oos(fdf, variants, FOLDS)
     d = _attach_payouts(storage, d)
     names = list(variants)
