@@ -114,7 +114,11 @@ OPP_FEATURES = ['elo', 'elo_vs_field', 'elo_rank',
                 'op_field_elo_wmean', 'op_field_elo_vs_today', 'op_beaten_elo_best', 'op_beaten_elo_vs_field',
                 'op_ahead_elo_mean', 'op_ahead_elo_vs_field', 'op_perf_vs_exp', 'op_fig_strong_field',
                 'op_n_strong_field', 'op_fig_vs_leaders']
-CONTEXT_FEATURES = ['dist', 'piste', 'terrain', 'hippo', 'alloc', 'cat']
+# Sans l'hippodrome : le parcours est déjà neutralisé dans les chiffres, et la
+# variable faisait apprendre du bruit (expérience : 1,322 sans contre 1,296 avec).
+CONTEXT_FEATURES = ['dist', 'piste', 'terrain', 'alloc', 'cat']
+POSITION_FEATURES = ['pf_entry_mean', 'pf_gain600_mean', 'pf_escape', 'pf_hold_front', 'pf_lost_mid_mean',
+                     'pf_bloque_last', 'pf_bloque_rate', 'sc_entry_vs_field']
 ALLOC_BINS = (12000, 18000, 25000, 35000, 50000, 80000, 150000, 400000)
 LEVEL_RATIO = 1.25       # « au moins ce niveau » : allocation >= celle du jour / 1,25
 PROFIL_FEATURES = PROFILE_FEATURES + FIELD_FEATURES + OPP_FEATURES + CONTEXT_FEATURES
@@ -702,7 +706,7 @@ def run_profil(storage):
     md += _bucket_table(recent, 'pf_hold_front', [-np.inf, -0.15, -0.05, np.inf],
                         ['se fait nettement passer', 'se fait un peu passer', 'tient sa place'],
                         "Quand il entre dans la ligne droite dans le premier tiers") + [""]
-    md += _bucket_table(recent, 'op_ahead_elo_vs_field', [-np.inf, -60, -20, 20, 60, np.inf],
+    md += _bucket_table(recent, 'op_ahead_elo_vs_field', [-np.inf, -25, -8, 8, 25, np.inf],
                         ['nettement plus faibles que le peloton du jour', 'un peu plus faibles', 'du même niveau',
                          'un peu plus forts', 'nettement plus forts'],
                         "Elo des chevaux qui l'ont battu (5 dernières courses), comparé au peloton du jour") + [""]
@@ -727,12 +731,13 @@ def run_profil(storage):
                          '0,5 à 2 kg de plus', '> 2 kg de plus'], "Poids comparé au peloton") + [""]
     md += _draw_style_table(recent) + [""]
 
-    # « sans hippodrome » : la variable hippodrome pèse lourd dans le modèle
-    # Profil (le parcours est déjà neutralisé dans les chiffres) -> vérifier
-    # qu'elle ne fait pas apprendre du bruit.
+    # Élagage : les positions n'ont rien apporté au modèle (1,285 contre 1,283) ;
+    # « sans Elo » mesure ce que le Profil vaut sans l'Elo de la production.
+    no_elo = [f for f in PROFIL_FEATURES if f not in ('elo', 'elo_vs_field', 'elo_rank')]
     variants = {'v9 (production)': FEATURES, 'Profil seul': PROFIL_FEATURES,
                 'v9 + Profil (pour info)': FEATURES + [f for f in PROFIL_FEATURES if f not in FEATURES],
-                'Profil sans hippodrome': [f for f in PROFIL_FEATURES if f != 'hippo']}
+                'Profil sans positions': [f for f in PROFIL_FEATURES if f not in POSITION_FEATURES],
+                'Profil sans Elo du jour': no_elo}
     d, imp = _oos(fdf, variants, FOLDS)
     d = _attach_payouts(storage, d)
     names = list(variants)
