@@ -1161,3 +1161,93 @@ def score_today(races_list, fdf, booster, calib):
                             'jk_pv': _r(row.get('jt_plusvalue_vs_field'), 2)}
         n += 1
     return n
+
+
+# ── Expérience « valeur » : le modèle voit-il des chevaux que le marché sous-cote ? ──
+
+def _loglik(x, col):
+    """Log-vraisemblance moyenne du gagnant (plus haut = mieux)."""
+    w = x[x['pa_num'] == 1]
+    return float(np.log(w[col].clip(1e-6)).mean()) if len(w) else np.nan
+
+
+def run_valeur(storage):
+    """Cheval par cheval, probabilité du modèle contre probabilité de la cote
+    (30 min avant le départ). Poids marché / v9 / Profil appris sur la première
+    moitié des courses de test (A), tout est vérifié sur la seconde (B) avec des
+    seuils fixés d'avance (aucune règle choisie sur B). Lecture seule."""
+    from sklearn.linear_model import LogisticRegression
+    from .experiment import FOLDS, _attach_hist_odds, _attach_payouts, _publish
+    from .features import FEATURES
+    from .train import load_feature_frame
+
+    fdf = _attach_hist_odds(storage, profil_features(load_feature_frame(storage)))
+    d, _ = _oos(fdf, {'v9': FEATURES, 'Profil': PROFIL_FEATURES}, FOLDS)
+    d = _attach_payouts(storage, d)
+    d = d[d['race_has_rap'] & d['cote_ref'].notna() & d['mkr_prob'].notna()].copy()
+    d['n'] = d.groupby('race_id')['nom'].transform('size')
+    d = d[d['n'] >= 4].copy()
+    for m in ('v9', 'Profil'):
+        e = np.exp(d[m] - d.groupby('race_id')[m].transform('max'))
+        d['x_' + m] = np.log((e / e.groupby(d['race_id']).transform('sum')).clip(1e-4))
+    d['x_mkt'] = np.log(d['mkr_prob'].clip(1e-4))
+    dates = sorted(d['date'].unique())
+    mid = dates[len(dates) // 2]
+    A, B = d[d['date'] < mid].copy(), d[d['date'] >= mid].copy()
+    combos = {'marché seul': ['x_mkt'], 'v9 seul': ['x_v9'], 'Profil seul': ['x_Profil'],
+              'marché + v9': ['x_mkt', 'x_v9'], 'marché + Profil': ['x_mkt', 'x_Profil'],
+              'marché + v9 + Profil': ['x_mkt', 'x_v9', 'x_Profil']}
+    coefs = {}
+    win = (A['pa_num'] == 1).astype(int)
+    for name, cols in combos.items():
+        lr = LogisticRegression(C=1.0, max_iter=1000).fit(A[cols], win)
+        coefs[name] = dict(zip(cols, lr.coef_[0]))
+        for x in (A, B):
+            p = lr.predict_proba(x[cols])[:, 1]
+            x[name] = p / pd.Series(p, index=x.index).groupby(x['race_id']).transform('sum')
+
+    md = ["# Valeur : le modèle repère-t-il des chevaux que le marché sous-cote ?", "",
+          f"{d['race_id'].nunique()} courses de plat (4 partants et plus) avec cote 30 min avant et vrais rapports, "
+          f"de {dates[0]} à {dates[-1]}. Les modèles n'ont jamais vu ces courses. Poids appris sur **A** "
+          f"(avant {mid}), tout est vérifié sur **B** (à partir de {mid}), seuils fixés d'avance.", "",
+          "Décision sur la cote **30 min avant** (ce qu'on voit au moment de jouer) ; gain = **rapport final** réel, "
+          "pour **100 € misés** (1 € par cheval).", "",
+          "## 1. Ce que chaque modèle ajoute au marché", "",
+          "Poids dans la probabilité combinée (appris sur A) : un poids modèle proche de 0 = il n'apprend rien "
+          "au marché. Dernière colonne : qualité de la prévision du gagnant sur B (log-vraisemblance moyenne, "
+          "plus haut = mieux ; un gain de 0,01 est déjà réel sur des milliers de courses).", "",
+          "| Combinaison | Poids marché | Poids v9 | Poids Profil | Prévision du gagnant sur B |",
+          "|---|---:|---:|---:|---:|"]
+    for name, c in coefs.items():
+        md.append(f"| {name} | {c.get('x_mkt', 0):.2f} | {c.get('x_v9', 0):.2f} | {c.get('x_Profil', 0):.2f} | "
+                  f"{_loglik(B, name):.4f} |")
+
+    def bets(x, m):
+        s = x[m]
+        if not len(s):
+            return "— | — | — | —"
+        return (f"{len(s)} | {(s['pay_g'] > 0).mean():.0%} | **{(s['pay_g'].mean() - 1) * 100:+.1f} €** | "
+                f"{(s['pay_p'].mean() - 1) * 100:+.1f} €")
+
+    md += ["", "## 2. Outsiders repérés : cote ≥ 10 (30 min avant) et probabilité du modèle ≥ k × celle de la cote",
+           "", "Période B. Colonnes : paris, % gagnants, simple gagnant, simple placé (même cheval joué placé).", "",
+           "| Probabilité utilisée | k | Paris | % gagnants | Gagnant | Placé |", "|---|---:|---:|---:|---:|---:|"]
+    outs = B['cote_ref'] >= 10
+    md.append(f"| (tous les outsiders, repère) | — | {bets(B, outs)} |")
+    for name in ('v9 seul', 'Profil seul', 'marché + v9', 'marché + Profil', 'marché + v9 + Profil'):
+        for k in (1.3, 1.6, 2.0):
+            md.append(f"| {name} | {k} | {bets(B, outs & (B[name] >= k * B['mkr_prob']))} |")
+
+    md += ["", "## 3. Paris de valeur, toutes cotes : probabilité combinée × cote 30 min ≥ seuil", "",
+           "Période B ; espérance de gain estimée ≥ seuil. Repère : jouer tous les chevaux perd ce que prélève le PMU.",
+           "", "| Combinaison | Seuil | Cote | Paris | % gagnants | Gagnant | Placé |", "|---|---:|---|---:|---:|---:|---:|"]
+    md.append(f"| (tous les chevaux, repère) | — | toutes | {bets(B, B['cote_ref'] > 0)} |")
+    for name in ('marché + v9', 'marché + Profil', 'marché + v9 + Profil'):
+        ev = B[name] * B['cote_ref']
+        for thr in (1.1, 1.3):
+            for lab, lo, hi in (('≤ 5', 0, 5), ('5 à 10', 5, 10), ('10 à 20', 10, 20), ('> 20', 20, 1e9)):
+                m = (ev >= thr) & (B['cote_ref'] > lo) & (B['cote_ref'] <= hi)
+                md.append(f"| {name} | {thr} | {lab} | {bets(B, m)} |")
+    md += ["", "Lecture : une ligne n'est intéressante que si elle est positive avec plusieurs centaines de paris, "
+           "et meilleure que la même ligne sans Profil. Prélèvement PMU : environ 15 % en simple gagnant.", ""]
+    return _publish(md)
