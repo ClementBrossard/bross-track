@@ -735,3 +735,84 @@ def test_paper_strategies(tmp_path):
     assert s['jours'] == 1 and s['regles']['R2']['paris'] == 1 and s['regles']['R2']['roi'] == 1050.0
     # relevé trop ancien avant le départ : course non évaluée
     assert paper.race_bets({'chevaux': {}}, [[depart - 90 * 60_000, {'1': 2.0}]], depart) is None
+
+
+def test_profil_features_use_only_the_past(built):
+    """Modèle Profil : les variables d'une course ne dépendent d'aucune course
+    du même jour ni des jours suivants (référence de vitesse prise sur les
+    mois précédents, profil sur les courses antérieures)."""
+    from galoptrack import profil
+    races_list, labels_array, _ = built
+    plat = [r for r in races_list if is_plat(r)]
+    full = profil.profil_features(build_features(copy.deepcopy(plat), labels_array))
+    for f in profil.PROFIL_FEATURES:
+        assert f in full, f
+    assert full['pf_fig'].notna().sum() > 1000 and full['pf_fig_wmean'].notna().sum() > 1000
+    first = full.sort_values(['date', 'is_today']).groupby('nom').head(1)
+    assert (first['pf_n'] == 0).all() and first['pf_fig_wmean'].isna().all()
+    # Coupure : on garde l'historique jusqu'au jour J ; les courses du jour J
+    # deviennent « du jour » (sans arrivée ni tracking), comme le matin même.
+    day = sorted({r['date'] for r in plat})[100]
+    cut = []
+    for r in copy.deepcopy([r for r in plat if r['date'] <= day]):
+        if r['date'] == day:
+            r['today'] = True
+            for h in r['horses']:
+                h.update(pa=None, tr=[], vy=None)
+        cut.append(r)
+    part = profil.profil_features(build_features(cut, labels_array))
+    key = ['race_id', 'nom']
+    a = full[full['date'] == day].sort_values(key).reset_index(drop=True)
+    b = part[part['date'] == day].sort_values(key).reset_index(drop=True)
+    assert len(a) == len(b) > 0 and (a['nom'].values == b['nom'].values).all()
+    num = [f for f in profil.PROFILE_FEATURES + profil.FIELD_FEATURES + profil.OPP_FEATURES
+           + profil.JOCKEY_FEATURES + ['pen_today']]
+    assert a['pf_n'].gt(0).any()
+    np.testing.assert_allclose(a[num].to_numpy(dtype=float), b[num].to_numpy(dtype=float), equal_nan=True)
+
+
+def test_profil_figures_follow_ability():
+    """Données synthétiques : la vitesse dépend de la valeur du cheval, le
+    chiffre de vitesse moyen doit donc classer les meilleurs en tête."""
+    from galoptrack import profil
+    raw = make_raw(n_days=80, seed=3)
+    rl, la, _ = build_races(raw['tracking'], raw['troncons'], raw['chevaux'])
+    f = profil.profil_features(build_features([r for r in rl if is_plat(r)], la)).dropna(subset=['pa_num'])
+    best = f[f['fv_rank'] == 0]
+    worst = f[f['fv_rank'] > 0.75]
+    assert best['win'].mean() > 3 * f['win'].mean() > worst['win'].mean()
+
+
+def test_profil_scores_today_races(built):
+    """Section « Modèle tracking » : chaque partant du jour reçoit une
+    probabilité (somme 100 % par course), un rang et ses raisons."""
+    from galoptrack import profil
+    from galoptrack.model_store import Calibrator
+    races_list, labels_array, _ = built
+    plat = copy.deepcopy([r for r in races_list if is_plat(r)])
+    last = max(r['date'] for r in plat)
+    for r in plat:
+        if r['date'] == last:
+            r['today'] = True
+            for h in r['horses']:
+                h.update(pa=None, tr=[], vy=None)
+
+    class Booster:
+        def feature_name(self):
+            return profil.PROFIL_FEATURES
+
+        def predict(self, X, pred_contrib=False):
+            x = X['fv_wmean_vs_field'].astype(float).fillna(-3).to_numpy()
+            if pred_contrib:
+                c = np.zeros((len(X), len(profil.PROFIL_FEATURES) + 1))
+                c[:, 0] = x
+                return c
+            return x
+
+    n = profil.score_today(plat, build_features(plat, labels_array), Booster(), Calibrator([-5, 5], [0.01, 0.6]))
+    today = [r for r in plat if r.get('today')]
+    assert n == sum(len(r['horses']) for r in today) > 0
+    for r in today:
+        assert abs(sum(h['tk_prob'] for h in r['horses']) - 100) < 0.1
+        assert sorted(h['tk_rank'] for h in r['horses']) == list(range(1, len(r['horses']) + 1))
+        assert all(h['tk_why'] for h in r['horses'])

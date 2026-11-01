@@ -1,7 +1,7 @@
 {
-  "id": "2026-10-26-v9-en-production",
-  "description": "Mettre la v9 (recette v8 + chevaux battus corrigés du poids, entraînée le 26/10) en production à la place de v8_1. Retour arrière : mettre_en_production v8_1.",
+  "id": "2026-11-01-modele-tracking",
+  "description": "Entraîner le modèle tracking (modèle Profil, à part) dans model_profil/ pour l'onglet « Modèle tracking » du dashboard. La production (v9) ne change pas.",
   "etapes": [
-    {"action": "mettre_en_production", "version": "v9"}
+    {"action": "entrainer_profil"}
   ]
 }

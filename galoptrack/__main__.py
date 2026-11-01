@@ -213,6 +213,22 @@ def cmd_experiment_troncons(storage, args):
     print(experiment.run_troncons(storage))
 
 
+def cmd_train_profil(storage, args):
+    from . import profil
+    meta = profil.train_and_save(storage)
+    print(json.dumps({k: meta[k] for k in ('trained_at', 'metrics')}, indent=1, default=str))
+
+
+def cmd_experiment_valeur(storage, args):
+    from . import profil
+    print(profil.run_valeur(storage))
+
+
+def cmd_experiment_profil(storage, args):
+    from . import profil
+    print(profil.run_profil(storage))
+
+
 def cmd_experiment_perf(storage, args):
     print(experiment.run_perf(storage))
 
@@ -301,7 +317,8 @@ def cmd_models(storage, args):
 def run_ops(storage, demande):
     """Exécute une demande d'opérations (ops/demande.json), une seule fois :
     la trace est gardée dans logs/ops/<id>.json. Étapes : renommer (de, vers),
-    entrainer (production true/false), mettre_en_production (version)."""
+    entrainer (production true/false), mettre_en_production (version),
+    entrainer_profil (modèle tracking à part, section du dashboard)."""
     done_key = f"logs/ops/{demande['id']}.json"
     if storage.exists(done_key):
         print(f"Demande {demande['id']} déjà exécutée : rien à faire.")
@@ -321,6 +338,11 @@ def run_ops(storage, demande):
             journal.append(f"entrainer : {meta['version']} ({'EN PRODUCTION' if meta['promoted'] else 'pas en production'})")
             print(json.dumps({k: meta[k] for k in ('version', 'metrics', 'temoin_v8', 'promoted') if k in meta},
                              indent=1, default=str))
+        elif a == 'entrainer_profil':
+            from . import profil
+            meta = profil.train_and_save(storage)
+            m = meta['metrics']
+            journal.append(f"entrainer_profil : modèle tracking enregistré (top 3 {m.get('top3_in_top3') or 0:.3f} / 3)")
         elif a == 'mettre_en_production':
             if e['version'] not in model_store.list_versions(storage):
                 raise SystemExit(f"Version inconnue : {e['version']}")
@@ -414,6 +436,12 @@ def main(argv=None):
         .set_defaults(func=cmd_experiment_top3)
     sub.add_parser('experiment-troncons', help="tronçons : vitesses relatives et scénario de course (n'écrit rien)") \
         .set_defaults(func=cmd_experiment_troncons)
+    sub.add_parser('train-profil', help="entraîne le modèle tracking (à part, model_profil/ ; la production ne change pas)") \
+        .set_defaults(func=cmd_train_profil)
+    sub.add_parser('experiment-valeur', help="valeur : v9 / Profil contre la cote, outsiders sous-cotés, vrais rapports (n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_valeur)
+    sub.add_parser('experiment-profil', help="modèle Profil à part : tracking seul, chiffres de vitesse, gênes, scénario (n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_profil)
     s = sub.add_parser('releve-cotes', help="relève les cotes du jour toutes les N minutes jusqu'à une heure (boucle)")
     s.add_argument('--jusqua', default='21:55', help="heure de fin (Paris), ex. 13:50")
     s.add_argument('--pas', type=int, default=5, help="minutes entre deux relevés")

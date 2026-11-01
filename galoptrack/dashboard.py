@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import config, model_store, paper, pmu, tables
+from . import config, model_store, paper, pmu, profil, tables
 from .features import FEATURES, build_features
 from .hippos import reunion_code_today
 from .races import build_races, is_plat
@@ -339,7 +339,7 @@ def _opp_info(row, best):
             'best': best}
 
 
-def score_today(races_list, labels_array, booster, calib):
+def score_today(races_list, labels_array, booster, calib, fdf=None):
     """Probabilité calibrée + détail SHAP pour chaque cheval des courses de
     plat du jour (le modèle n'a appris que le plat : les obstacles ne sont pas
     scorés). Retourne le nombre de chevaux scorés."""
@@ -347,7 +347,8 @@ def score_today(races_list, labels_array, booster, calib):
     today_ids = {r['id'] for r in plat if r.get('today')}
     if not today_ids:
         return 0
-    fdf = build_features(plat, labels_array)
+    if fdf is None:
+        fdf = build_features(plat, labels_array)
     X = fdf[fdf['race_id'].isin(today_ids)].reset_index(drop=True)
     # Variables du modèle chargé (v8 : 37, v9 : 41) — pas forcément FEATURES
     feats = booster.feature_name()
@@ -601,9 +602,11 @@ def build(storage, day=None, with_today=True):
     version = model_store.current_version(storage)
     backtest, meta = None, None
     stats['model_version'] = version
+    plat = [r for r in races_list if is_plat(r)]
+    fdf_plat = build_features(plat, labels_array) if any(r.get('today') for r in plat) else None
     if version:
         booster, calib, backtest, _ = model_store.load_version(storage, version)
-        stats['horses_scored'] = score_today(races_list, labels_array, booster, calib)
+        stats['horses_scored'] = score_today(races_list, labels_array, booster, calib, fdf=fdf_plat)
         if with_today:
             try:   # pronostics gardés pour le suivi des stratégies (paper.py)
                 stats['pronos_courses'] = paper.save_pronos(storage, races_list, config.yyyymmdd(day))
@@ -618,7 +621,24 @@ def build(storage, day=None, with_today=True):
         comb = tables.read_table(storage, 'rapports_combines')
         backtest = enrich_backtest(backtest, ch, rap, comb)
 
+    # Section « Modèle tracking » : modèle Profil à part (model_profil/), sans
+    # effet sur la production ; une erreur ici ne doit pas casser le dashboard.
+    tk_meta = None
+    try:
+        saved = profil.load_saved(storage)
+        if saved and fdf_plat is not None:
+            tk_booster, tk_calib, tk_meta = saved
+            stats['horses_scored_tracking'] = profil.score_today(plat, fdf_plat, tk_booster, tk_calib)
+    except Exception:
+        log.exception("Modèle tracking : courses du jour non notées (dashboard non affecté)")
+
     output = {'labels': labels_array, 'races': races_list}
+    if tk_meta:
+        m = tk_meta.get('metrics', {})
+        output['tracking_model'] = {'trained_at': tk_meta.get('trained_at'),
+                                    'n_features': len(tk_meta.get('features', [])),
+                                    'hit_rate_top1': m.get('hit_rate_top1'), 'top3_in_top3': m.get('top3_in_top3'),
+                                    'cutoff': m.get('cutoff')}
     if meta:
         output['model_meta'] = meta
     if backtest is not None:

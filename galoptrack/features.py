@@ -73,6 +73,7 @@ def flatten(races_list):
             rows.append({
                 'race_id': r['id'], 'date': r['date'], 'dist': r['dist'], 'terrain': r.get('terrain'),
                 'piste': r.get('piste'), 'cat': r.get('cat'), 'alloc': r.get('alloc'), 'hippo': r.get('hippo'),
+                'penetro': r.get('penetro'),
                 'is_today': bool(r.get('today')),
                 'nom': h['nom'], 'npart': h.get('npart'), 'jk': h.get('jk'), 'en': h.get('en'),
                 'ag': h.get('ag'), 'sx': h.get('sx'),
