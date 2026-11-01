@@ -765,7 +765,8 @@ def test_profil_features_use_only_the_past(built):
     a = full[full['date'] == day].sort_values(key).reset_index(drop=True)
     b = part[part['date'] == day].sort_values(key).reset_index(drop=True)
     assert len(a) == len(b) > 0 and (a['nom'].values == b['nom'].values).all()
-    num = [f for f in profil.PROFILE_FEATURES + profil.FIELD_FEATURES + profil.OPP_FEATURES]
+    num = [f for f in profil.PROFILE_FEATURES + profil.FIELD_FEATURES + profil.OPP_FEATURES
+           + profil.JOCKEY_FEATURES]
     assert a['pf_n'].gt(0).any()
     np.testing.assert_allclose(a[num].to_numpy(dtype=float), b[num].to_numpy(dtype=float), equal_nan=True)
 

@@ -28,6 +28,12 @@ partants d'une course.
                 qu'il trouve l'ouverture ; ou meilleur finish du tiers le plus
                 rapide mais arrivée dans la seconde moitié (vitesse non
                 convertie)
+   fig_pa     chiffre corrigé du rythme : une course partie lentement donne
+              des temps lents à tout le peloton sans que les chevaux soient
+              moins bons (coefficient appris sur les mois précédents)
+   close      chiffre de finish : vitesse sur les 600 derniers mètres comparée
+              à la vitesse habituelle de ce parcours sur ces 600 mètres (et à
+              l'écart du jour), indépendant du rythme du début de course
    pace       rythme de la course : vitesse du peloton avant les 600 derniers
               mètres moins sur les 600 derniers, comparé à l'habitude sur cette
               distance (+ = course partie vite, usante pour les meneurs)
@@ -94,7 +100,7 @@ HALF_LIFE_DAYS = 180     # poids d'une course : divisé par 2 tous les 6 mois
 WINDOW_DAYS = 365
 
 RUN_COLS = ['pf_fig', 'pf_fig_adj', 'pf_gene_sec', 'pf_style', 'pf_fin_rel', 'pf_pace',
-            'pf_entry', 'pf_gain600', 'pf_lost_mid', 'pf_bloque']
+            'pf_entry', 'pf_gain600', 'pf_lost_mid', 'pf_bloque', 'pf_fig_pa', 'pf_close']
 
 PROFILE_FEATURES = ['pf_n', 'pf_days_last', 'pf_fig_last', 'pf_fig_best3', 'pf_fig_wmean', 'pf_fig_trend',
                     'pf_fig_dist', 'pf_fig_surf', 'pf_dist_gap', 'pf_style_mean', 'pf_style_sd',
@@ -105,23 +111,29 @@ PROFILE_FEATURES = ['pf_n', 'pf_days_last', 'pf_fig_last', 'pf_fig_best3', 'pf_f
                     'pf_pd_delta_last', 'pf_pd_delta_best',
                     # positions
                     'pf_entry_mean', 'pf_gain600_mean', 'pf_escape', 'pf_hold_front', 'pf_lost_mid_mean',
-                    'pf_bloque_last', 'pf_bloque_rate']
+                    'pf_bloque_last', 'pf_bloque_rate',
+                    # chiffres fiabilisés
+                    'pf_figpa_wmean', 'pf_figpa_best3', 'pf_close_wmean', 'pf_close_best3']
 FIELD_FEATURES = ['fv_best_vs_field', 'fv_wmean_vs_field', 'fv_rank', 'fv_cov', 'fv_n',
                   'fl_fig_mean', 'fl_hv_mean',
                   'sc_leaders', 'sc_style_vs_field', 'sc_fin_vs_field', 'sc_entry_vs_field',
-                  'pd_vs_field', 'cd_pct', 'cd_bias']
+                  'pd_vs_field', 'cd_pct', 'cd_bias', 'fv_figpa_vs_field', 'fv_close_vs_field']
 OPP_FEATURES = ['elo', 'elo_vs_field', 'elo_rank',
                 'op_field_elo_wmean', 'op_field_elo_vs_today', 'op_beaten_elo_best', 'op_beaten_elo_vs_field',
                 'op_ahead_elo_mean', 'op_ahead_elo_vs_field', 'op_perf_vs_exp', 'op_fig_strong_field',
                 'op_n_strong_field', 'op_fig_vs_leaders']
 # Sans l'hippodrome : le parcours est déjà neutralisé dans les chiffres, et la
 # variable faisait apprendre du bruit (expérience : 1,322 sans contre 1,296 avec).
+JOCKEY_FEATURES = ['jt_n', 'jt_gene_rate', 'jt_bloque_rate', 'jt_escape', 'jt_lost_mid', 'jt_plusvalue',
+                   'jt_tactic', 'jt_plusvalue_vs_field', 'jt_escape_vs_field']
 CONTEXT_FEATURES = ['dist', 'piste', 'terrain', 'alloc', 'cat']
 POSITION_FEATURES = ['pf_entry_mean', 'pf_gain600_mean', 'pf_escape', 'pf_hold_front', 'pf_lost_mid_mean',
                      'pf_bloque_last', 'pf_bloque_rate', 'sc_entry_vs_field']
 ALLOC_BINS = (12000, 18000, 25000, 35000, 50000, 80000, 150000, 400000)
 LEVEL_RATIO = 1.25       # « au moins ce niveau » : allocation >= celle du jour / 1,25
-PROFIL_FEATURES = PROFILE_FEATURES + FIELD_FEATURES + OPP_FEATURES + CONTEXT_FEATURES
+PROFIL_FEATURES = PROFILE_FEATURES + FIELD_FEATURES + OPP_FEATURES + JOCKEY_FEATURES + CONTEXT_FEATURES
+NEW_FIG_FEATURES = ['pf_figpa_wmean', 'pf_figpa_best3', 'pf_close_wmean', 'pf_close_best3',
+                    'fv_figpa_vs_field', 'fv_close_vs_field']
 
 
 def _alloc_bucket(a):
@@ -188,6 +200,26 @@ def _expanding_par(levels, values, months, min_n=PAR_MIN_N):
                 for lv, keys in enumerate(levels):
                     hist[lv][keys[i]].append(values[i])
     return par
+
+
+def _expanding_slope(x, y, months, min_n=50):
+    """Pente de y selon x, estimée sur les mois STRICTEMENT antérieurs."""
+    out = np.full(len(x), np.nan)
+    sx = sy = sxx = sxy = 0.0
+    nn = 0
+    by_month = defaultdict(list)
+    for i, m in enumerate(months):
+        by_month[m].append(i)
+    for m in sorted(by_month):
+        idx = by_month[m]
+        if nn >= min_n:
+            var = sxx / nn - (sx / nn) ** 2
+            if var > 1e-9:
+                out[idx] = (sxy / nn - sx / nn * sy / nn) / var
+        for i in idx:
+            if not np.isnan(x[i]) and not np.isnan(y[i]):
+                sx += x[i]; sy += y[i]; sxx += x[i] * x[i]; sxy += x[i] * y[i]; nn += 1
+    return out
 
 
 def run_metrics(fdf):
@@ -257,13 +289,14 @@ def run_metrics(fdf):
             out['pf_bloque'][i] = float(bloque)
         v_r = vy[rows]
         v_r = np.where(np.isnan(v_r), S.mean(axis=1), v_r)
-        race_rows.append((rows, v_r))
+        race_rows.append((rows, v_r, late))
         rid_date = int(fdf['date'].iat[rows[0]])
         hippo = str(fdf['hippo'].iat[rows[0]])
         race_info.append({'date': rid_date, 'month': rid_date // 100, 'hippo': hippo, 'surf': surf[rows[0]],
                           'd100': int(round(d / 100.0)) * 100 if not np.isnan(d) else -1,
                           'd400': int(round(d / 400.0)) * 400 if not np.isnan(d) else -1,
                           'dist': d, 'speed': float(np.median(v_r)), 'pace': pace,
+                          'close': float(np.median(late)),
                           'abk': _alloc_bucket(alloc[rows[0]])})
 
     if not race_info:
@@ -286,7 +319,21 @@ def run_metrics(fdf):
     ri['dev'] = resid - class_off
     g = ri.groupby(['date', 'hippo'])['dev']
     variant = (g.transform('sum') / (g.transform('count') + 2)).to_numpy()
-    for k, (rows, v_r) in enumerate(race_rows):
+    # Même chose pour les 600 derniers mètres
+    levels = [list(zip(ri['hippo'], ri['d100'], ri['surf'])), list(zip(ri['d100'], ri['surf'])),
+              list(zip(ri['d400'], ri['surf'])), list(ri['d400'])]
+    cl_par = _expanding_par(levels, ri['close'].to_numpy(dtype=float), months)
+    cl_res = ri['close'].to_numpy(dtype=float) - cl_par
+    ri['cdev'] = cl_res - np.nan_to_num(_expanding_par([list(ri['abk'])], cl_res, months))
+    gc = ri.groupby(['date', 'hippo'])['cdev']
+    cl_var = (gc.transform('sum') / (gc.transform('count') + 2)).to_numpy()
+    # Effet du rythme sur les temps : pente (mois précédents) de l'écart de
+    # vitesse de la course (après niveau et jour) selon le rythme
+    pace_norm = ri['pace'].to_numpy(dtype=float) - pace_par
+    beta = _expanding_slope(pace_norm, ri['dev'].to_numpy(dtype=float) - np.nan_to_num(variant), months)
+    for k, (rows, v_r, late) in enumerate(race_rows):
+        if not np.isnan(cl_par[k]):
+            out['pf_close'][rows] = late - cl_par[k] - (0.0 if np.isnan(cl_var[k]) else cl_var[k])
         if np.isnan(sp_par[k]):
             continue
         base = sp_par[k] + (0.0 if np.isnan(variant[k]) else variant[k])
@@ -301,6 +348,8 @@ def run_metrics(fdf):
         out['pf_fig_adj'][rows] = v_adj - base
         if not np.isnan(race_info[k]['pace']) and not np.isnan(pace_par[k]):
             out['pf_pace'][rows] = race_info[k]['pace'] - pace_par[k]
+        pn = 0.0 if np.isnan(pace_norm[k]) else pace_norm[k]
+        out['pf_fig_pa'][rows] = out['pf_fig_adj'][rows] - (0.0 if np.isnan(beta[k]) else beta[k]) * pn
     for c, v in out.items():
         fdf[c] = v
     return fdf
@@ -329,6 +378,7 @@ def profile_features(fdf, window_days=WINDOW_DAYS, half_life=HALF_LIFE_DAYS):
     pace = fdf['pf_pace'].to_numpy(dtype=float)
     entry, gain6 = fdf['pf_entry'].to_numpy(dtype=float), fdf['pf_gain600'].to_numpy(dtype=float)
     lmid, blq = fdf['pf_lost_mid'].to_numpy(dtype=float), fdf['pf_bloque'].to_numpy(dtype=float)
+    figpa, clos = fdf['pf_fig_pa'].to_numpy(dtype=float), fdf['pf_close'].to_numpy(dtype=float)
     poids = _num(fdf, 'pd')
     la = np.log(np.where(_num(fdf, 'alloc') > 0, _num(fdf, 'alloc'), np.nan))
     has = ~np.isnan(figa)
@@ -386,6 +436,14 @@ def profile_features(fdf, window_days=WINDOW_DAYS, half_life=HALF_LIFE_DAYS):
                 out['pf_gene_last'][i] = gene[p[-1]]
                 out['pf_gene_n5'][i] = float((gene[p[-5:]] > 0.1).sum())
                 out['pf_gene_rate'][i] = float((gene[p] > 0.1).mean())
+                for arr, wm_c, b3_c in ((figpa, 'pf_figpa_wmean', 'pf_figpa_best3'),
+                                        (clos, 'pf_close_wmean', 'pf_close_best3')):
+                    a6, ww = arr[p[-6:]], w[-6:]
+                    ok6 = ~np.isnan(a6)
+                    if ok6.any():
+                        out[wm_c][i] = np.sum(a6[ok6] * ww[ok6]) / np.sum(ww[ok6])
+                        a3 = arr[p[-3:]]
+                        out[b3_c][i] = np.nanmax(a3) if not np.isnan(a3).all() else np.nan
                 # Positions
                 en, g6 = entry[p], gain6[p]
                 okp = ~np.isnan(en) & ~np.isnan(g6)
@@ -439,6 +497,8 @@ def field_features(fdf):
     st = fdf['pf_style_mean'].to_numpy(dtype=float)
     fi = fdf['pf_fin_mean'].to_numpy(dtype=float)
     ent = fdf['pf_entry_mean'].to_numpy(dtype=float)
+    fpa = fdf['pf_figpa_wmean'].to_numpy(dtype=float)
+    fcl = fdf['pf_close_wmean'].to_numpy(dtype=float)
     poids, corde, hv = _num(fdf, 'pd'), _num(fdf, 'cd'), _num(fdf, 'hv')
     for idx in fdf.groupby('race_id', sort=False).indices.values():
         k = len(idx)
@@ -473,6 +533,10 @@ def field_features(fdf):
             eo = ent[o]
             if not np.isnan(ent[i]) and not np.isnan(eo).all():
                 out['sc_entry_vs_field'][i] = ent[i] - np.nanmean(eo)
+            for arr, col in ((fpa, 'fv_figpa_vs_field'), (fcl, 'fv_close_vs_field')):
+                ao = arr[o]
+                if not np.isnan(arr[i]) and not np.isnan(ao).all():
+                    out[col][i] = arr[i] - np.nanmean(ao)
     # Biais de corde du parcours : chiffre médian des chevaux partis dans le
     # même tiers (corde / milieu / extérieur) sur ce parcours, mois précédents,
     # moins le chiffre médian de tous les partants du parcours.
@@ -594,9 +658,87 @@ def opposition_features(fdf, window_days=WINDOW_DAYS, half_life=HALF_LIFE_DAYS, 
     return fdf
 
 
+# ── 5. Le jockey, vu par le tracking (toutes ses montes) ────────────────────
+
+JOCKEY_SHRINK = 20      # montes « fictives » au niveau moyen (0) pour les petits effectifs
+
+
+def jockey_features(fdf, window_days=WINDOW_DAYS):
+    """JOCKEY_FEATURES : ce que le jockey fait de ses chevaux, mesuré sur
+    toutes ses montes trackées des 12 derniers mois (strictement antérieures),
+    quel que soit le cheval :
+      jt_gene_rate     part de montes avec une gêne
+      jt_bloque_rate   part de montes enfermé dans la ligne droite
+      jt_escape        places gagnées dans la ligne droite quand il y entre
+                       dans la seconde moitié du peloton (sortir du paquet)
+      jt_lost_mid      places perdues en course avant la ligne droite
+      jt_plusvalue     chiffre du cheval ce jour-là moins son niveau habituel
+                       d'avant course (+ = le jockey en tire plus que d'habitude)
+      jt_tactic        position à l'entrée de la ligne droite moins la position
+                       habituelle du cheval (< 0 = mieux placé que d'habitude)
+    Les moyennes plus-value / tactique sont réduites vers 0 quand le jockey
+    a peu de montes. fdf : sortie d'opposition_features."""
+    fdf = fdf.copy()
+    n = len(fdf)
+    out = {c: np.full(n, np.nan) for c in JOCKEY_FEATURES}
+    out['jt_n'] = np.zeros(n)
+    figa = fdf['pf_fig_adj'].to_numpy(dtype=float)
+    entry = fdf['pf_entry'].to_numpy(dtype=float)
+    ride = ~np.isnan(figa)
+    metrics = {
+        'jt_gene_rate': np.where(ride, (fdf['pf_gene_sec'].to_numpy(dtype=float) > 0.1).astype(float), np.nan),
+        'jt_bloque_rate': fdf['pf_bloque'].to_numpy(dtype=float),
+        'jt_escape': np.where(entry > 0.5, fdf['pf_gain600'].to_numpy(dtype=float), np.nan),
+        'jt_lost_mid': fdf['pf_lost_mid'].to_numpy(dtype=float),
+        'jt_plusvalue': figa - fdf['pf_fig_wmean'].to_numpy(dtype=float),
+        'jt_tactic': entry - fdf['pf_entry_mean'].to_numpy(dtype=float),
+    }
+    shrunk = {'jt_plusvalue', 'jt_tactic'}
+    days = (pd.to_datetime(fdf['date'].astype(int).astype(str), format='%Y%m%d')
+            .to_numpy().astype('datetime64[D]').astype(np.int64))
+    jk = fdf['jk'].astype(object).where(fdf['jk'].notna(), None).to_numpy()
+    for name, idx in pd.Series(np.arange(n)).groupby(jk, sort=False).indices.items():
+        if name is None:
+            continue
+        idx = np.asarray(idx)
+        r = idx[ride[idx]]
+        if not len(r):
+            continue
+        r = r[np.argsort(days[r], kind='stable')]
+        rd = days[r]
+        lo = np.searchsorted(rd, days[idx] - window_days, 'left')
+        hi = np.searchsorted(rd, days[idx], 'left')       # strictement avant le jour
+        out['jt_n'][idx] = hi - lo
+        for col, arr in metrics.items():
+            v = arr[r]
+            ok = ~np.isnan(v)
+            cs = np.concatenate([[0.0], np.cumsum(np.where(ok, v, 0.0))])
+            cn = np.concatenate([[0], np.cumsum(ok)])
+            s_, c_ = cs[hi] - cs[lo], cn[hi] - cn[lo]
+            if col in shrunk:
+                val = s_ / (c_ + JOCKEY_SHRINK)
+                val[c_ == 0] = np.nan
+            else:
+                with np.errstate(invalid='ignore', divide='ignore'):
+                    val = np.where(c_ > 0, s_ / np.maximum(c_, 1), np.nan)
+            out[col][idx] = val
+    pv, es = out['jt_plusvalue'], out['jt_escape']
+    for g in fdf.groupby('race_id', sort=False).indices.values():
+        if len(g) < 2:
+            continue
+        for k, i in enumerate(g):
+            o = np.delete(g, k)
+            for arr, col in ((pv, 'jt_plusvalue_vs_field'), (es, 'jt_escape_vs_field')):
+                if not np.isnan(arr[i]) and not np.isnan(arr[o]).all():
+                    out[col][i] = arr[i] - np.nanmean(arr[o])
+    for c, v in out.items():
+        fdf[c] = v
+    return fdf
+
+
 def profil_features(fdf):
     """Toutes les variables du modèle Profil (fdf : sortie de build_features)."""
-    return opposition_features(field_features(profile_features(run_metrics(fdf))))
+    return jockey_features(opposition_features(field_features(profile_features(run_metrics(fdf)))))
 
 
 # ── Évaluation (lecture seule) ──────────────────────────────────────────────
@@ -642,6 +784,32 @@ def _picks(d, col):
     return d.loc[i]
 
 
+def _stability_table(fdf):
+    """Qualité des chiffres : un bon chiffre de vitesse se répète d'une course
+    à l'autre (corrélation entre deux courses trackées successives du même
+    cheval, à moins de 90 jours) et annonce la suivante."""
+    d = fdf[fdf['pf_fig'].notna()].sort_values(['nom', 'date'])
+    nxt = d.groupby('nom').shift(-1)
+    gap = (pd.to_datetime(nxt['date'].astype('Int64').astype(str), format='%Y%m%d', errors='coerce')
+           - pd.to_datetime(d['date'].astype(int).astype(str), format='%Y%m%d')).dt.days
+    ok = gap.le(90)
+    md = ["## Qualité des chiffres de vitesse", "",
+          "Corrélation entre deux courses trackées successives d'un même cheval (à moins de 90 jours) : "
+          "plus elle est haute, plus le chiffre mesure le cheval plutôt que le hasard de la course. "
+          "Dernière colonne : % de top 3 la course suivante pour le meilleur quart des chiffres.", "",
+          "| Chiffre | Paires | Corrélation | Top 3 suivant (meilleur quart) |", "|---|---:|---:|---:|"]
+    for col, lab in (('pf_fig', 'brut'), ('pf_fig_adj', 'gênes rendues'), ('pf_fig_pa', 'gênes + rythme'),
+                     ('pf_close', 'finish (600 derniers m)')):
+        a, b = d[col][ok], nxt[col][ok]
+        m = a.notna() & b.notna()
+        if m.sum() < 30:
+            continue
+        q = a[m] >= a[m].quantile(0.75)
+        t3 = (nxt.loc[m[m].index[q.to_numpy()], 'pa_num'] <= 3).mean()
+        md.append(f"| {lab} | {int(m.sum())} | {np.corrcoef(a[m], b[m])[0, 1]:.3f} | {t3:.1%} |")
+    return md
+
+
 def _draw_style_table(d):
     """Corde x style habituel -> % top 3 et part de chevaux gênés."""
     d = d.dropna(subset=['cd_pct', 'pf_style_mean'])
@@ -683,6 +851,7 @@ def run_profil(storage):
           f"- Courses où au moins 70 % du peloton a un profil : "
           f"{ready.groupby('race_id')['fv_cov'].first().ge(0.7).mean():.0%}", ""]
 
+    md += _stability_table(fdf) + [""]
     cut = sorted(ready['date'].unique())[int(ready['date'].nunique() * 0.8)]
     recent = ready[ready['date'] >= cut]
     md += [f"## Signaux bruts (courses depuis {cut})", ""]
@@ -714,6 +883,16 @@ def run_profil(storage):
                         ['nettement sous le niveau du peloton', 'un peu sous', 'au niveau', 'un peu au-dessus',
                          'nettement au-dessus'],
                         "Son chiffre comparé au niveau attendu des pelotons affrontés (5 dernières courses)") + [""]
+    md += _bucket_table(recent, 'jt_escape_vs_field', [-np.inf, -0.08, -0.02, 0.02, 0.08, np.inf],
+                        ['sort nettement moins bien du paquet', 'un peu moins bien', 'comme les autres',
+                         'un peu mieux', 'nettement mieux'],
+                        "Jockey : capacité à sortir du paquet (tracking, toutes ses montes), comparée aux "
+                        "autres jockeys de la course") + [""]
+    md += _bucket_table(recent, 'jt_plusvalue_vs_field', [-np.inf, -0.3, -0.1, 0.1, 0.3, np.inf],
+                        ['en tire nettement moins', 'un peu moins', 'comme les autres', 'un peu plus',
+                         'nettement plus'],
+                        "Jockey : ce qu'il tire de ses chevaux par rapport à leur niveau habituel, comparé "
+                        "aux autres jockeys de la course") + [""]
     md += _bucket_table(recent, 'pf_class_gap', [-np.inf, -0.4, -0.1, 0.1, 0.4, np.inf],
                         ['descend nettement (allocation < 2/3)', 'descend un peu', 'même niveau', 'monte un peu',
                          'monte nettement (allocation > 1,5x)'],
@@ -733,11 +912,10 @@ def run_profil(storage):
 
     # Élagage : les positions n'ont rien apporté au modèle (1,285 contre 1,283) ;
     # « sans Elo » mesure ce que le Profil vaut sans l'Elo de la production.
-    no_elo = [f for f in PROFIL_FEATURES if f not in ('elo', 'elo_vs_field', 'elo_rank')]
     variants = {'v9 (production)': FEATURES, 'Profil seul': PROFIL_FEATURES,
                 'v9 + Profil (pour info)': FEATURES + [f for f in PROFIL_FEATURES if f not in FEATURES],
-                'Profil sans positions': [f for f in PROFIL_FEATURES if f not in POSITION_FEATURES],
-                'Profil sans Elo du jour': no_elo}
+                'Profil sans jockey': [f for f in PROFIL_FEATURES if f not in JOCKEY_FEATURES],
+                'Profil sans chiffres fiabilisés': [f for f in PROFIL_FEATURES if f not in NEW_FIG_FEATURES]}
     d, imp = _oos(fdf, variants, FOLDS)
     d = _attach_payouts(storage, d)
     names = list(variants)
