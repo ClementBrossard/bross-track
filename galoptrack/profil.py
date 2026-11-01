@@ -979,3 +979,116 @@ def run_profil(storage):
            "| Variable | Part de l'importance |", "|---|---:|"]
     md += [f"| {k} | {v / tot:.1%} |" for k, v in top[:15]]
     return _publish(md)
+
+
+# ── Modèle Profil enregistré (section « Modèle tracking » du dashboard) ─────
+# Rangé à part de la production : model_profil/ (jamais model/current.json).
+
+PROFIL_PREFIX = 'model_profil/'
+
+LABEL_FR_TK = {
+    'elo': 'Elo', 'elo_vs_field': 'Elo vs peloton', 'elo_rank': "Rang d'Elo",
+    'pf_class_gap': 'Monte / descend de catégorie', 'pf_alloc_max_gap': 'Plus haut niveau affronté',
+    'pf_fig_at_level': 'Chiffre à ce niveau', 'pf_n_at_level': 'Courses à ce niveau',
+    'pf_class_slope': 'Chiffre selon le niveau',
+    'pf_fig_last': 'Dernier chiffre', 'pf_fig_best3': 'Meilleur chiffre (3 dern.)',
+    'pf_fig_wmean': 'Chiffre moyen', 'pf_fig_trend': 'Tendance du chiffre', 'pf_fig_dist': 'Chiffre sur la distance',
+    'pf_fig_surf': 'Chiffre sur la surface', 'pf_dist_gap': 'Écart à sa distance',
+    'pf_figpa_wmean': 'Chiffre corrigé du rythme', 'pf_figpa_best3': 'Meilleur chiffre corrigé du rythme',
+    'pf_close_wmean': 'Chiffre de finish', 'pf_close_best3': 'Meilleur finish',
+    'fv_figpa_vs_field': 'Chiffre (rythme) vs peloton', 'fv_close_vs_field': 'Finish vs peloton',
+    'fv_best_vs_field': 'Meilleur chiffre vs meilleur rival', 'fv_wmean_vs_field': 'Chiffre vs peloton',
+    'fv_rank': 'Rang du chiffre', 'fv_cov': 'Peloton connu', 'fv_n': 'Partants',
+    'fl_fig_mean': 'Niveau du peloton (chiffres)', 'fl_hv_mean': 'Niveau du peloton (valeurs)',
+    'pf_style_mean': 'Style habituel', 'pf_style_sd': 'Style variable', 'pf_fin_mean': 'Finish moyen',
+    'pf_fin_best': 'Meilleur finish (rang)', 'pf_pace_pref': 'Préférence de rythme',
+    'sc_leaders': 'Meneurs parmi les rivaux', 'sc_style_vs_field': 'Style vs rivaux',
+    'sc_fin_vs_field': 'Finish vs rivaux', 'sc_entry_vs_field': 'Placement vs rivaux',
+    'pf_gene_last': 'Gêne dernière course', 'pf_gene_n5': 'Gênes (5 dern.)', 'pf_gene_rate': 'Fréquence des gênes',
+    'pf_entry_mean': "Placement à l'entrée de la ligne droite", 'pf_gain600_mean': 'Places gagnées (600 m)',
+    'pf_escape': "S'extrait du paquet", 'pf_hold_front': 'Tient devant', 'pf_lost_mid_mean': 'Places perdues en course',
+    'pf_bloque_last': 'Enfermé dernière course', 'pf_bloque_rate': 'Souvent enfermé',
+    'pf_pd_delta_last': 'Poids vs dernière course', 'pf_pd_delta_best': 'Poids vs meilleure course',
+    'pd_vs_field': 'Poids vs peloton', 'cd_pct': 'Corde', 'cd_bias': 'Biais de corde du parcours',
+    'pf_n': 'Courses trackées', 'pf_days_last': 'Jours depuis la dernière',
+    'op_field_elo_wmean': 'Niveau des pelotons affrontés', 'op_field_elo_vs_today': 'Pelotons affrontés vs jour',
+    'op_beaten_elo_best': 'Meilleur cheval battu', 'op_beaten_elo_vs_field': 'Meilleur battu vs peloton du jour',
+    'op_ahead_elo_mean': "Niveau de ceux qui l'ont battu", 'op_ahead_elo_vs_field': 'Ses vainqueurs vs peloton du jour',
+    'op_perf_vs_exp': 'Chiffre vs niveau attendu', 'op_fig_strong_field': 'Chiffre face à fort peloton',
+    'op_n_strong_field': 'Courses face à fort peloton', 'op_fig_vs_leaders': 'Chiffre avec beaucoup de meneurs',
+    'jt_n': 'Montes trackées du jockey', 'jt_gene_rate': 'Jockey : gênes', 'jt_bloque_rate': 'Jockey : enfermé',
+    'jt_escape': 'Jockey : sort du paquet', 'jt_lost_mid': 'Jockey : places perdues',
+    'jt_plusvalue': 'Jockey : plus-value', 'jt_tactic': 'Jockey : placement',
+    'jt_plusvalue_vs_field': 'Jockey : plus-value vs autres', 'jt_escape_vs_field': 'Jockey : sort du paquet vs autres',
+    'dist': 'Distance', 'piste': 'Piste', 'terrain': 'Terrain', 'alloc': 'Allocation', 'cat': 'Catégorie',
+}
+
+
+def train_and_save(storage):
+    """Entraîne le modèle Profil sur tout l'historique de plat et l'enregistre
+    dans model_profil/ (n'écrit rien dans model/ : la production ne change pas)."""
+    from . import config, model_store, train
+    fdf = profil_features(train.load_feature_frame(storage))
+    model, calib, _, metrics = train.train_model(fdf, features=PROFIL_FEATURES, label_mode='win')
+    storage.write_bytes(PROFIL_PREFIX + 'race_model.txt', model.model_to_string().encode('utf-8'),
+                        content_type='text/plain')
+    model_store._w(storage, PROFIL_PREFIX + 'calibration.json', calib.to_json())
+    meta = {'trained_at': config.now_paris().isoformat(timespec='seconds'), 'features': PROFIL_FEATURES,
+            'metrics': metrics}
+    model_store._w(storage, PROFIL_PREFIX + 'meta.json', meta)
+    return meta
+
+
+def load_saved(storage):
+    """(booster, calibrateur, meta) du modèle Profil enregistré, ou None."""
+    if not storage.exists(PROFIL_PREFIX + 'race_model.txt'):
+        return None
+    import lightgbm as lgb
+    from .model_store import Calibrator, _j
+    booster = lgb.Booster(model_str=storage.read_bytes(PROFIL_PREFIX + 'race_model.txt').decode('utf-8'))
+    calib = Calibrator.from_json(_j(storage, PROFIL_PREFIX + 'calibration.json'))
+    meta = _j(storage, PROFIL_PREFIX + 'meta.json') if storage.exists(PROFIL_PREFIX + 'meta.json') else {}
+    return booster, calib, meta
+
+
+def _r(v, nd=2):
+    return None if v is None or pd.isna(v) else round(float(v), nd)
+
+
+def score_today(races_list, fdf, booster, calib):
+    """Probabilité du modèle Profil pour chaque partant des courses de plat du
+    jour, avec ses principales raisons (SHAP) et quelques repères. Écrit dans
+    chaque cheval : tk_prob, tk_rank, tk_why, tk_info. fdf : build_features
+    sur les courses de plat (historique + jour). Retourne le nb de chevaux."""
+    today_ids = {r['id'] for r in races_list if r.get('today')}
+    if not today_ids:
+        return 0
+    full = profil_features(fdf)
+    X = full[full['race_id'].isin(today_ids)].reset_index(drop=True)
+    if not len(X):
+        return 0
+    feats = booster.feature_name()
+    X['tk_pred'] = booster.predict(X[feats])
+    X['tk_cal'] = calib.predict(X['tk_pred'])
+    X['tk_prob'] = X['tk_cal'] / X.groupby('race_id')['tk_cal'].transform('sum') * 100
+    X['tk_rank'] = X.groupby('race_id')['tk_pred'].rank(ascending=False, method='first')
+    contrib = booster.predict(X[feats], pred_contrib=True)[:, :-1]
+    index = {r['id']: r for r in races_list}
+    n = 0
+    for i in range(len(X)):
+        row = X.iloc[i]
+        race = index.get(row['race_id'])
+        horse = next((h for h in race['horses'] if h['nom'] == row['nom']), None) if race else None
+        if horse is None:
+            continue
+        order = np.argsort(-np.abs(contrib[i]))[:4]
+        horse['tk_prob'] = _r(row['tk_prob'])
+        horse['tk_rank'] = int(row['tk_rank'])
+        horse['tk_why'] = [{'f': LABEL_FR_TK.get(feats[j], feats[j]), 'v': round(float(contrib[i][j]), 3)}
+                           for j in order]
+        horse['tk_info'] = {'fig': _r(row.get('pf_figpa_wmean'), 1), 'close': _r(row.get('pf_close_wmean'), 1),
+                            'n': int(row['pf_n']) if pd.notna(row.get('pf_n')) else 0,
+                            'classe': _r(row.get('pf_class_gap')), 'jk_sort': _r(row.get('jt_escape_vs_field'), 3),
+                            'jk_pv': _r(row.get('jt_plusvalue_vs_field'), 2)}
+        n += 1
+    return n

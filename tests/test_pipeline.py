@@ -781,3 +781,38 @@ def test_profil_figures_follow_ability():
     best = f[f['fv_rank'] == 0]
     worst = f[f['fv_rank'] > 0.75]
     assert best['win'].mean() > 3 * f['win'].mean() > worst['win'].mean()
+
+
+def test_profil_scores_today_races(built):
+    """Section « Modèle tracking » : chaque partant du jour reçoit une
+    probabilité (somme 100 % par course), un rang et ses raisons."""
+    from galoptrack import profil
+    from galoptrack.model_store import Calibrator
+    races_list, labels_array, _ = built
+    plat = copy.deepcopy([r for r in races_list if is_plat(r)])
+    last = max(r['date'] for r in plat)
+    for r in plat:
+        if r['date'] == last:
+            r['today'] = True
+            for h in r['horses']:
+                h.update(pa=None, tr=[], vy=None)
+
+    class Booster:
+        def feature_name(self):
+            return profil.PROFIL_FEATURES
+
+        def predict(self, X, pred_contrib=False):
+            x = X['fv_wmean_vs_field'].astype(float).fillna(-3).to_numpy()
+            if pred_contrib:
+                c = np.zeros((len(X), len(profil.PROFIL_FEATURES) + 1))
+                c[:, 0] = x
+                return c
+            return x
+
+    n = profil.score_today(plat, build_features(plat, labels_array), Booster(), Calibrator([-5, 5], [0.01, 0.6]))
+    today = [r for r in plat if r.get('today')]
+    assert n == sum(len(r['horses']) for r in today) > 0
+    for r in today:
+        assert abs(sum(h['tk_prob'] for h in r['horses']) - 100) < 0.1
+        assert sorted(h['tk_rank'] for h in r['horses']) == list(range(1, len(r['horses']) + 1))
+        assert all(h['tk_why'] for h in r['horses'])

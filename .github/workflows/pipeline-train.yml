@@ -47,5 +47,9 @@ jobs:
           else
             python -m galoptrack train
           fi
+      - name: Modèle tracking (à part, section du dashboard)
+        if: ${{ inputs.version == '' || github.event_name == 'schedule' }}
+        continue-on-error: true
+        run: python -m galoptrack train-profil
       - name: Dashboard avec le modèle à jour
         run: python -m galoptrack dashboard

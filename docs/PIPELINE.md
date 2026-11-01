@@ -139,3 +139,14 @@ profil de chaque cheval et scénario de la course du jour.
 Le rapport (dans le résumé du run) compare, sur 4 périodes de test, le modèle
 Profil seul, la v9 en production et la v9 + Profil, puis regarde ce que vaut
 le n°1 du modèle Profil selon son rang dans les cotes (vrais rapports PMU).
+
+### Section « Modèle tracking » du dashboard
+
+Le modèle Profil est enregistré à part, dans `model_profil/` (jamais dans
+`model/`, la production ne change pas). Il est réentraîné avec l'entraînement
+mensuel (étape « Modèle tracking », sans bloquer le reste), ou à la demande :
+`python -m galoptrack train-profil`, ou l'action `entrainer_profil` dans
+`ops/demande.json`. Le dashboard note alors les courses de plat du jour dans
+l'onglet **Modèle tracking** : probabilité, rang comparé au modèle en
+production, chiffre de vitesse et principales raisons ; les courses où les
+deux n°1 diffèrent sont signalées.

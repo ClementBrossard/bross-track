@@ -200,6 +200,7 @@ tbody tr:last-child td{border-bottom:none;}
     <button class="tab" data-tab="backtest">Résultats des tests</button>
     <button class="tab" data-tab="verifparis">Vérification paris</button>
     <button class="tab" data-tab="suivi">Suivi stratégies</button>
+    <button class="tab" data-tab="tracking">Modèle tracking</button>
   </div>
 
   <!-- ===================== VUE COURSES ===================== -->
@@ -305,6 +306,11 @@ tbody tr:last-child td{border-bottom:none;}
   <!-- ===================== VUE SUIVI DES STRATEGIES ===================== -->
   <div class="view" id="view-suivi">
     <div id="suiviContainer"></div>
+  </div>
+
+  <!-- ===================== VUE MODELE TRACKING ===================== -->
+  <div class="view" id="view-tracking">
+    <div id="trackingContainer"></div>
   </div>
 
   <!-- ===================== VUE COURSE (detail) ===================== -->
@@ -521,6 +527,7 @@ let HORSE_INDEX = [];
 let MODEL_META = null;
 let BACKTEST_DATA = null;
 let SUIVI_DATA = null;
+let TRACKING_META = null;
 
 function boot(){
   try{
@@ -537,6 +544,7 @@ function boot(){
     MODEL_META = parsed.model_meta || null;
     BACKTEST_DATA = parsed.backtest || null;
     SUIVI_DATA = parsed.suivi || null;
+    TRACKING_META = parsed.tracking_model || null;
     RACES.forEach(r => RACE_BY_ID[r.id] = r);
     buildHorseIndex();
     initApp();
@@ -907,6 +915,7 @@ function initApp(){
   renderBacktest();
   renderVerifParis();
   renderSuivi();
+  renderTracking();
   // Populate today metrics terrain filter with unique terrains from historical data
   // Chips terrain — même liste pour les 3 zones
   const allTerrains = [...new Set(RACES.filter(r=>!r.today).map(r=>r.terrain).filter(Boolean))].sort();
@@ -2281,6 +2290,80 @@ function renderVerifDetail(r){
 
 /* Suivi « pour de faux » des stratégies candidates (paper.py) : aucun argent,
    1 € fictif par pari en simple gagnant, rapports réels du PMU. */
+/* =========================================================
+   VUE MODELE TRACKING (modèle Profil, à part de la production)
+   ========================================================= */
+function renderTracking(){
+  const el = document.getElementById('trackingContainer');
+  if(!el) return;
+  const M = TRACKING_META;
+  const intro = `<p class="count">Modèle <b>à part</b>, construit sur le tracking : chiffres de vitesse corrigés du parcours,
+    du terrain du jour et du rythme, finish, niveau de course (monte / descend), adversaires affrontés (Elo, niveau attendu),
+    placement, gênes, et le jockey vu par le tracking (sortir du paquet, plus-value sur ses chevaux).
+    Il ne remplace pas le modèle en production : c'est un second avis. Les courses où les deux n°1 diffèrent sont signalées.</p>`;
+  if(!M){
+    el.innerHTML = intro + '<div class="empty">Modèle tracking pas encore entraîné (commande « train-profil » ou opération « entrainer_profil »).</div>';
+    return;
+  }
+  const pct = v => v==null ? '—' : (v*100).toFixed(1)+' %';
+  const meta = `<p class="count">Entraîné le ${(M.trained_at||'').slice(0,10)} · ${M.n_features} variables · test :
+    n°1 gagnant ${pct(M.hit_rate_top1)}, ${M.top3_in_top3!=null ? M.top3_in_top3.toFixed(2) : '—'} chevaux de son top 3 dans les 3 premiers.</p>`;
+  const races = RACES.filter(r=>r.today && !isObst(r) && r.horses.some(h=>h.tk_prob!=null))
+                     .sort((a,b)=>(a.heure||'').localeCompare(b.heure||''));
+  if(!races.length){
+    el.innerHTML = intro + meta + '<div class="empty">Aucune course de plat notée aujourd\'hui.</div>';
+    return;
+  }
+  const esc = t => String(t ?? '').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const why = h => (h.tk_why||[]).slice(0,3).map(w=>`<span style="color:${w.v>=0?'var(--good)':'var(--red)'};">${w.v>=0?'▲':'▼'} ${esc(w.f)}</span>`).join(' · ');
+  const v9rank = r => {
+    const s = r.horses.filter(h=>h.model_prob!=null).sort((a,b)=>b.model_prob-a.model_prob);
+    return Object.fromEntries(s.map((h,i)=>[h.nom, i+1]));
+  };
+  const nDis = races.filter(r=>{
+    const tk = r.horses.find(h=>h.tk_rank===1); const v = v9rank(r);
+    return tk && Object.keys(v).length && v[tk.nom]!==1;
+  }).length;
+  const blocks = races.map(r=>{
+    const vr = v9rank(r);
+    const hs = r.horses.filter(h=>h.tk_prob!=null).sort((a,b)=>a.tk_rank-b.tk_rank);
+    const tk1 = hs[0];
+    const dis = tk1 && Object.keys(vr).length && vr[tk1.nom]!==1;
+    const rows = hs.map(h=>{
+      const i = h.tk_info||{};
+      const v = vr[h.nom];
+      const diff = v!=null && Math.abs(v-h.tk_rank)>=3;
+      return `<tr${h.tk_rank<=3?' style="font-weight:600;"':''}>
+        <td class="mono" style="padding:5px 8px;text-align:right;">${h.tk_rank}</td>
+        <td class="mono" style="padding:5px 8px;text-align:right;">${h.npart ?? '—'}</td>
+        <td style="padding:5px 8px;">${esc(h.nom)}</td>
+        <td class="mono" style="padding:5px 8px;text-align:right;">${h.tk_prob.toFixed(1)} %</td>
+        <td class="mono" style="padding:5px 8px;text-align:right;">${h.model_prob!=null ? h.model_prob.toFixed(1)+' %' : '—'}</td>
+        <td class="mono" style="padding:5px 8px;text-align:right;${diff?'color:var(--gold);':''}">${v ?? '—'}</td>
+        <td class="mono" style="padding:5px 8px;text-align:right;">${h.cote ?? '—'}</td>
+        <td class="mono" style="padding:5px 8px;text-align:right;">${i.fig!=null ? (i.fig>0?'+':'')+i.fig : '—'}</td>
+        <td class="mono" style="padding:5px 8px;text-align:right;">${i.n ?? 0}</td>
+        <td style="padding:5px 8px;font-size:12px;white-space:normal;min-width:280px;">${why(h)}</td>
+      </tr>`;
+    }).join('');
+    return `<div style="margin:14px 0;padding:12px 14px;background:var(--paper);border:1px solid var(--line);border-radius:6px;">
+      <h3 style="margin:0 0 6px 0;">${r.heure ?? ''} · ${esc(r.hippo)} ${r.rnum ? 'R'+r.rnum+' ' : ''}C${r.num} — ${r.dist ?? '?'} m${r.terrain ? ' · '+esc(r.terrain) : ''}
+        ${dis ? ' <span class="badge-today" style="background:var(--gold);">Désaccord avec le modèle en production</span>' : ''}</h3>
+      <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead><tr style="text-align:left;">
+          <th style="padding:5px 8px;text-align:right;">Rang</th><th style="padding:5px 8px;text-align:right;">N°</th>
+          <th style="padding:5px 8px;">Cheval</th><th style="padding:5px 8px;text-align:right;">Proba tracking</th>
+          <th style="padding:5px 8px;text-align:right;">Proba production</th><th style="padding:5px 8px;text-align:right;">Rang production</th>
+          <th style="padding:5px 8px;text-align:right;">Cote</th><th style="padding:5px 8px;text-align:right;">Chiffre (km/h)</th>
+          <th style="padding:5px 8px;text-align:right;">Courses trackées</th><th style="padding:5px 8px;">Principales raisons</th>
+        </tr></thead><tbody>${rows}</tbody></table></div>
+    </div>`;
+  }).join('');
+  el.innerHTML = intro + meta +
+    `<p class="count">${races.length} course(s) de plat · ${nDis} avec un n°1 différent du modèle en production.
+     Chiffre : niveau de vitesse moyen corrigé du rythme (0 = cheval moyen du parcours). Rang production en couleur : écart d'au moins 3 places.</p>` + blocks;
+}
+
 function renderSuivi(){
   const el = document.getElementById('suiviContainer');
   if(!el) return;
