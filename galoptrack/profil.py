@@ -18,6 +18,16 @@ partants d'une course.
               400 derniers mètres)
    style      position aux 2 premiers tronçons, en part du peloton (0 = en tête)
    fin_rel    vitesse sur les 600 derniers mètres moins celle du peloton (km/h)
+   positions  (en part du peloton, 0 = en tête) :
+     entry      position à l'entrée des 600 derniers mètres
+     gain600    places gagnées sur les 600 derniers mètres (+ = remonte)
+     lost_mid   places perdues en cours de course avant les 600 derniers
+                mètres (repoussé, enfermé qui recule)
+     bloque     enfermé dans la ligne droite : ralenti sans gagner de place
+                alors qu'il n'est pas en tête, puis accélération nette dès
+                qu'il trouve l'ouverture ; ou meilleur finish du tiers le plus
+                rapide mais arrivée dans la seconde moitié (vitesse non
+                convertie)
    pace       rythme de la course : vitesse du peloton avant les 600 derniers
               mètres moins sur les 600 derniers, comparé à l'habitude sur cette
               distance (+ = course partie vite, usante pour les meneurs)
@@ -33,7 +43,10 @@ partants d'une course.
    jour (montée ou descente de catégorie), chiffre obtenu dans des courses
    au moins de ce niveau (un cheval qui domine en bas n'a peut-être jamais
    couru aussi vite en haut), et pente « chiffre selon le niveau » propre au
-   cheval. Poids : écart avec le poids de sa dernière course et de sa
+   cheval. Positions : place habituelle à l'entrée de la ligne droite,
+   capacité à remonter quand il est dans la seconde moitié du peloton
+   (s'extraire), capacité à tenir quand il est devant, places perdues en
+   course, fréquence des courses où il a été enfermé. Poids : écart avec le poids de sa dernière course et de sa
    meilleure course.
 
 3. Scénario de la course du jour (`field_features`) : niveau comparé aux
@@ -70,7 +83,8 @@ GENE_REPRISE_KMH = 1.5   # reprise au tronçon suivant
 HALF_LIFE_DAYS = 180     # poids d'une course : divisé par 2 tous les 6 mois
 WINDOW_DAYS = 365
 
-RUN_COLS = ['pf_fig', 'pf_fig_adj', 'pf_gene_sec', 'pf_style', 'pf_fin_rel', 'pf_pace']
+RUN_COLS = ['pf_fig', 'pf_fig_adj', 'pf_gene_sec', 'pf_style', 'pf_fin_rel', 'pf_pace',
+            'pf_entry', 'pf_gain600', 'pf_lost_mid', 'pf_bloque']
 
 PROFILE_FEATURES = ['pf_n', 'pf_days_last', 'pf_fig_last', 'pf_fig_best3', 'pf_fig_wmean', 'pf_fig_trend',
                     'pf_fig_dist', 'pf_fig_surf', 'pf_dist_gap', 'pf_style_mean', 'pf_style_sd',
@@ -78,10 +92,13 @@ PROFILE_FEATURES = ['pf_n', 'pf_days_last', 'pf_fig_last', 'pf_fig_best3', 'pf_f
                     # niveau de course
                     'pf_class_gap', 'pf_alloc_max_gap', 'pf_fig_at_level', 'pf_n_at_level', 'pf_class_slope',
                     # poids
-                    'pf_pd_delta_last', 'pf_pd_delta_best']
+                    'pf_pd_delta_last', 'pf_pd_delta_best',
+                    # positions
+                    'pf_entry_mean', 'pf_gain600_mean', 'pf_escape', 'pf_hold_front', 'pf_lost_mid_mean',
+                    'pf_bloque_last', 'pf_bloque_rate']
 FIELD_FEATURES = ['fv_best_vs_field', 'fv_wmean_vs_field', 'fv_rank', 'fv_cov', 'fv_n',
                   'fl_fig_mean', 'fl_hv_mean',
-                  'sc_leaders', 'sc_style_vs_field', 'sc_fin_vs_field',
+                  'sc_leaders', 'sc_style_vs_field', 'sc_fin_vs_field', 'sc_entry_vs_field',
                   'pd_vs_field', 'cd_pct', 'cd_bias']
 CONTEXT_FEATURES = ['dist', 'piste', 'terrain', 'hippo', 'alloc', 'cat']
 ALLOC_BINS = (12000, 18000, 25000, 35000, 50000, 80000, 150000, 400000)
@@ -191,14 +208,35 @@ def run_metrics(fdf):
         if m >= 5:
             pace = float(np.median(S[:, :-3].mean(axis=1)) - np.median(late))
         d = dist[rows[0]]
+        scale = max(n_field - 1, 1)
+        DEV = S - med
+        fin200_rank = (-S[:, -1]).argsort(kind='stable').argsort(kind='stable') / max(len(rows) - 1, 1)
         for r, i in enumerate(rows):
+            pr = P[r]
+            # Gêne : ralenti nettement par rapport au peloton ET des places
+            # perdues sur ce tronçon, puis reprise de vitesse (un cheval qui
+            # cède ne reprend pas)
             lost = 0.0
             for k in range(1, m - 2):
-                dev = S[r, k] - med[k]
-                if (dev <= -GENE_KMH and (S[r, k + 1] - med[k + 1]) - dev >= GENE_REPRISE_KMH
-                        and not (P[r, k] < P[r, k - 1])):
+                if (DEV[r, k] <= -GENE_KMH and DEV[r, k + 1] - DEV[r, k] >= GENE_REPRISE_KMH
+                        and pr[k] > pr[k - 1]):
                     lost += 200 / (S[r, k] / 3.6) - 200 / (med[k] / 3.6)
             out['pf_gene_sec'][i] = lost
+            if m < 5 or np.isnan(pr[-4]) or np.isnan(pr[-1]):
+                continue
+            out['pf_entry'][i] = (pr[-4] - 1) / scale
+            out['pf_gain600'][i] = (pr[-4] - pr[-1]) / scale
+            mid = np.diff(pr[1:-3]) if m >= 6 else np.array([])
+            mid = mid[~np.isnan(mid)]
+            out['pf_lost_mid'][i] = float(mid[mid > 0].sum()) / scale if len(mid) else 0.0
+            bloque = False
+            for k in (m - 3, m - 2):       # 600-400 et 400-200
+                if (DEV[r, k] <= -0.5 and not pr[k] < pr[k - 1] and (pr[k - 1] - 1) / scale > 0.2
+                        and DEV[r, k + 1] - DEV[r, k] >= 2.0):
+                    bloque = True
+            if fin200_rank[r] <= 1 / 3 and (pr[-1] - 1) / scale > 0.5:
+                bloque = True
+            out['pf_bloque'][i] = float(bloque)
         v_r = vy[rows]
         v_r = np.where(np.isnan(v_r), S.mean(axis=1), v_r)
         race_rows.append((rows, v_r))
@@ -271,6 +309,8 @@ def profile_features(fdf, window_days=WINDOW_DAYS, half_life=HALF_LIFE_DAYS):
     style = fdf['pf_style'].to_numpy(dtype=float)
     fin = fdf['pf_fin_rel'].to_numpy(dtype=float)
     pace = fdf['pf_pace'].to_numpy(dtype=float)
+    entry, gain6 = fdf['pf_entry'].to_numpy(dtype=float), fdf['pf_gain600'].to_numpy(dtype=float)
+    lmid, blq = fdf['pf_lost_mid'].to_numpy(dtype=float), fdf['pf_bloque'].to_numpy(dtype=float)
     poids = _num(fdf, 'pd')
     la = np.log(np.where(_num(fdf, 'alloc') > 0, _num(fdf, 'alloc'), np.nan))
     has = ~np.isnan(figa)
@@ -328,6 +368,21 @@ def profile_features(fdf, window_days=WINDOW_DAYS, half_life=HALF_LIFE_DAYS):
                 out['pf_gene_last'][i] = gene[p[-1]]
                 out['pf_gene_n5'][i] = float((gene[p[-5:]] > 0.1).sum())
                 out['pf_gene_rate'][i] = float((gene[p] > 0.1).mean())
+                # Positions
+                en, g6 = entry[p], gain6[p]
+                okp = ~np.isnan(en) & ~np.isnan(g6)
+                if okp.any():
+                    en, g6, bq = en[okp], g6[okp], blq[p][okp]
+                    out['pf_entry_mean'][i] = en[-5:].mean()
+                    out['pf_gain600_mean'][i] = g6[-5:].mean()
+                    out['pf_lost_mid_mean'][i] = np.nanmean(lmid[p][okp][-5:])
+                    out['pf_bloque_last'][i] = bq[-1]
+                    out['pf_bloque_rate'][i] = bq.mean()
+                    back, front = en > 0.5, en < 1 / 3
+                    if back.any():       # s'extraire : remonte-t-il quand il est derrière ?
+                        out['pf_escape'][i] = g6[back].mean() * back.sum() / (back.sum() + 1)
+                    if front.any():      # tenir : se fait-il passer quand il est devant ?
+                        out['pf_hold_front'][i] = g6[front].mean() * front.sum() / (front.sum() + 1)
                 # Poids : par rapport à sa dernière course et à sa meilleure
                 out['pf_pd_delta_last'][i] = poids[i] - poids[p[-1]]
                 out['pf_pd_delta_best'][i] = poids[i] - poids[p[-6:][np.argmax(l6)]]
@@ -365,6 +420,7 @@ def field_features(fdf):
     wm = fdf['pf_fig_wmean'].to_numpy(dtype=float)
     st = fdf['pf_style_mean'].to_numpy(dtype=float)
     fi = fdf['pf_fin_mean'].to_numpy(dtype=float)
+    ent = fdf['pf_entry_mean'].to_numpy(dtype=float)
     poids, corde, hv = _num(fdf, 'pd'), _num(fdf, 'cd'), _num(fdf, 'hv')
     for idx in fdf.groupby('race_id', sort=False).indices.values():
         k = len(idx)
@@ -396,6 +452,9 @@ def field_features(fdf):
             fo = fi[o]
             if not np.isnan(fi[i]) and not np.isnan(fo).all():
                 out['sc_fin_vs_field'][i] = fi[i] - np.nanmean(fo)
+            eo = ent[o]
+            if not np.isnan(ent[i]) and not np.isnan(eo).all():
+                out['sc_entry_vs_field'][i] = ent[i] - np.nanmean(eo)
     # Biais de corde du parcours : chiffre médian des chevaux partis dans le
     # même tiers (corde / milieu / extérieur) sur ce parcours, mois précédents,
     # moins le chiffre médian de tous les partants du parcours.
@@ -518,6 +577,16 @@ def run_profil(storage):
     md += _bucket_table(recent, 'pf_gene_last', [-0.01, 0.0, 0.3, 0.8, np.inf],
                         ['aucune gêne', 'petite gêne (< 0,3 s)', 'gêne nette (0,3 à 0,8 s)', 'grosse gêne (> 0,8 s)'],
                         "Gêne lors de sa dernière course trackée") + [""]
+    md += _bucket_table(recent, 'pf_bloque_last', [-0.01, 0.5, 1.01], ['non', 'oui'],
+                        "Enfermé lors de sa dernière course trackée (ralenti sans ouverture puis accélération, "
+                        "ou finish rapide non converti)") + [""]
+    md += _bucket_table(recent, 'pf_escape', [-np.inf, -0.05, 0.05, 0.15, np.inf],
+                        ['recule encore', 'reste où il est', 'remonte un peu', 'remonte nettement'],
+                        "Capacité à s'extraire : places gagnées dans la ligne droite quand il y entre "
+                        "dans la seconde moitié du peloton") + [""]
+    md += _bucket_table(recent, 'pf_hold_front', [-np.inf, -0.15, -0.05, np.inf],
+                        ['se fait nettement passer', 'se fait un peu passer', 'tient sa place'],
+                        "Quand il entre dans la ligne droite dans le premier tiers") + [""]
     md += _bucket_table(recent, 'pf_class_gap', [-np.inf, -0.4, -0.1, 0.1, 0.4, np.inf],
                         ['descend nettement (allocation < 2/3)', 'descend un peu', 'même niveau', 'monte un peu',
                          'monte nettement (allocation > 1,5x)'],
