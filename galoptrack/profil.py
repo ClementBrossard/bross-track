@@ -58,6 +58,16 @@ partants d'une course.
    style (un meneur à l'extérieur, un finisseur à la corde qui risque d'être
    enfermé) et corde et gênes.
 
+4. Les adversaires de ses courses passées (`opposition_features`) : chaque
+   course passée est décrite par ses concurrents, tels qu'on les connaissait
+   AVANT cette course — Elo, chiffres de vitesse, nombre de meneurs
+   habituels. On en tire : le niveau des pelotons affrontés, l'Elo des
+   chevaux qu'il a battus et de ceux qui l'ont battu (battu par des cracks ou
+   par des carnes ?), sa performance par rapport au niveau attendu du
+   peloton, son chiffre face à un peloton au moins aussi fort que celui du
+   jour, et son chiffre selon qu'il y avait beaucoup de meneurs ou non.
+   Aujourd'hui : son Elo comparé aux rivaux.
+
 L'écart du jour (terrain rapide ou lent) est mesuré après avoir retiré
 l'effet du niveau des courses : une réunion de Groupe court plus vite parce
 que les chevaux sont meilleurs, pas parce que le terrain est rapide.
@@ -100,10 +110,14 @@ FIELD_FEATURES = ['fv_best_vs_field', 'fv_wmean_vs_field', 'fv_rank', 'fv_cov', 
                   'fl_fig_mean', 'fl_hv_mean',
                   'sc_leaders', 'sc_style_vs_field', 'sc_fin_vs_field', 'sc_entry_vs_field',
                   'pd_vs_field', 'cd_pct', 'cd_bias']
+OPP_FEATURES = ['elo', 'elo_vs_field', 'elo_rank',
+                'op_field_elo_wmean', 'op_field_elo_vs_today', 'op_beaten_elo_best', 'op_beaten_elo_vs_field',
+                'op_ahead_elo_mean', 'op_ahead_elo_vs_field', 'op_perf_vs_exp', 'op_fig_strong_field',
+                'op_n_strong_field', 'op_fig_vs_leaders']
 CONTEXT_FEATURES = ['dist', 'piste', 'terrain', 'hippo', 'alloc', 'cat']
 ALLOC_BINS = (12000, 18000, 25000, 35000, 50000, 80000, 150000, 400000)
 LEVEL_RATIO = 1.25       # « au moins ce niveau » : allocation >= celle du jour / 1,25
-PROFIL_FEATURES = PROFILE_FEATURES + FIELD_FEATURES + CONTEXT_FEATURES
+PROFIL_FEATURES = PROFILE_FEATURES + FIELD_FEATURES + OPP_FEATURES + CONTEXT_FEATURES
 
 
 def _alloc_bucket(a):
@@ -475,9 +489,110 @@ def field_features(fdf):
     return fdf
 
 
+# ── 4. Les adversaires des courses passées ──────────────────────────────────
+
+def opposition_features(fdf, window_days=WINDOW_DAYS, half_life=HALF_LIFE_DAYS, n_last=5):
+    """OPP_FEATURES. Chaque course est décrite par ses partants tels qu'on
+    les connaissait avant elle (Elo d'avant course, profil d'avant course :
+    fl_fig_mean, styles), puis agrégée pour le cheval sur ses courses
+    chiffrées strictement antérieures. fdf : sortie de field_features."""
+    fdf = fdf.copy()
+    n = len(fdf)
+    elo = _num(fdf, 'elo')
+    pa = fdf['pa_num'].to_numpy(dtype=float)
+    figa = fdf['pf_fig_adj'].to_numpy(dtype=float)
+    flfig = fdf['fl_fig_mean'].to_numpy(dtype=float)
+    st = fdf['pf_style_mean'].to_numpy(dtype=float)
+    out = {c: np.full(n, np.nan) for c in OPP_FEATURES}
+    out['elo'] = elo
+    # Description de chaque course (ce qu'on savait avant le départ) et
+    # résultat du cheval face à ces adversaires
+    r_elo, r_lead = np.full(n, np.nan), np.full(n, np.nan)
+    beaten_max, ahead_mean = np.full(n, np.nan), np.full(n, np.nan)
+    for idx in fdf.groupby('race_id', sort=False).indices.values():
+        e = elo[idx]
+        if not np.isnan(e).all():
+            r_elo[idx] = np.nanmean(e)
+        r_lead[idx] = float((st[idx] < 0.25).sum())
+        if len(idx) >= 2:
+            for k, i in enumerate(idx):
+                o = np.delete(idx, k)
+                eo = elo[o]
+                if not np.isnan(e[k]) and not np.isnan(eo).all():
+                    out['elo_vs_field'][i] = e[k] - np.nanmean(eo)
+            ok = ~np.isnan(e)
+            if ok.sum() >= 2:
+                r = (-e[ok]).argsort(kind='stable').argsort(kind='stable')
+                out['elo_rank'][idx[ok]] = r / (ok.sum() - 1)
+        p = pa[idx]
+        for k, i in enumerate(idx):
+            if np.isnan(p[k]):
+                continue
+            b = e[(p > p[k]) & ~np.isnan(e)]
+            a = e[(p < p[k]) & ~np.isnan(e)]
+            if len(b):
+                beaten_max[i] = b.max()
+            if len(a):
+                ahead_mean[i] = a.mean()
+    perf = figa - flfig       # son chiffre comparé au niveau attendu du peloton
+
+    days = (pd.to_datetime(fdf['date'].astype(int).astype(str), format='%Y%m%d')
+            .to_numpy().astype('datetime64[D]').astype(np.int64))
+    noms = fdf['nom'].to_numpy()
+    has = ~np.isnan(figa)
+    order = np.lexsort((fdf['is_today'].to_numpy(), days, noms))
+    start = 0
+    while start < n:
+        end = start
+        while end < n and noms[order[end]] == noms[order[start]]:
+            end += 1
+        past_runs = []
+        for i in order[start:end]:
+            p = [j for j in past_runs if days[i] - window_days <= days[j] < days[i]]
+            if p:
+                p = np.array(p)
+                w = 0.5 ** ((days[i] - days[p]) / half_life)
+                re = r_elo[p]
+                ok = ~np.isnan(re)
+                if ok.any():
+                    out['op_field_elo_wmean'][i] = np.sum(re[ok] * w[ok]) / np.sum(w[ok])
+                    if not np.isnan(r_elo[i]):
+                        out['op_field_elo_vs_today'][i] = out['op_field_elo_wmean'][i] - r_elo[i]
+                last = p[-n_last:]
+                bm = beaten_max[last]
+                if not np.isnan(bm).all():
+                    out['op_beaten_elo_best'][i] = np.nanmax(bm)
+                    if not np.isnan(r_elo[i]):
+                        out['op_beaten_elo_vs_field'][i] = np.nanmax(bm) - r_elo[i]
+                am = ahead_mean[last]
+                if not np.isnan(am).all():
+                    out['op_ahead_elo_mean'][i] = np.nanmean(am)
+                    if not np.isnan(r_elo[i]):
+                        out['op_ahead_elo_vs_field'][i] = np.nanmean(am) - r_elo[i]
+                pv = perf[last]
+                if not np.isnan(pv).all():
+                    out['op_perf_vs_exp'][i] = np.nanmean(pv)
+                if not np.isnan(flfig[i]):
+                    strong = ~np.isnan(flfig[p]) & (np.nan_to_num(flfig[p], nan=-99) >= flfig[i] - 0.5)
+                    out['op_n_strong_field'][i] = float(strong.sum())
+                    if strong.any():
+                        out['op_fig_strong_field'][i] = np.sum(figa[p][strong] * w[strong]) / np.sum(w[strong])
+                rl, fp = r_lead[p[-8:]], figa[p[-8:]]
+                many, few = fp[rl >= 2], fp[rl <= 1]
+                if len(many) and len(few):
+                    k = min(len(many), len(few))
+                    out['op_fig_vs_leaders'][i] = (many.mean() - few.mean()) * k / (k + 1)
+            if has[i]:
+                past_runs.append(i)
+        start = end
+    for c, v in out.items():
+        fdf[c] = v
+    return fdf
+
+
 def profil_features(fdf):
     """Toutes les variables du modèle Profil (fdf : sortie de build_features)."""
-    return field_features(profile_features(run_metrics(fdf)))
+    return opposition_features(field_features(profile_features(run_metrics(fdf))))
 
 
 # ── Évaluation (lecture seule) ──────────────────────────────────────────────
@@ -587,6 +702,14 @@ def run_profil(storage):
     md += _bucket_table(recent, 'pf_hold_front', [-np.inf, -0.15, -0.05, np.inf],
                         ['se fait nettement passer', 'se fait un peu passer', 'tient sa place'],
                         "Quand il entre dans la ligne droite dans le premier tiers") + [""]
+    md += _bucket_table(recent, 'op_ahead_elo_vs_field', [-np.inf, -60, -20, 20, 60, np.inf],
+                        ['nettement plus faibles que le peloton du jour', 'un peu plus faibles', 'du même niveau',
+                         'un peu plus forts', 'nettement plus forts'],
+                        "Elo des chevaux qui l'ont battu (5 dernières courses), comparé au peloton du jour") + [""]
+    md += _bucket_table(recent, 'op_perf_vs_exp', [-np.inf, -1.5, -0.5, 0.5, 1.5, np.inf],
+                        ['nettement sous le niveau du peloton', 'un peu sous', 'au niveau', 'un peu au-dessus',
+                         'nettement au-dessus'],
+                        "Son chiffre comparé au niveau attendu des pelotons affrontés (5 dernières courses)") + [""]
     md += _bucket_table(recent, 'pf_class_gap', [-np.inf, -0.4, -0.1, 0.1, 0.4, np.inf],
                         ['descend nettement (allocation < 2/3)', 'descend un peu', 'même niveau', 'monte un peu',
                          'monte nettement (allocation > 1,5x)'],
