@@ -146,7 +146,9 @@ Le modèle Profil est enregistré à part, dans `model_profil/` (jamais dans
 `model/`, la production ne change pas). Il est réentraîné avec l'entraînement
 mensuel (étape « Modèle tracking », sans bloquer le reste), ou à la demande :
 `python -m galoptrack train-profil`, ou l'action `entrainer_profil` dans
-`ops/demande.json`. Le dashboard note alors les courses de plat du jour dans
-l'onglet **Modèle tracking** : probabilité, rang comparé au modèle en
-production, chiffre de vitesse et principales raisons ; les courses où les
-deux n°1 diffèrent sont signalées.
+`ops/demande.json`. Le dashboard note alors les courses de plat du jour : dans
+la page de chaque course, sous-onglet **Modèle**, le tableau du modèle tracking
+s'affiche sous celui du modèle en production et son détail SHAP (probabilité,
+cote live si disponible, proba marché, écart, rang en production, chiffre de
+vitesse, principales raisons) ; un badge signale un n°1 différent de la
+production.
