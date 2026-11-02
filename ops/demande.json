@@ -1,7 +1,5 @@
 {
-  "id": "2026-11-01-modele-tracking",
-  "description": "Entraîner le modèle tracking (modèle Profil, à part) dans model_profil/ pour l'onglet « Modèle tracking » du dashboard. La production (v9) ne change pas.",
-  "etapes": [
-    {"action": "entrainer_profil"}
-  ]
+  "id": "2026-11-02-dashboard-tracking-sous-modele",
+  "description": "Aucune opération sur les modèles : la demande sert seulement à régénérer le dashboard (étape « Dashboard à jour » du workflow) pour afficher le modèle tracking sous le tableau du modèle en production.",
+  "etapes": []
 }
