@@ -816,3 +816,9 @@ def test_profil_scores_today_races(built):
         assert abs(sum(h['tk_prob'] for h in r['horses']) - 100) < 0.1
         assert sorted(h['tk_rank'] for h in r['horses']) == list(range(1, len(r['horses']) + 1))
         assert all(h['tk_why'] for h in r['horses'])
+
+
+def test_profil_features_have_french_labels():
+    """Chaque variable du modèle tracking a un libellé lisible dans le dashboard."""
+    from galoptrack import profil
+    assert [f for f in profil.PROFIL_FEATURES if f not in profil.LABEL_FR_TK] == []

@@ -1090,6 +1090,11 @@ LABEL_FR_TK = {
     'jt_plusvalue': 'Jockey : plus-value', 'jt_tactic': 'Jockey : placement',
     'jt_plusvalue_vs_field': 'Jockey : plus-value vs autres', 'jt_escape_vs_field': 'Jockey : sort du paquet vs autres',
     'dist': 'Distance', 'piste': 'Piste', 'terrain': 'Terrain', 'alloc': 'Allocation', 'cat': 'Catégorie',
+    'pf_n_surf': 'Courses sur cette surface', 'pf_surf_gap': 'Spécialiste de la surface',
+    'pf_fig_going': 'Chiffre sur ce terrain', 'pf_n_going': 'Courses sur ce terrain',
+    'pf_going_gap': 'Spécialiste du terrain', 'pf_psf_vs_herbe': 'PSF vs herbe',
+    'pf_heavy_vs_good': 'Terrain lourd vs bon', 'pf_fig_pen_near': 'Chiffre sur pénétromètre proche',
+    'pf_n_pen_near': 'Courses sur pénétromètre proche', 'pen_today': 'Pénétromètre du jour',
 }
 
 
