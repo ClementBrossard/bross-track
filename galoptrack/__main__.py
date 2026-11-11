@@ -219,6 +219,11 @@ def cmd_train_profil(storage, args):
     print(json.dumps({k: meta[k] for k in ('trained_at', 'metrics')}, indent=1, default=str))
 
 
+def cmd_experiment_mouvements(storage, args):
+    from . import mouvements
+    print(mouvements.run_mouvements(storage))
+
+
 def cmd_experiment_valeur(storage, args):
     from . import profil
     print(profil.run_valeur(storage))
@@ -438,6 +443,8 @@ def main(argv=None):
         .set_defaults(func=cmd_experiment_troncons)
     sub.add_parser('train-profil', help="entraîne le modèle tracking (à part, model_profil/ ; la production ne change pas)") \
         .set_defaults(func=cmd_train_profil)
+    sub.add_parser('experiment-mouvements', help="mouvements de cotes (historique + relevés 5 min) contre les vrais rapports (n'écrit rien)") \
+        .set_defaults(func=cmd_experiment_mouvements)
     sub.add_parser('experiment-valeur', help="valeur : v9 / Profil contre la cote, outsiders sous-cotés, vrais rapports (n'écrit rien)") \
         .set_defaults(func=cmd_experiment_valeur)
     sub.add_parser('experiment-profil', help="modèle Profil à part : tracking seul, chiffres de vitesse, gênes, scénario (n'écrit rien)") \
